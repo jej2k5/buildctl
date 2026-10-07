@@ -352,13 +352,14 @@ class Supervisor:
                     self._ceiling_reached(state, phase, "REVIEW_FORMAT_ATTEMPTS_EXHAUSTED", str(exc))
                 continue
             findings = list(state.findings.values())
+            budget_available, approvals_valid = self._advance_preconditions(state, phase)
             transition = reduce_review(report=review, findings=findings, mechanical_passed=True, coverage_valid=True,
                                        policy={"max_remediation_attempts": phase.max_remediation_attempts,
                                                "debate_enabled": phase.debate_on_architecture_disagreement,
                                                "max_debate_attempts": self.config["limits"]["max_debate_rounds"]},
                                        attempts={"remediation": remediation,
                                                  "debate": state.debate_attempts.get(key, 0)},
-                                       budget_available=True, approvals_valid=True)
+                                       budget_available=budget_available, approvals_valid=approvals_valid)
             self.store.event(state, "review_reduced", rule=transition.rule_id, disposition=transition.disposition,
                              evidence_digest=evidence["digest"], delta_id=delta.digest,
                              reviewer=review["reviewer"])
@@ -400,6 +401,10 @@ class Supervisor:
                     state, phase, f"adr-implement-{debate_attempt}", PaidOperation.REMEDIATION, remediation_path,
                     lambda timeout, rp=remediation_path: codex.implement(phase, rp, timeout, adr=paths["adr_proposal"].read_text()))
                 continue
+            if transition.rule_id == "R7_FAIL_CLOSED":
+                unmet = [name for name, held in (("budget", budget_available), ("approvals", approvals_valid))
+                         if not held]
+                self._escalate(state, "ADVANCE_PRECONDITIONS_UNMET", ", ".join(unmet))
             self._escalate(state, "REVIEW_BLOCKED", transition.rationale)
         publication_delta = self.git.attributed_delta(workspace, baseline, self._allowed_paths(phase, workspace, paths))
         if publication_delta.digest != delta.digest:
@@ -436,12 +441,18 @@ class Supervisor:
             self._require_authentication(role_name)
         except (AuthenticationRequired, HostAuthUnsupported) as exc:
             self._escalate(state, "AUTHENTICATION_REQUIRED", str(exc))
+        # Reserve before the operation is recorded as started. A refused reservation means
+        # nothing was launched, so it must not leave a `started` operation behind that no
+        # later run can account for.
+        try:
+            self.budget.reserve(paid_operation.value, phase.number, operation_id,
+                                configured_cost(self.config, paid_operation))
+        except LimitExceeded as exc:
+            self._escalate(state, "DAILY_BUDGET_UNAVAILABLE", str(exc))
         operation = Operation(operation_id, kind, phase.number, status="started", output_path=str(output),
                               untrusted_output_path=str(operation_output_path(Path(state.workspace or self.root), output)),
                               started_at=now())
         state.operations[operation_id] = operation
-        estimated = configured_cost(self.config, paid_operation)
-        self.budget.reserve(paid_operation.value, phase.number, operation_id, estimated)
         self.store.event(state, "operation_started", operation=operation_id,
                          paid_operation=paid_operation.value, role=role_name,
                          network_allowed=self.config["roles"][role_name]["network"])
@@ -468,6 +479,30 @@ class Supervisor:
                 return {}
             self._escalate(state, "AGENT_OPERATION_FAILED", diagnostic)
         raise AssertionError("unreachable")
+
+    def _advance_preconditions(self, state: BuildState, phase: Phase) -> tuple[bool, bool]:
+        """The two ADVANCE predicates the reducer cannot see: (budget_available, approvals_valid).
+
+        Both used to be passed as literal True, which left the reducer's R7_FAIL_CLOSED branch
+        unreachable from its only caller. Each is evaluated fail-closed: an unreadable ledger
+        or an unverifiable approval counts as not held.
+
+        Budget: the ledger must be intact and today's spend within the daily limit. Advancing
+        spends nothing, so reaching the limit exactly does not block it.
+        Approvals: nothing may be pending, and a phase behind a checkpoint must still carry an
+        approval scoped to this attempt, this governance SHA and the current tree.
+        """
+        try:
+            budget_available = self.budget.spent_today() <= self.budget.daily_limit
+        except LimitExceeded:
+            budget_available = False
+        approvals_valid = state.pending_approval is None
+        if approvals_valid and phase.number in self.config["checkpoints"]["before_phases"]:
+            try:
+                approvals_valid = self._approval_recorded(state, phase, f"phase-{phase.number}")
+            except GitSafetyError:
+                approvals_valid = False
+        return budget_available, approvals_valid
 
     def _require_authentication(self, role: str) -> None:
         role_config = self.config["roles"][role]
