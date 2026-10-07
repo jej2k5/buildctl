@@ -1,0 +1,80 @@
+"""The manual: generated from its Markdown, and complete against the kernel.
+
+    PYTHONPATH=ui python3 -m unittest discover -s ui/uitests -t ui
+"""
+import re
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+from buildctl.buildctl import parser
+from buildctl.supervisor.inspect import ESCALATIONS
+
+ROOT = Path(__file__).resolve().parents[2]
+PAGE = ROOT / "ui" / "buildctl_ui" / "web" / "docs" / "index.html"
+EXAMPLE = ROOT / "tests" / "fixtures" / "target" / "build.yaml"
+
+
+def ids() -> set[str]:
+    return set(re.findall(r'\sid="([^"]+)"', PAGE.read_text()))
+
+
+def kernel_codes() -> set[str]:
+    """Every escalation code the kernel can raise: the explained ones and every ceiling."""
+    source = "\n".join(path.read_text() for path in (ROOT / "buildctl").rglob("*.py"))
+    return set(ESCALATIONS) | set(re.findall(r'"([A-Z_]+_EXHAUSTED)"', source))
+
+
+def commands() -> set[str]:
+    names = set()
+    for action in parser()._subparsers._group_actions:
+        for name, sub in action.choices.items():
+            nested = [a for a in sub._actions if a.__class__.__name__ == "_SubParsersAction"]
+            names |= {f"{name}-{child}" for a in nested for child in a.choices} if nested else {name}
+    return names
+
+
+class ManualTests(unittest.TestCase):
+    def test_the_page_matches_its_markdown(self):
+        result = subprocess.run([sys.executable, str(ROOT / "docs" / "build.py"), "--check"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_every_escalation_code_has_a_section(self):
+        missing = sorted(kernel_codes() - ids())
+        self.assertEqual(missing, [], "escalation codes with no section in the manual")
+
+    def test_every_command_has_a_reference_row(self):
+        missing = sorted(f"cmd-{name}" for name in commands() if f"cmd-{name}" not in ids())
+        self.assertEqual(missing, [], "commands with no row in the reference")
+
+    def test_every_configuration_key_has_a_reference_row(self):
+        import json
+        config = json.loads(EXAMPLE.read_text())
+        keys = {key for key in config if key not in ("version", "roles", "phase_defaults", "phases", "git",
+                                                     "limits", "checkpoints")}
+        keys |= {f"limits.{k}" for k in config["limits"]} | {f"git.{k}" for k in config["git"]}
+        keys |= {f"checkpoints.{k}" for k in config["checkpoints"]}
+        keys |= {f"phase_defaults.{k}" for k in config["phase_defaults"]}
+        keys |= {"git.integration_branch", "phases", "phases[].acceptance"}
+        for role, values in config["roles"].items():
+            for key in values:
+                if key in ("command", "network", "auth_mode", "credential_env"):
+                    keys.add(f"roles.*.{key}")
+                elif key in ("vendor", "model_family", "prompt_lineage") and role != "reviewer":
+                    continue  # only the reviewer's identity is checked, so only it is documented
+                else:
+                    keys.add(f"roles.{role}.{key}")
+        expected = {"config-" + re.sub(r"[^a-z0-9_]+", "-", key.lower()).strip("-") for key in keys}
+        self.assertEqual(sorted(expected - ids()), [], "configuration keys with no row in the reference")
+
+    def test_the_console_serves_the_manual(self):
+        self.assertTrue(PAGE.is_file())
+        for name in ("docs.css", "docs.js", "icon.svg"):
+            self.assertTrue((PAGE.parent / name).is_file(), name)
+        self.assertIn('href="/docs/', (ROOT / "ui" / "buildctl_ui" / "web" / "app.js").read_text())
+
+
+if __name__ == "__main__":
+    unittest.main()

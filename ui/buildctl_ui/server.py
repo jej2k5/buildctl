@@ -59,7 +59,9 @@ def handler_for(build: Build, token: str, port_ref: list[int]) -> type[BaseHTTPR
                 return self._error(HTTPStatus.MISDIRECTED_REQUEST, "unexpected Host header")
             url = urlparse(self.path)
             if not url.path.startswith("/api/"):
-                name = "index.html" if url.path in {"/", ""} else url.path.lstrip("/")
+                name = url.path.lstrip("/")
+                if name == "" or name.endswith("/"):
+                    name += "index.html"
                 target = (WEB / name).resolve()
                 if WEB not in target.parents or not target.is_file():
                     return self._error(HTTPStatus.NOT_FOUND, "not found")

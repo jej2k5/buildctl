@@ -316,7 +316,7 @@ function stopBlock(m, compact) {
     <div>
       <h2 class="stop-code" id="stop-code">${esc(e.code)}</h2>
       <p class="stop-meaning">${esc(e.meaning)}</p>
-      <p class="stop-remedy"><b>What to do:</b> ${esc(e.remedy)}</p>
+      <p class="stop-remedy"><b>What to do:</b> ${esc(e.remedy)} <a href="/docs/#${encodeURIComponent(e.code)}" target="_blank" rel="noopener">${esc(e.code)} in the manual</a></p>
       ${!compact && e.detail && e.code !== "CHECKPOINT_REQUIRED" ? `<p class="stop-detail"><span class="muted">Detail</span> ${esc(e.detail)}</p>` : ""}
       ${compact ? `<p class="stop-remedy"><a href="#/stop">Open the stop: evidence and levers</a></p>` : ""}
     </div>

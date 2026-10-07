@@ -66,6 +66,33 @@ typography:
     fontWeight: 600
     lineHeight: 1.2
     letterSpacing: "-0.01em"
+  read-title:
+    fontFamily: "system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", sans-serif"
+    fontSize: "2.25rem"
+    fontWeight: 650
+    lineHeight: 1.15
+    letterSpacing: "-0.02em"
+  read-lead:
+    fontFamily: "system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 400
+  read-chapter:
+    fontFamily: "system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", sans-serif"
+    fontSize: "1.5rem"
+    fontWeight: 650
+    lineHeight: 1.25
+    letterSpacing: "-0.01em"
+  read-section:
+    fontFamily: "system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 600
+    lineHeight: 1.3
+  read-body:
+    fontFamily: "system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", sans-serif"
+    fontSize: "1rem"
+    fontWeight: 400
+    lineHeight: 1.6
+    fontFeature: "\"tnum\""
 rounded:
   none: "0px"
 spacing:
@@ -146,6 +173,46 @@ components:
     backgroundColor: "{colors.bar}"
     textColor: "{colors.bar-ink}"
     height: "52px"
+  chapter-bar:
+    backgroundColor: "{colors.bar}"
+    textColor: "{colors.bar-ink-2}"
+    typography: "{typography.body-sm}"
+    padding: "0 12px"
+    height: "52px"
+  chapter-bar-current:
+    textColor: "{colors.bar-ink}"
+  chapter-plate:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    typography: "{typography.mono}"
+    rounded: "{rounded.none}"
+    padding: "5px 6px"
+    width: "30px"
+  stop-entry:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.none}"
+  stop-entry-danger:
+    backgroundColor: "{colors.danger-wash}"
+    padding: "8px 16px"
+  stop-entry-caution:
+    backgroundColor: "{colors.caution-wash}"
+    padding: "8px 16px"
+  stop-entry-unknown:
+    backgroundColor: "{colors.paper-2}"
+    padding: "8px 16px"
+  stop-index:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.none}"
+    padding: "{spacing.s4}"
+  reference-table-wide:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.none}"
+    width: "min(1100px, calc(100vw - 64px))"
+  inline-code:
+    backgroundColor: "{colors.paper-2}"
+    textColor: "{colors.ink}"
+    typography: "{typography.mono}"
+    padding: "1px 4px"
 ---
 
 # Design System: buildctl
@@ -158,7 +225,7 @@ The console is a signal box. The build is a line of blocks; each action is a lev
 
 Colour is scarce and semantic. Four signal aspects (danger, caution, clear, unknown) are drawn as distinct shapes so state survives colour loss, on a 16-colour terminal and under colour-vision deficiency. Two further colours are reserved for single meanings: occupancy blue for the operation actually in flight, and stamp violet for a human signature. Everything else is ink on paper.
 
-The same world runs in two surfaces. The web console is static HTML/CSS/JS on system fonts; the Textual TUI mirrors the dark palette and draws the same shapes as Unicode glyphs. The system refuses the CI-dashboard arrangement of status pills over a log pane.
+The same world runs in three surfaces. The web console is static HTML/CSS/JS on system fonts; the Textual TUI mirrors the dark palette and draws the same shapes as Unicode glyphs; the manual (one generated page, served at `/docs/`) sets the same tokens for reading. The system refuses the CI-dashboard arrangement of status pills over a log pane.
 
 **Key Characteristics:**
 - Shape carries state; colour reinforces it.
@@ -167,6 +234,7 @@ The same world runs in two surfaces. The web console is static HTML/CSS/JS on sy
 - Square corners, 1px hairlines, flat surfaces, dense tables with tabular figures.
 - The interlocking table (lever plate, conditions, lock note) is the signature component.
 - Light and dark themes share every token name; the TUI uses the dark values.
+- Two modes share one world: Operate surfaces (console, TUI) keep the dense ramp; Read surfaces (the manual) add a larger reading ramp and a 72ch column.
 
 ## Colors
 
@@ -219,12 +287,25 @@ Signal-plan paper and ink, four signal aspects, and two reserved single-meaning 
 - **Mono** (0.92em of context; weight follows context, 500 in inputs, evidence and tags, 700 in lever plates and severity chips): the DEMO flag, digests, tree hashes, nonces, commands, operation IDs, escalation codes, condition detail, phase and lever numbers, money.
 - **Mono figure** (600, 1.5rem, 1): the stopped phase number; **Stop code** (600, 1.25rem mono): the escalation code.
 
+### Reading Hierarchy (Read surfaces only)
+The manual uses the same faces with a larger ramp. These sizes belong to Read surfaces only; the console and TUI keep the Operate ramp above.
+- **Read title** (650, 2.25rem, 1.15, -0.02em, balanced wrap; 1.75rem at 820px and below): the manual's one title.
+- **Read lead** (400, the `t-xl` step 1.25rem, `ink-2`, max 62ch; the `t-lg` step 1rem at 820px and below): the one-paragraph statement under the title.
+- **Read chapter** (650, 1.5rem, 1.25, -0.01em): chapter headings, led by the chapter plate.
+- **Read section** (600, the `t-xl` step 1.25rem, 1.3): section headings inside a chapter, 32px above, 8px below; a hover-revealed `#` permalink in `ink-3` follows the text.
+- **Read body** (400, 1rem, 1.6, tabular figures): running prose at a 72ch measure. Tables and code blocks inside the column stay at 0.8125rem; `strong` is 650.
+- **Inline code** (mono 0.9em on a `paper-2` field, 1px by 4px padding): each word of a code span is wrapped to never break internally, so a command or key breaks only between its words.
+
 ### Named Rules
 **The Machine Text Rule.** If the kernel produced it or the operator must type it back, set it in mono.
 
 **The No Web Fonts Rule.** System stacks only. Nothing is downloaded.
 
 **The Plan Lettering Rule.** Capitals belong to machine vocabulary and plan lettering only: escalation codes, severity levels, the SIGNED word and the DEMO flag (all mono), and station names on the line. Sans UI labels, headings and captions are never uppercased; there are no kickers or eyebrows.
+
+**The Two Ramps Rule.** Operate surfaces use the dense ramp (0.75rem to 1.5rem, weight 600). Read surfaces add the reading ramp (body 1rem/1.6, headings to 2.25rem, weight 650). Neither ramp crosses into the other's surface.
+
+**The Unbroken Token Rule.** A command, key or code never breaks inside a word. Wrap between words; let a wide table scroll or stack rather than split a name.
 
 ## Layout
 
@@ -233,6 +314,11 @@ A fixed app frame: a sticky top bar (52px), a 184px left rail, and a main column
 Spacing steps through `s1`–`s7` (4, 8, 12, 16, 24, 32, 48px). Sections sit 32px apart; panels pad 16px; table cells pad 7–8px by 10px. Density is deliberate: the operator glances between other work.
 
 At 1100px the columns stack and the top bar's facts wrap onto a second row under a `bar-rule` hairline. At 820px the rail becomes a horizontal, sticky, scrolling strip under the bar (kbd hints and footer hidden, the current-page marker moves to the bottom edge), the Stop panel's phase block moves below the code, and readiness and finding rows collapse to one column.
+
+### Read surfaces
+The manual has no rail. Main is a centred reading column, 72ch plus 32px padding each side, padded 32px / 32px / 48px (24px / 16px / 48px at 820px and below). Chapters sit 48px apart; the title block closes with a `rule-strong` hairline and 24px below. Code blocks and ordinary tables stay inside the column. Only a table marked wide breaks out: it is centred on the page at `min(1100px, 100vw - 64px)` (`100vw - 32px` at 820px and below), so reference tables read in full without widening the prose. Anchored targets scroll clear of the sticky bar (116px offset; 150px at 820px and below, where the bar takes two rows).
+
+**The Reading Column Rule.** Prose never runs wider than about 72ch. Only reference tables marked wide break out, centred, up to 1100px; nothing else leaves the column.
 
 ## Elevation & Depth
 
@@ -304,6 +390,24 @@ Dense, sticky headers on `paper-2` (600, 0.75rem, `ink-2`, `rule-strong` underli
 ### Terminal UI
 The Textual TUI uses the dark palette (`#111513` background, `#161b18` surface, `#181d1a` panel, `#e6ebe5` ink) and draws the aspects as ■ danger, ◆ caution, ● clear, ◌ unknown, ▬ occupied, · pending, each in its dark-theme colour. Levers are bordered blocks with a boxed, zero-padded number; the stop panel takes a heavy aspect-coloured border (dashed for unknown); the ceremony is a modal with the evidence prefix bold and underlined and a Sign button that stays disabled until the typed value matches.
 
+### The Chapter Bar (Read)
+The manual's navigation is the console's top bar carrying chapters instead of facts: `bar` mass, sticky, 52px, the mono wordmark `buildctl` with a `bar-ink-2` "manual" caption, then a numbered list of chapters. Each chapter link is sans 0.8125rem `bar-ink-2` led by its number in mono 600 0.75rem; hover lifts to `bar-ink`. The chapter being read (the last whose top has passed 40% of the viewport) turns `bar-ink` with a 2px `bar-ink` underline, the ink of the bar, never occupancy blue. The list scrolls sideways when it overflows and keeps the current chapter in view. At 820px and below the bar takes two rows, wordmark above and chapters under a `bar-rule` hairline, with 44px tap targets.
+
+### The Chapter Plate (Read)
+Every chapter heading leads with its number in a plate, the same plate language as a lever number: mono 700 at 0.8125rem, a 1.5px ink border, square, 5px by 6px padding, 30px minimum width, centred. The chapter plate sits on `surface` rather than inside a `paper-2` column. The same number labels the chapter in the bar.
+
+### The Stop-Code Entry (Read)
+The console's Stop panel, small, one per escalation code. A `surface` block with a 1px `rule` border, 12px apart. Its header band carries the aspect's wash (`danger-wash`, `caution-wash`, or `paper-2` for unknown) over a `rule` hairline, 8px by 16px: the 16px signal glyph, then the code in mono 700 at 1rem, then the permalink. The body is the meaning, then a line that opens with a bold "Clear it:" and gives the remedy and command. When the entry is the URL target it takes a 2px ink outline offset 2px and its band settles from `select` to its wash over 1.2s on the shared ease. Unlike the console Stop panel, the border stays `rule` for every aspect and is never dashed; the band alone carries the aspect.
+
+### The Stop-Code Index (Read)
+Every stop code at a glance, for a reader who arrives mid-incident. A `surface` panel with a 1px `rule` border and 16px padding, set in balanced columns (minimum 260px, 24px gap). Codes group under sans 600 0.8125rem `ink-2` headings (Waiting for you, Stopped, and so on); each is a link of its 16px signal glyph and the code in mono 0.8125rem, underlined in `rule-strong` (ink on hover). Groups never split across columns.
+
+### Code Links (Read)
+A link to a stop code from prose or a table carries the code's 12px signal glyph before the code, so its aspect reads before the page jumps.
+
+### Reference Tables (Read)
+The console's data table, set for reference: `surface` in a 1px `rule` frame, `paper-2` header at 600 0.75rem `ink-2` over a `rule-strong` line, 8px by 12px cells, 0.8125rem at 1.5. The name column is nowrap and 1% wide so the meaning takes the rest; a code in it drops its field and sets 600. A row that is the URL target fills `select`. Wide reference tables (commands, config keys) break out of the column per the Reading Column Rule; at 820px and below they lose their header row and stack, each row a block with the name whole on its own line and the meaning under it.
+
 ## Do's and Don'ts
 
 ### Do:
@@ -316,6 +420,9 @@ The Textual TUI uses the dark palette (`#111513` background, `#161b18` surface, 
 - **Do** require typed evidence before a trust-critical lever acts, and send the displayed nonce rather than asking for it.
 - **Do** update table cells in place and mark the change with the 0.9s selection flip.
 - **Do** keep the TUI on the dark palette with the same glyph per aspect.
+- **Do** set Read surfaces on the reading ramp (body 1rem/1.6, title 2.25rem 650) in a centred 72ch column, and keep the console on the Operate ramp.
+- **Do** mark the current chapter with a 2px `bar-ink` underline on the bar, and lead every chapter with its numbered plate.
+- **Do** draw every stop code with its aspect glyph, in the entry band, the index and every link to it.
 
 ### Don't:
 - **Don't** convey state by colour alone, or reuse a filled signal shape for another meaning (hollow station squares on the line are the one native exception).
@@ -327,3 +434,6 @@ The Textual TUI uses the dark palette (`#111513` background, `#161b18` surface, 
 - **Don't** add decorative icons; icons are stroked line drawings for navigation and the lock, and status is drawn only with the signal shapes.
 - **Don't** arrange status pills over a log pane.
 - **Don't** uppercase sans labels, headings or captions, and don't add kickers or eyebrows; capitals are for codes, severities, SIGNED, DEMO and station names.
+- **Don't** mark reading position, links or the current chapter in occupancy blue.
+- **Don't** let anything but a wide reference table leave the reading column, and don't let a command, key or code break inside a word.
+- **Don't** carry the reading ramp into the console or the TUI.

@@ -141,6 +141,7 @@ p { margin: 0; }
 .rail a:hover { color: var(--ink); background: var(--rule); }
 .rail a[aria-current="page"] { color: var(--ink); background: var(--surface); box-shadow: inset 0 0 0 1px var(--rule); }
 .rail a[aria-current="page"]::before { content: ""; position: absolute; left: -8px; top: 6px; bottom: 6px; width: 3px; background: var(--ink); }
+.rail .rail-manual { margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--rule); }
 .rail kbd { margin-left: auto; font-size: var(--t-xs); color: var(--ink-3); }
 .rail-flag { width: 8px; height: 8px; background: var(--danger); }
 .rail-flag.caution { background: var(--caution); transform: rotate(45deg) scale(.9); }

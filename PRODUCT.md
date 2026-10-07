@@ -54,7 +54,7 @@ buildctl isn't a CI dashboard or an agent chat. Its distinctive claim is **gover
 
 ## Evidence on Hand
 
-- README.md (full command, escalation and configuration reference).
+- The manual: `docs/*.md`, rendered to `ui/buildctl_ui/web/docs/` (getting started, concepts, every escalation code, full command and configuration reference). README.md is a short pitch and quick start.
 - `tests/fixtures/target/` is a complete 24-phase configuration for Relay, a fictional webhook delivery service, with phase prompts and governance documents. The console demo runs on it.
 - No screenshots, users, metrics or testimonials exist. Don't invent any.
 

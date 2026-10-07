@@ -20,4 +20,4 @@ buildctl-ui = "buildctl_ui.__main__:main"
 include = ["buildctl_ui", "buildctl_ui.*"]
 
 [tool.setuptools.package-data]
-buildctl_ui = ["web/*"]
+buildctl_ui = ["web/*", "web/docs/*"]
