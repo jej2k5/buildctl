@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "buildctl-discover"
+version = "0.1.0"
+description = "Discovery that drafts a buildctl roadmap over MCP, for the operator to commit and trust"
+requires-python = ">=3.11"
+# The kernel only. The MCP server is written on the standard library.
+dependencies = ["buildctl"]
+
+[project.scripts]
+buildctl-discover = "buildctl_discover.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["buildctl_discover", "buildctl_discover.*"]
+
+[tool.setuptools.package-data]
+buildctl_discover = ["protocol/*.md"]
