@@ -46,7 +46,8 @@ def inline(text: str) -> str:
         target = m.group(2)
         aspect = CODES.get(target[1:]) if target.startswith("#") else None
         glyph = signal_svg(aspect) if aspect else ""
-        return f'<a href="{html.escape(target)}"{" class=\"code-link\"" if aspect else ""}>{glyph}{m.group(1)}</a>'
+        label = f"<code>{m.group(1)}</code>" if aspect else m.group(1)  # a stop code is machine text
+        return f'<a href="{html.escape(target)}"{" class=\"code-link\"" if aspect else ""}>{glyph}{label}</a>'
 
     text = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", link, text)
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
