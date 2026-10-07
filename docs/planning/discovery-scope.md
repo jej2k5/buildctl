@@ -97,9 +97,9 @@ The agent never writes `build.yaml` or a phase prompt. It calls tools that appen
 ### Rules carried over from buildctl and agent-event-bridge
 
 - **Role is pinned at launch, not passed as a tool argument.** `buildctl-discover serve --role operator` registers the operator tools; the default role does not. An owner's agent cannot call itself the operator. agent-event-bridge pins identity the same way.
-- **The session lives outside the repo,** under `$XDG_STATE_HOME/buildctl-discover/<hash>`, like buildctl state. It is an append-only, hash-chained log, so it is restart-honest and auditable.
+- **The session lives outside the repo,** under `$XDG_STATE_HOME/buildctl-discover/<hash>`, like buildctl state. Decided 2026-10-07: the record is one append-only, hash-chained JSONL file per session, reusing the kernel's `AuditChain` (tamper-evident, not a compliance ledger). State is rebuilt by replaying events, and a lock file serializes writers, so it is restart-honest and readable by eye.
 - **Every decision records who made it.** When the owner and the operator are different people, the operator can see which requirements came from whom.
-- **`buildctl-discover` is its own distribution.** It may depend on the MCP SDK. The buildctl kernel stays dependency-free and outside this package's reach, apart from calling `buildctl validate`.
+- **`buildctl-discover` is its own distribution,** under `discover/` in this repo, packaged like `ui/` (`dependencies = ["buildctl", ...]`). It may depend on the MCP SDK. The buildctl kernel stays dependency-free and outside this package's reach, apart from calling `buildctl validate`.
 
 ## The flow
 
