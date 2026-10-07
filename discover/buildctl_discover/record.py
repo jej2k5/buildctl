@@ -448,6 +448,13 @@ class Session:
 
         def fn(state: State) -> tuple[str, dict[str, Any], Any]:
             state.phase(phase_id)
+            marks = state.milestones
+            if marks:
+                uses = [f"milestone {name}" for name, ident in marks["milestones"].items() if ident == phase_id]
+                uses += ["a checkpoint"] if phase_id in marks["checkpoints_before"] else []
+                uses += ["the MVP cut"] if marks["mvp_completion"] == phase_id else []
+                if uses:
+                    raise RecordError(f"{phase_id} is {', '.join(uses)}; call set_milestones without it first")
             return "phase_withdrawn", {"id": phase_id, "reason": reason, "by": by.as_dict()}, None
         self._mutate(fn)
 

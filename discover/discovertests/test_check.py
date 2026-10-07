@@ -70,6 +70,11 @@ class Gate(GateCase):
         self.review()
         self.assertTrue(self.run_check()["passed"])
 
+    def test_citing_a_deferred_decision_fails(self):
+        self.session.defer_decision(self.decision, "after the MVP", OPERATOR)
+        self.review()
+        self.assertEqual(self.rules(self.run_check()), ["citation"])
+
     def test_a_phase_on_default_acceptance_alone_fails(self):
         self.session.propose_phase("Docs", "Write docs.", OWNER, implements=[self.decision])
         self.review()

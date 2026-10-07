@@ -97,6 +97,20 @@ class Finalize(unittest.TestCase):
                 finalize(session, self.repo, self.digest()[:8], OPERATOR)
         self.assertFalse((self.repo / "build.yaml").exists())
 
+    def test_a_running_build_blocks_finalize(self):
+        session = self.interview()
+        (self.state_dir / "buildctl").mkdir(parents=True)
+        (self.state_dir / "buildctl/state.json").write_text('{"schema_version": 2, "status": "running"}')
+        with self.assertRaisesRegex(RecordError, "running"):
+            finalize(session, self.repo, self.digest()[:8], OPERATOR)
+
+    def test_render_repairs_a_stale_proposal(self):
+        session = self.interview()
+        (session.proposal_dir / "docs/ROADMAP.md").write_text("edited\n")
+        self.assertEqual(self.cli("check")[0], 1)
+        self.assertEqual(self.cli("render")[0], 0)
+        self.assertEqual(self.cli("check")[0], 0)
+
     def test_uncommitted_changes_to_target_paths_block_finalize(self):
         session = self.interview()
         (self.repo / "build.yaml").write_text("{}\n")

@@ -137,8 +137,10 @@ class Server:
         return check(self.session.state(), self.repo, read_proposal(self.session.proposal_dir))
 
     def refresh(self) -> str:
-        files = render(self.session.state())
-        write_proposal(self.session.proposal_dir, files)
+        # Under the session lock, so an owner and an operator server cannot interleave renders.
+        with self.session.lock():
+            files = render(self.session.state())
+            write_proposal(self.session.proposal_dir, files)
         return digest(files)
 
     # JSON-RPC

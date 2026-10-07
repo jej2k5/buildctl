@@ -101,6 +101,9 @@ def check(state: State, repo: Path, on_disk: dict[str, bytes]) -> dict[str, Any]
             decision = state.decisions.get(ident)
             if decision is None:
                 fail("citation", f"Phase {number} ({item['id']}) cites unknown {ident}.", item["id"])
+            elif decision["deferred"]:
+                fail("citation", f"Phase {number} ({item['id']}) cites {ident}, which is deferred out of this "
+                     "roadmap.", item["id"], ident)
             elif decision["superseded_by"]:
                 fail("citation", f"Phase {number} ({item['id']}) cites {ident}, which {decision['superseded_by']} "
                      "superseded.", item["id"], ident)

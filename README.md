@@ -17,6 +17,7 @@ buildctl owns the state, the git history and the budget. Agents never touch any 
 ```sh
 pip install -e /path/to/buildctl            # the supervisor
 pip install -e '/path/to/buildctl/ui[tui]'  # optional: the console and terminal UI
+pip install -e /path/to/buildctl/discover   # optional: discovery that drafts the roadmap
 ```
 
 ## Quick start
@@ -38,6 +39,26 @@ Writing `build.yaml` and phase prompts is covered in the manual's [Writing a roa
 
 `buildctl-ui` opens a local web console over your build, and `buildctl-ui tui` the same in the terminal. `buildctl-ui --demo` shows a synthetic build without spending anything.
 
+
+## Discovery
+
+`buildctl-discover` drafts the roadmap for you. Anyone with the requirements talks to an agent they already use (Claude Code, Codex, Gemini CLI, Claude Desktop); the agent records each decision, proposes phases with acceptance contracts, and asks for a roadmap review, all through MCP tools. The proposal files are rendered from that record, never written by hand. You, the operator, finalize it into the working tree, then commit and trust it as usual. Discovery never commits and never trusts.
+
+```sh
+buildctl-discover start                    # in the repository; you are the operator
+buildctl-discover check                    # the gate: buildctl validate plus discovery's rules
+buildctl-discover status                   # shows the proposal digest
+buildctl-discover finalize --confirm <first 8+ characters of the digest>
+```
+
+Point the agent at the server. For Claude Code, in `.mcp.json` or with `--mcp-config`:
+
+```json
+{"mcpServers": {"discover": {"command": "buildctl-discover",
+  "args": ["--repo", "/path/to/repo", "--as", "Sam", "serve"]}}}
+```
+
+`serve` runs as the requirements owner; `serve --role operator` also allows accepting risks. The agent should load the server's `discovery_interview` prompt first. The design and its reasoning are in [`docs/planning/discovery-scope.md`](docs/planning/discovery-scope.md).
 ## Development
 
 ```sh

@@ -3,6 +3,7 @@
   start      the operator opens a session (base: the repo's build.yaml, or a built-in default)
   serve      the MCP server an agent runs the interview through
   status     what the record holds and the proposal digest
+  render     re-render the proposal from the record
   check      the deterministic gate; exits 1 while anything fails
   finalize   the operator copies a passing proposal into the working tree
 """
@@ -46,6 +47,7 @@ def parser() -> argparse.ArgumentParser:
     serve.add_argument("--role", choices=("owner", "operator"), default="owner",
                        help="pinned for the whole server; operator unlocks accept_risk (default: owner)")
     commands.add_parser("status", help="the record and the proposal digest")
+    commands.add_parser("render", help="re-render the proposal from the record")
     commands.add_parser("check", help="run the gate")
     final = commands.add_parser("finalize", help="copy a passing proposal into the working tree")
     final.add_argument("--confirm", required=True, help="the first 8 or more characters of the proposal digest")
@@ -97,6 +99,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "status":
             return status(session, repo)
+        if args.command == "render":
+            with session.lock():
+                files = render(session.state())
+                write_proposal(session.proposal_dir, files)
+            print(f"Rendered {len(files)} files to {session.proposal_dir}")
+            return 0
         if args.command == "check":
             result = check(session.state(), repo, read_proposal(session.proposal_dir))
             for failure in result["failures"]:

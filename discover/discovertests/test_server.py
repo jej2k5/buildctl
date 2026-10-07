@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from buildctl_discover.record import BUILTIN_BASE
-from buildctl_discover.render import digest, read_proposal
+from buildctl_discover.render import digest, read_proposal, render
 from buildctl_discover.server import Server
 
 from .fakes import reviewer
@@ -70,6 +70,23 @@ class Mcp(unittest.TestCase):
         self.assertEqual(result["id"], "D-1")
         self.assertEqual(self.session.state().decisions["D-1"]["by"], OWNER.as_dict())
         self.assertEqual(result["proposal_digest"], digest(read_proposal(self.session.proposal_dir)))
+
+    def test_two_servers_on_one_session_leave_a_consistent_proposal(self):
+        import threading
+        operator = Server(self.session, Path(self.temporary.name), OPERATOR)
+
+        def talk(server, prefix):
+            for number in range(15):
+                server.handle({"jsonrpc": "2.0", "id": number, "method": "tools/call", "params": {
+                    "name": "record_decision", "arguments": {"text": f"{prefix} {number}"}}})
+        threads = [threading.Thread(target=talk, args=(server, prefix))
+                   for server, prefix in ((self.server, "owner"), (operator, "operator"))]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len(self.session.state().decisions), 30)
+        self.assertEqual(read_proposal(self.session.proposal_dir), render(self.session.state()))
 
     def test_record_errors_come_back_as_tool_errors(self):
         failed, text = self.call("record_decision", text="x", supersedes="D-9")

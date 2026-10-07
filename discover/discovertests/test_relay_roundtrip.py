@@ -46,6 +46,16 @@ class RelayRoundTrip(unittest.TestCase):
         self.assertEqual(phase["allowed_paths"], ["docs/constitution/", "docs/HANDOFF_PHASE_0.md"])
         self.assertIn("phase0_gate", phase["commands"][0][2])
 
+    def test_withdrawing_a_checkpoint_phase_is_refused_and_leaves_render_working(self):
+        from buildctl_discover.record import RecordError
+        from .helpers import OWNER
+        with self.assertRaisesRegex(RecordError, "checkpoint"):
+            self.session.withdraw_phase(self.ids[6], "not needed", OWNER)
+        self.session.withdraw_phase(self.ids[7], "folded into phase 6", OWNER)
+        rendered = config(self.session.state())
+        self.assertEqual(rendered["checkpoints"]["before_phases"], [0, 6, 13, 14])
+        self.assertEqual(len(rendered["phases"]), 23)
+
     def test_rendered_prose_has_no_em_dashes(self):
         for path, content in render(self.state).items():
             if path != "build.yaml":
