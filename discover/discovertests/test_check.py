@@ -13,8 +13,8 @@ from .helpers import OPERATOR, OWNER, session
 REVIEWER = {"vendor": "test", "command": ["fake"]}
 
 
-class Gate(unittest.TestCase):
-    """A small proposal that passes, then each rule broken on its own."""
+class GateCase(unittest.TestCase):
+    """A small proposal that passes once reviewed. Shared setup, no tests."""
 
     def setUp(self):
         self.temporary, self.session = session(BUILTIN_BASE)
@@ -39,6 +39,11 @@ class Gate(unittest.TestCase):
 
     def rules(self, result):
         return sorted({item["rule"] for item in result["failures"]})
+
+
+
+class Gate(GateCase):
+    """Each rule broken on its own."""
 
     def test_a_complete_reviewed_proposal_passes(self):
         self.review()
