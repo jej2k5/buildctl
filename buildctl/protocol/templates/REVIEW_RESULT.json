@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "protocol_version": "buildctl-review-v2",
+  "governance_sha": "<40-hex-sha>",
+  "snapshot_digest": "<sha256>",
+  "base_sha": "<40-hex-sha>",
+  "phase": 0,
+  "delta_id": "<sha256>",
+  "evidence_digest": "<sha256>",
+  "reviewer": {"vendor": "", "model": "", "prompt_lineage": "", "execution_boundary": ""},
+  "attempt": 1,
+  "verdict": "REMEDIATE",
+  "findings": [
+    {"id": "f1", "severity": "HIGH", "kind": "correctness", "path": "<path>", "line": 1,
+     "claim_key": "<short-stable-slug>", "claim": "<what is wrong>", "rationale": "<why>",
+     "required_change": "<what to do>", "evidence_digest": "<digest of that path from the coverage obligation>",
+     "violated_invariant": "<invariant>", "treatment": "fix", "status": "open"}
+  ],
+  "coverage": [
+    {"path": "<added-or-modified-path>", "digest": "<sha256>", "change_type": "added",
+     "disposition": "clear", "finding_refs": [], "unreviewed": false},
+    {"path": "<path-with-findings>", "digest": "<sha256>", "change_type": "modified",
+     "disposition": "finding_refs", "finding_refs": ["f1"], "unreviewed": false},
+    {"path": "<deleted-path>", "digest": "DELETED", "change_type": "deleted",
+     "disposition": "deletion_acknowledged", "finding_refs": [], "unreviewed": false}
+  ]
+}

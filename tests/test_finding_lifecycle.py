@@ -28,11 +28,11 @@ from buildctl.supervisor.review import (CLOSED_FINDING_STATUSES, DEFERRED_STATUS
                                      open_finding_obligations, reduce_review,
                                      realign_findings_to_delta, stable_finding_id)
 
-TARGET = Path(__file__).resolve().parent / "fixtures" / "target"
+from buildctl.supervisor.protocol import PROTOCOL_ROOT
 
 POLICY = {"max_remediation_attempts": 2, "debate_enabled": True, "max_debate_attempts": 1}
 FRESH = {"remediation": 0, "debate": 0}
-PROMPT = TARGET / "prompts" / "reviews" / "claude-adversarial-review.md"
+PROMPT = PROTOCOL_ROOT / "prompts" / "review.md"
 
 
 def finding(path="src/x.py", claim_key="k", severity="HIGH", status="open", **extra):

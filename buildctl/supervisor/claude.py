@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .agents import RoleRunner, TRUSTED_PREAMBLE, untrusted
+from .protocol import context_documents, contract, prompt as protocol_prompt
 from .review import (CLEAN_COVERAGE_DISPOSITION, COVERAGE_DISPOSITIONS, COVERAGE_RECORD_KEYS,
                      DELETED_COVERAGE_DISPOSITION, FINDING_COVERAGE_DISPOSITION,
                      REVIEW_PROTOCOL_VERSION)
@@ -15,14 +16,11 @@ class ClaudeAdapter:
         self.role_runner, self.snapshot = role_runner, snapshot
 
     def build_prompt(self, phase: Any, evidence: dict[str, Any], phase_result: dict[str, Any]) -> str:
-        policy = (self.snapshot / "prompts/reviews/claude-adversarial-review.md").read_text()
-        configured = self.role_runner.config["roles"]["reviewer"].get("protocol_version")
-        if configured != REVIEW_PROTOCOL_VERSION or f"Protocol version: `{REVIEW_PROTOCOL_VERSION}`" not in policy:
+        config = self.role_runner.config
+        if config["roles"]["reviewer"].get("protocol_version") != REVIEW_PROTOCOL_VERSION:
             raise RuntimeError("incompatible pinned reviewer protocol")
-        contract = (self.snapshot / "templates/REVIEW_RESULT.json").read_text()
-        architecture = "\n\n".join((self.snapshot / path).read_text() for path in (
-            "docs/ARCHITECTURE_PRINCIPLES.md", "docs/HEADLESS_AGENT_CONTRACT.md",
-            "docs/DISCOVERY_DECISIONS.md", "docs/PRODUCT_THESIS.md"))
+        policy = protocol_prompt(config, "review", self.snapshot)
+        architecture = context_documents(config, self.snapshot)
         prompt = TRUSTED_PREAMBLE + "\n" + policy + "\nReview actual evidence; implementer claims are supplementary."
         prompt += untrusted("phase_prompt", phase.prompt.read_text())
         prompt += untrusted("architecture_docs", architecture)
@@ -48,7 +46,7 @@ class ClaudeAdapter:
         prompt += untrusted("gate_artifacts", json.dumps(evidence["gates"], indent=2))
         prompt += untrusted("relevant_tests", evidence["tests"])
         prompt += untrusted("implementer_claims", json.dumps(phase_result, indent=2))
-        return prompt + "\nPINNED OUTPUT CONTRACT\n" + contract
+        return prompt + "\nPINNED OUTPUT CONTRACT\n" + contract("REVIEW_RESULT")
 
     def review(self, phase: Any, evidence: dict[str, Any], phase_result: dict[str, Any],
                output: Path, timeout: float) -> dict[str, Any]:

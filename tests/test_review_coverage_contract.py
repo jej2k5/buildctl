@@ -16,9 +16,9 @@ from buildctl.supervisor.review import (CLEAN_COVERAGE_DISPOSITION, COVERAGE_DIS
                                      validate_review)
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = Path(__file__).resolve().parent / "fixtures" / "target"
-PROMPT = TARGET / "prompts/reviews/claude-adversarial-review.md"
-CONTRACT = TARGET / "templates/REVIEW_RESULT.json"
+from buildctl.supervisor.protocol import PROTOCOL_ROOT
+PROMPT = PROTOCOL_ROOT / "prompts" / "review.md"
+CONTRACT = PROTOCOL_ROOT / "templates" / "REVIEW_RESULT.json"
 ADDED, DELETED = "c" * 64, "d" * 64
 REVIEWER = {"vendor": "anthropic", "model": "claude", "prompt_lineage": "factory-v2",
             "execution_boundary": "macos-sandbox-exec-v2-deny-default"}

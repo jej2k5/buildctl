@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .agents import AgentError, RoleRunner, TRUSTED_PREAMBLE, load_structured, untrusted
+from .protocol import contract, prompt as protocol_prompt
 
 
 class CodexAdapter:
@@ -14,16 +15,15 @@ class CodexAdapter:
     def prompt(self, phase: Any, review: str | None = None, adr: str | None = None) -> str:
         acceptance = json.dumps({"required_files": phase.required_files, "commands": phase.commands,
                                  "invariants": phase.invariants, "allowed_paths": phase.allowed_paths}, indent=2)
-        contract = (self.snapshot / "templates/PHASE_RESULT.json").read_text()
         result = TRUSTED_PREAMBLE + "\nImplement only the requested phase and return the pinned PHASE_RESULT contract."
         if review or adr:
-            result += "\n" + (self.snapshot / "prompts/remediation/codex-remediation.md").read_text()
+            result += "\n" + protocol_prompt(self.role_runner.config, "remediation", self.snapshot)
         result += untrusted("phase_prompt", phase.prompt.read_text()) + untrusted("acceptance_contract", acceptance)
         if review:
             result += untrusted("review_findings", review)
         if adr:
             result += untrusted("accepted_adr_data", adr)
-        return result + "\nPINNED OUTPUT CONTRACT\n" + contract
+        return result + "\nPINNED OUTPUT CONTRACT\n" + contract("PHASE_RESULT")
 
     def implement(self, phase: Any, output: Path, timeout: float, review: str | None = None,
                   adr: str | None = None) -> dict[str, Any]:

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .agents import AgentError, RoleRunner, TRUSTED_PREAMBLE, load_structured, untrusted
+from .protocol import contract
 from .safety import redact
 
 
@@ -25,14 +26,13 @@ class DebateAdapter:
                                            "evidence_digest": evidence["digest"], "delta_id": evidence["delta_id"],
                                            "governance_sha": evidence["governance_sha"],
                                            "base_sha": evidence["base_sha"],
-                                           "output_contract": "templates/DEBATE_RESULT.json",
+                                           "output_contract": json.loads(contract("DEBATE_RESULT")),
                                            "output_path": str(output)}, indent=2) + "\n")
             raise AgentError("INTERACTIVE_DEBATE_REQUIRES_HUMAN")
-        contract = (self.snapshot / "templates/DEBATE_RESULT.json").read_text()
         prompt = TRUSTED_PREAMBLE + "\nResolve only the typed strategic findings."
         prompt += untrusted("strategic_findings", json.dumps(findings, indent=2))
         prompt += untrusted("evidence", json.dumps(evidence, indent=2))
-        prompt += "\nPINNED OUTPUT CONTRACT\n" + contract
+        prompt += "\nPINNED OUTPUT CONTRACT\n" + contract("DEBATE_RESULT")
         return self.role_runner.run("arbiter", prompt, output, timeout)
 
 

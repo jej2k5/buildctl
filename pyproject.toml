@@ -17,3 +17,6 @@ include = ["buildctl*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "buildctl.__version__"}
+
+[tool.setuptools.package-data]
+buildctl = ["protocol/prompts/*.md", "protocol/templates/*.json"]

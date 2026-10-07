@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .governance import is_governance_path
 from .safety import ensure_safe_relative
 from .operations import PAID_OPERATION_IDS
 from .review import REVIEW_PROTOCOL_VERSION
@@ -119,11 +120,53 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
             raise ConfigurationError("reviewer must be non-persistent and tool-restricted")
         if any(tool in command_text for tool in forbidden):
             raise ConfigurationError("reviewer command contains a mutation capability")
+    validate_governed_inputs(config, root)
     costs = config.get("operation_cost_usd")
     if not isinstance(costs, dict) or set(costs) != PAID_OPERATION_IDS:
         raise ConfigurationError("operation_cost_usd must define exactly every paid operation")
     if any(not isinstance(value, (int, float)) or value < 0 for value in costs.values()):
         raise ConfigurationError("operation costs must be explicit non-negative numbers")
+
+
+def _governed_file(root: Path, path: Any, documents: tuple[str, ...], what: str) -> None:
+    if not isinstance(path, str) or not path:
+        raise ConfigurationError(f"{what} must be a non-empty path")
+    try:
+        target = ensure_safe_relative(root, path)
+    except ValueError as exc:
+        raise ConfigurationError(f"{what} is not a safe relative path: {path}") from exc
+    if not is_governance_path(path, documents):
+        # Only governed paths are copied into the trusted snapshot. Anything else would be
+        # read from nowhere, or worse, from the agent-writable worktree.
+        raise ConfigurationError(f"{what} must be a governed path (under prompts/ or listed in "
+                                 f"governance_documents): {path}")
+    if not target.is_file():
+        raise ConfigurationError(f"{what} not found: {path}")
+
+
+def validate_governed_inputs(config: dict[str, Any], root: Path) -> None:
+    """Repository-supplied inputs the kernel reads: governance documents, reviewer context and
+    prompt overrides. Each must be governed, so trust init pins its bytes."""
+    documents = config.get("governance_documents")
+    if not isinstance(documents, list):
+        raise ConfigurationError("governance_documents must be declared as a list of paths "
+                                 "(it may be empty)")
+    for path in documents:
+        if not isinstance(path, str) or not path or path.endswith("/"):
+            raise ConfigurationError(f"governance_documents entries must be file paths: {path!r}")
+    documents = tuple(documents)
+    for path in documents:
+        _governed_file(root, path, documents, "governance document")
+    reviewer = config["roles"]["reviewer"]
+    context = reviewer.get("context_documents")
+    if not isinstance(context, list):
+        raise ConfigurationError("roles.reviewer.context_documents must be declared as a list of "
+                                 "paths (it may be empty)")
+    for path in context:
+        _governed_file(root, path, documents, "reviewer context document")
+    for role, key in (("reviewer", "review_prompt"), ("implementer", "remediation_prompt")):
+        if key in config["roles"][role]:
+            _governed_file(root, config["roles"][role][key], documents, f"roles.{role}.{key}")
 
 
 def merged_metadata(defaults: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:

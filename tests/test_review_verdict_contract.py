@@ -20,9 +20,9 @@ from pathlib import Path
 from buildctl.supervisor.review import reduce_review
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = Path(__file__).resolve().parent / "fixtures" / "target"
-TEMPLATE = TARGET / "templates" / "REVIEW_RESULT.json"
-PROMPT = TARGET / "prompts" / "reviews" / "claude-adversarial-review.md"
+from buildctl.supervisor.protocol import PROTOCOL_ROOT
+TEMPLATE = PROTOCOL_ROOT / "templates" / "REVIEW_RESULT.json"
+PROMPT = PROTOCOL_ROOT / "prompts" / "review.md"
 
 POLICY = {"max_remediation_attempts": 2, "debate_enabled": True, "max_debate_attempts": 1}
 FRESH = {"remediation": 0, "debate": 0}

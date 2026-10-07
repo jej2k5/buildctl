@@ -9,18 +9,11 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
+from .governance import GOVERNANCE_PATHS, is_governance_path
 from .kernel import kernel_identity
 from .phases import load_config_text
 
 
-# Paths inside the governed repository. The supervisor itself is not among them: it is an
-# installed package, pinned separately by the kernel identity recorded in the anchor.
-GOVERNANCE_PATHS = (
-    "build.yaml", "AGENTS.md", "CLAUDE.md",
-    "prompts/", "templates/", "docs/ARCHITECTURE_PRINCIPLES.md",
-    "docs/HEADLESS_AGENT_CONTRACT.md", "docs/DISCOVERY_DECISIONS.md",
-    "docs/PRODUCT_THESIS.md", "docs/ROADMAP.md",
-)
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -56,9 +49,19 @@ class TrustStore:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
 
         files = self._git("ls-tree", "-r", "--name-only", sha).stdout.splitlines()
-        governed = [path for path in files if self.is_governance_path(path)]
-        if "build.yaml" not in governed:
+        if "build.yaml" not in files:
             raise TrustError("trusted commit does not contain build.yaml")
+        # The governed set depends on the commit's own build.yaml, which is read here only to
+        # learn its declared documents; it is validated in full against the staged snapshot.
+        try:
+            declared = json.loads(self._git("show", f"{sha}:build.yaml").stdout)
+        except ValueError as exc:
+            raise TrustError(f"trusted build.yaml is not valid JSON: {exc}") from exc
+        raw = declared.get("governance_documents", []) if isinstance(declared, dict) else []
+        if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+            raise TrustError("governance_documents must be a list of paths")
+        documents = tuple(raw)
+        governed = [path for path in files if is_governance_path(path, documents)]
 
         staging = self.root / f".snapshot-staging-{sha}"
         if staging.exists():
@@ -185,5 +188,5 @@ class TrustStore:
         return load_config_text((self.snapshot / "build.yaml").read_text(), self.snapshot)
 
     @staticmethod
-    def is_governance_path(path: str) -> bool:
-        return any(path == prefix or (prefix.endswith("/") and path.startswith(prefix)) for prefix in GOVERNANCE_PATHS)
+    def is_governance_path(path: str, documents: tuple[str, ...] | list[str] = ()) -> bool:
+        return is_governance_path(path, documents)

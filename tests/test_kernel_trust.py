@@ -22,7 +22,7 @@ from buildctl.supervisor.trust import TrustError, TrustStore
 from tests.helpers import git
 
 
-CONFIG = {"limits": {"max_phase_attempts": 1, "max_review_format_attempts": 1, "max_semantic_review_attempts": 1,
+CONFIG = {"governance_documents": [], "limits": {"max_phase_attempts": 1, "max_review_format_attempts": 1, "max_semantic_review_attempts": 1,
                      "max_debate_rounds": 1, "max_phase_minutes": 1, "max_daily_cost_usd": 1,
                      "max_consecutive_failures": 1},
           "operation_cost_usd": {"implementation": 1, "review": 1, "remediation": 1, "debate": 1},
@@ -33,7 +33,7 @@ CONFIG = {"limits": {"max_phase_attempts": 1, "max_review_format_attempts": 1, "
                              "max_remediation_attempts": 1, "merge_policy": "human", "allowed_paths": ["src/"]},
           "roles": {"implementer": {"command": ["true"], "network": False, "auth_mode": "none", "credential_env": []},
                     "reviewer": {"command": ["true"], "network": False, "auth_mode": "none", "credential_env": [],
-                                 "protocol_version": "buildctl-review-v2"},
+                                 "protocol_version": "buildctl-review-v2", "context_documents": []},
                     "arbiter": {"command": ["true"], "network": False, "auth_mode": "none", "credential_env": []}},
           "phases": [{"number": 0, "name": "p", "prompt": "prompts/phases/p.md"}]}
 

@@ -17,8 +17,8 @@ from buildctl.supervisor.review import (FINDING_IDENTITY_FIELDS, REVIEW_PROTOCOL
                                      stable_finding_id, validate_review)
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = Path(__file__).resolve().parent / "fixtures" / "target"
-PROMPT = TARGET / "prompts/reviews/claude-adversarial-review.md"
+from buildctl.supervisor.protocol import PROTOCOL_ROOT
+PROMPT = PROTOCOL_ROOT / "prompts" / "review.md"
 
 # The exact values from the failing Phase 0 review.
 REAL_PATH = "docs/constitution/adr-conventions.md"
@@ -184,7 +184,7 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("short local label", text)
 
     def test_pinned_contract_shows_a_label_not_a_hash(self):
-        contract = json.loads((TARGET / "templates/REVIEW_RESULT.json").read_text())
+        contract = json.loads((PROTOCOL_ROOT / "templates" / "REVIEW_RESULT.json").read_text())
         self.assertEqual(contract["findings"][0]["id"], "f1")
         self.assertIn("f1", contract["coverage"][1]["finding_refs"])
 

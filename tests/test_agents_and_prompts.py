@@ -19,13 +19,17 @@ class AgentAndPromptTests(unittest.TestCase):
             (root/"prompts/reviews/claude-adversarial-review.md").write_text("Protocol version: `buildctl-review-v2`\nTRUSTED POLICY")
             for name in ("ARCHITECTURE_PRINCIPLES.md","HEADLESS_AGENT_CONTRACT.md","DISCOVERY_DECISIONS.md","PRODUCT_THESIS.md"):(root/"docs"/name).write_text("ARCH")
             phase_prompt=root/"phase.md"; phase_prompt.write_text("UNTRUSTED PHASE")
-            config={"roles":{"reviewer":{"command":["true"],"protocol_version":"buildctl-review-v2"}}}; context=IsolationContext("reviewer",root,root/"control",root/"repo")
+            config={"roles":{"reviewer":{"command":["true"],"protocol_version":"buildctl-review-v2",
+                                         "review_prompt":"prompts/reviews/claude-adversarial-review.md",
+                                         "context_documents":["docs/ARCHITECTURE_PRINCIPLES.md","docs/PRODUCT_THESIS.md"]}}}
+            context=IsolationContext("reviewer",root,root/"control",root/"repo")
             adapter=ClaudeAdapter(RoleRunner(config,FakeIsolationBackend(),context),root)
             phase=SimpleNamespace(prompt=phase_prompt)
             evidence={"delta_id":"d","digest":"d","diff":"+ actual_code = 1","coverage":[],"changed_files":[{"path":"src/a.py","content":"actual_code = 1"}],"gates":{"passed":True},"tests":"assert actual_code"}
             prompt=adapter.build_prompt(phase,evidence,{"summary":"self report only"})
             self.assertIn("+ actual_code = 1",prompt); self.assertIn("assert actual_code",prompt); self.assertIn("ARCH",prompt)
             self.assertIn("implementer_claims",prompt); self.assertIn(TRUSTED_PREAMBLE,prompt)
+            self.assertIn("TRUSTED POLICY",prompt)
 
     def test_malformed_and_missing_agent_output(self):
         with tempfile.TemporaryDirectory() as directory:

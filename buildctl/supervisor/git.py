@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 from .safety import (UnsafeCleanup, ensure_safe_relative, matches_secret_pattern, purge_ephemeral_artifacts,
                      secret_shaped)
-from .trust import TrustStore
+from .governance import governance_documents, is_governance_path
 
 
 class GitSafetyError(RuntimeError):
@@ -110,7 +110,7 @@ class GitManager:
         deleted = sorted(path for path in before if path not in after)
         all_changes = changed + deleted
         for path in all_changes:
-            if TrustStore.is_governance_path(path):
+            if is_governance_path(path, governance_documents(self.config)):
                 raise GitSafetyError(f"agent modified governance path: {path}")
             if not any(path.startswith(prefix) if prefix.endswith("/") else path == prefix
                        for prefix in allowed_paths):
