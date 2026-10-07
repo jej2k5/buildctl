@@ -43,6 +43,7 @@ Writing `build.yaml` and phase prompts is covered in the manual's [Writing a roa
 ```sh
 python3 -m unittest discover -s tests -t .
 PYTHONPATH=ui python3 -m unittest discover -s ui/uitests -t ui   # the console and the manual
+PYTHONPATH=.:discover python3 -m unittest discover -s discover/discovertests -t discover   # buildctl-discover
 python3 docs/build.py                                            # after editing docs/*.md
 ```
 

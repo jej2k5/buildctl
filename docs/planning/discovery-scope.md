@@ -1,6 +1,6 @@
 # Scope: discovery that produces a buildctl roadmap
 
-Status: proposal, 2026-10-07. Nothing here is built. All four scoping decisions are made; next is v1.
+Status: v1 built 2026-10-07 under `discover/` (record, render, check, roadmap review, MCP server, CLI, finalize). v2 (amendment mode) and v3 (console view) are not built.
 
 Decided 2026-10-07: discovery is **general purpose**. Anyone who wants buildctl to build something uses it to produce the phase documents buildctl executes. It is not tied to one founder or to HONA client work.
 
@@ -91,15 +91,17 @@ The agent never writes `build.yaml` or a phase prompt. It calls tools that appen
 | `render` | any | Writes the proposal into its own directory, outside the repo. |
 | `request_review` | any | Runs the roadmap review and appends its findings to the record. |
 | `accept_risk` | operator | Marks an open question as an accepted risk. |
-| `finalize` | operator | Runs `check`, then copies the proposal into the working tree, but only if buildctl holds no lock and the build is not running. It never commits. |
 | `read_trusted_roadmap`, `read_handoffs` | any | Amendment mode: the current trusted roadmap and each handoff's known debt and next action. |
 
 ### Rules carried over from buildctl and agent-event-bridge
 
+- **`finalize` is CLI-only** (decided while building v1). It is the one step that writes into the governed repository. An agent calling it over MCP would be the ceremony-as-theater PRODUCT.md rules out, so the operator runs `buildctl-discover finalize --confirm <digest prefix>`, the same shape as `buildctl trust init --confirm`. It runs `check`, refuses while buildctl holds its lock or records a running build, refuses when target paths have uncommitted changes, copies the files and never commits.
+- **Acceptance says `add` or `set`.** buildctl replaces a default when a phase names the key, so each list in the record is `{"add": [...]}` (extend the defaults) or `{"set": [...]}` (replace them). Render always keeps the per-phase handoff file.
+- **Accepted risks render to their own file,** `docs/DISCOVERY_RISKS.md`. The roadmap review covers every file except that one, so accepting a risk does not make the review stale.
 - **Role is pinned at launch, not passed as a tool argument.** `buildctl-discover serve --role operator` registers the operator tools; the default role does not. An owner's agent cannot call itself the operator. agent-event-bridge pins identity the same way.
 - **The session lives outside the repo,** under `$XDG_STATE_HOME/buildctl-discover/<hash>`, like buildctl state. Decided 2026-10-07: the record is one append-only, hash-chained JSONL file per session, reusing the kernel's `AuditChain` (tamper-evident, not a compliance ledger). State is rebuilt by replaying events, and a lock file serializes writers, so it is restart-honest and readable by eye.
 - **Every decision records who made it.** When the owner and the operator are different people, the operator can see which requirements came from whom.
-- **`buildctl-discover` is its own distribution,** under `discover/` in this repo, packaged like `ui/` (`dependencies = ["buildctl", ...]`). It may depend on the MCP SDK. The buildctl kernel stays dependency-free and outside this package's reach, apart from calling `buildctl validate`.
+- **`buildctl-discover` is its own distribution,** under `discover/` in this repo, packaged like `ui/` (`dependencies = ["buildctl"]`). The MCP server is written on the standard library (newline-delimited JSON-RPC over stdio), so the package needs no MCP SDK and its tests run on the standard library, like the kernel's. The buildctl kernel stays dependency-free and outside this package's reach, apart from calling `buildctl validate`.
 
 ## The flow
 
