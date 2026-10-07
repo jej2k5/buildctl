@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "buildctl"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Deterministic, restart-safe supervisor for agent-built software phases"
 requires-python = ">=3.11"
 dependencies = []
@@ -14,3 +14,6 @@ buildctl = "buildctl.buildctl:main"
 
 [tool.setuptools.packages.find]
 include = ["buildctl*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "buildctl.__version__"}

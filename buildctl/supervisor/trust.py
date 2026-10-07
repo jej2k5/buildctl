@@ -9,12 +9,15 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
+from .kernel import kernel_identity
 from .phases import load_config_text
 
 
+# Paths inside the governed repository. The supervisor itself is not among them: it is an
+# installed package, pinned separately by the kernel identity recorded in the anchor.
 GOVERNANCE_PATHS = (
-    "build.yaml", "buildctl", "AGENTS.md", "CLAUDE.md",
-    "build/", "prompts/", "templates/", "docs/ARCHITECTURE_PRINCIPLES.md",
+    "build.yaml", "AGENTS.md", "CLAUDE.md",
+    "prompts/", "templates/", "docs/ARCHITECTURE_PRINCIPLES.md",
     "docs/HEADLESS_AGENT_CONTRACT.md", "docs/DISCOVERY_DECISIONS.md",
     "docs/PRODUCT_THESIS.md", "docs/ROADMAP.md",
 )
@@ -54,8 +57,8 @@ class TrustStore:
 
         files = self._git("ls-tree", "-r", "--name-only", sha).stdout.splitlines()
         governed = [path for path in files if self.is_governance_path(path)]
-        if "build.yaml" not in governed or "build/buildctl.py" not in governed:
-            raise TrustError("trusted commit does not contain the factory kernel")
+        if "build.yaml" not in governed:
+            raise TrustError("trusted commit does not contain build.yaml")
 
         staging = self.root / f".snapshot-staging-{sha}"
         if staging.exists():
@@ -102,6 +105,7 @@ class TrustStore:
                 "snapshot_digest": digest,
                 "manifest": manifest,
                 "executables": executables,
+                "kernel": kernel_identity(),
             }
 
             previous_snapshot = self.root / ".snapshot-previous"
@@ -156,7 +160,24 @@ class TrustStore:
         digest = sha256_bytes(json.dumps(anchor["manifest"], sort_keys=True).encode())
         if digest != anchor["snapshot_digest"]:
             raise TrustError("trusted manifest digest mismatch")
+        self._verify_kernel(anchor)
         return anchor
+
+    @staticmethod
+    def _verify_kernel(anchor: dict[str, Any]) -> None:
+        """Refuse to run under a supervisor other than the one the operator trusted.
+
+        The governance SHA pins the repository's rules, but the code enforcing them is
+        installed separately. Upgrading, editing or reinstalling the package changes the
+        enforcer, so it requires the same explicit `trust init` a governance change does.
+        """
+        pinned = anchor.get("kernel")
+        if not isinstance(pinned, dict) or not isinstance(pinned.get("digest"), str):
+            raise TrustError("trust anchor predates kernel pinning; re-run trust init with an exact commit SHA")
+        current = kernel_identity()
+        if current["digest"] != pinned["digest"]:
+            raise TrustError(f"supervisor kernel changed since trust init (trusted {pinned.get('version')}, "
+                             f"running {current['version']}); re-run trust init to accept it")
 
     def config(self) -> dict[str, Any]:
         self.load()

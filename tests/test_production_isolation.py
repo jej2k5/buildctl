@@ -12,7 +12,6 @@ from buildctl.supervisor.isolation import (IsolationContext, MacOSSandboxBackend
 from buildctl.supervisor.safety import ensure_safe_relative
 from buildctl.supervisor.trust import TrustStore
 
-ROOT = Path(__file__).resolve().parents[1]
 TARGET = Path(__file__).resolve().parent / "fixtures" / "target"
 
 
@@ -90,9 +89,9 @@ class ProductionIsolationConformanceTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(repo), "add", "build.yaml"], check=True)
             subprocess.run(["git", "-C", str(repo), "commit", "-qm", "factory"], check=True)
             sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
-            # This test factory needs the governed factory tree for TrustStore's real manifest.
-            # The kernel is committed under build/, the layout the source repository used.
-            for relative, source in (("build", ROOT / "buildctl"), ("templates", TARGET / "templates"),
+            # The governed tree TrustStore snapshots. The kernel is not part of it: it is the
+            # installed package, pinned by identity in the anchor.
+            for relative, source in (("templates", TARGET / "templates"),
                                      ("prompts", TARGET / "prompts"), ("docs", TARGET / "docs")):
                 target = repo / relative
                 if source.is_dir():

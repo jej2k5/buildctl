@@ -658,6 +658,7 @@ class Supervisor:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="buildctl")
     result.add_argument("--dry-run", action="store_true")
+    result.add_argument("--repo", help="governed repository (default: Git toplevel of the current directory)")
     commands = result.add_subparsers(dest="command", required=True)
     bootstrap = commands.add_parser("bootstrap")
     commands.add_parser("start")
@@ -680,10 +681,27 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def resolve_repository(value: str | None, runner: Any = subprocess.run) -> Path:
+    """The governed repository: explicit, or the Git toplevel containing the working directory.
+
+    The supervisor is installed separately from what it governs, so the repository can no
+    longer be inferred from where this file lives. It must be the toplevel itself: a nested
+    path would shift every governed path the trust snapshot is keyed on.
+    """
+    start = Path(value).resolve() if value else Path.cwd()
+    result = runner(["git", "-C", str(start), "rev-parse", "--show-toplevel"], text=True, capture_output=True)
+    if result.returncode:
+        raise ValueError(f"not inside a Git repository: {start}")
+    toplevel = Path(result.stdout.strip()).resolve()
+    if value and toplevel != start:
+        raise ValueError(f"--repo must name the repository toplevel ({toplevel}), not {start}")
+    return toplevel
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    root = Path(__file__).resolve().parents[1]
     try:
+        root = resolve_repository(args.repo)
         control_root = control_root_for(root)
         if args.command == "trust":
             trust = TrustStore(root, control_root)
