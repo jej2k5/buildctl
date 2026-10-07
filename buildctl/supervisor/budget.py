@@ -49,10 +49,6 @@ class BudgetLedger:
             stream.flush()
             os.fsync(stream.fileno())
 
-    def ensure_available(self) -> None:
-        if self.spent_today() >= self.daily_limit:
-            raise LimitExceeded(f"daily cost limit of ${self.daily_limit:.2f} reached")
-
 
 def configured_cost(config: dict[str, Any], operation: PaidOperation) -> float:
     costs = config.get("operation_cost_usd", {})

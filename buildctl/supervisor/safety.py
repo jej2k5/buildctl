@@ -200,9 +200,6 @@ def matches_secret_pattern(text: str) -> bool:
     return any(looks_like_secret_value(match.group(2)) for match in SECRET_ASSIGNMENT.finditer(text))
 
 
-class SecretDetected(RuntimeError):
-    pass
-
 
 def _redact_assignment(match: re.Match) -> str:
     """Redact only the value, and only when it plausibly carries a credential."""

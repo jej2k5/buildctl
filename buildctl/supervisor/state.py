@@ -18,14 +18,17 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Written by earlier supervisors but never read. Dropped on load so their state still loads;
+# any other unknown field is still an error.
+RETIRED_OPERATION_FIELDS = frozenset({"attempt", "input_digest"})
+
+
 @dataclass
 class Operation:
     id: str
     kind: str
     phase: int
     status: str = "pending"  # pending|started|completed|failed|unknown
-    attempt: int = 1
-    input_digest: str = ""
     output_path: str | None = None
     untrusted_output_path: str | None = None
     output_digest: str | None = None
@@ -92,7 +95,9 @@ class BuildState:
     def from_dict(cls, data: dict[str, Any]) -> "BuildState":
         known = cls.__dataclass_fields__
         values = {key: value for key, value in data.items() if key in known}
-        values["operations"] = {key: Operation(**value) for key, value in values.get("operations", {}).items()}
+        values["operations"] = {key: Operation(**{field: item for field, item in value.items()
+                                                  if field not in RETIRED_OPERATION_FIELDS})
+                                for key, value in values.get("operations", {}).items()}
         approval = values.get("pending_approval")
         if approval:
             values["pending_approval"] = ApprovalRequirement(**approval)

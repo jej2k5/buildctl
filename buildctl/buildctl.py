@@ -226,6 +226,10 @@ class Supervisor:
                 selected = [p for p in self.phases if p.number == only]
                 if not selected:
                     raise RuntimeError(f"unknown phase: {only}")
+                if only in state.completed_phases:
+                    # Re-running would build a second attempt on top of the accepted one and
+                    # count the phase twice.
+                    raise RuntimeError(f"phase {only} is already complete")
             if until is not None:
                 selected = [p for p in selected if p.number <= until]
             state.status = "running"
@@ -234,7 +238,8 @@ class Supervisor:
             try:
                 for phase in selected:
                     self._run_phase(state, phase)
-                state.status = "complete" if len(state.completed_phases) == len(self.phases) else "idle"
+                done = {phase.number for phase in self.phases} <= set(state.completed_phases)
+                state.status = "complete" if done else "idle"
                 self.store.save(state, expected_generation=state.generation)
             except HumanEscalation:
                 raise
@@ -423,7 +428,8 @@ class Supervisor:
 
     def _finish_phase(self, state: BuildState, phase: Phase, branch: str) -> None:
         publication = self.git.publish(phase)
-        state.completed_phases.append(phase.number)
+        if phase.number not in state.completed_phases:
+            state.completed_phases.append(phase.number)
         state.current_phase, state.workspace, state.active_branch, state.phase_step = None, None, None, "pending"
         state.consecutive_failures = 0
         self.store.event(state, "phase_completed", phase=phase.number, branch=branch, publication=publication)

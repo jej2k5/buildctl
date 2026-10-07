@@ -14,7 +14,7 @@ class BudgetApprovalRetryTests(unittest.TestCase):
     def test_budget_corruption_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             ledger=BudgetLedger(Path(directory),1); ledger.path.write_text("truncated")
-            with self.assertRaises(LimitExceeded): ledger.ensure_available()
+            with self.assertRaises(LimitExceeded): ledger.spent_today()
 
     def test_budget_reservation_is_idempotent_across_restart(self):
         with tempfile.TemporaryDirectory() as directory:
