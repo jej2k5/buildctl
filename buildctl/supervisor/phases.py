@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,10 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
     git = config.get("git", {})
     if set(("push", "create_pr", "merge")) - set(git) or any(not isinstance(git[key], bool) for key in ("push", "create_pr", "merge")):
         raise ConfigurationError("git publication flags must be explicit booleans")
+    branch = git.get("integration_branch", "main")
+    if (not isinstance(branch, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", branch)
+            or ".." in branch or branch.endswith((".", "/", ".lock")) or "//" in branch):
+        raise ConfigurationError("git integration_branch must be a plain branch name")
     checkpoints = config.get("checkpoints", {})
     if not isinstance(checkpoints.get("before_phases"), list) or not isinstance(checkpoints.get("mvp_completion"), int):
         raise ConfigurationError("checkpoints must define before_phases and mvp_completion")

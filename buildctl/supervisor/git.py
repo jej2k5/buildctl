@@ -18,6 +18,9 @@ class GitSafetyError(RuntimeError):
     pass
 
 
+DEFAULT_INTEGRATION_BRANCH = "main"
+
+
 @dataclass(frozen=True)
 class Delta:
     added_or_modified: tuple[str, ...]
@@ -207,10 +210,42 @@ class GitManager:
                 "digest": delta.digest, "coverage": coverage,
                 "unreviewable": [item["path"] for item in changed_files if not item["reviewable"]]}
 
+    def integration_branch(self) -> str:
+        return self.config["git"].get("integration_branch", DEFAULT_INTEGRATION_BRANCH)
+
+    def integrate(self, phase_branch: str) -> str:
+        """Fast-forward the integration branch to a finished phase and leave HEAD on it.
+
+        Phases used to stack on their own branches, so the integration branch never moved
+        and every phase was based on the previous phase branch. Now the next phase starts
+        from the integration branch, which carries everything accepted so far.
+
+        Fast-forward only. If the integration branch holds commits the phase does not, the
+        phase was built on a base the integration branch has moved past; merging would put
+        an unreviewed combination on it, so this refuses instead. Idempotent, so a restart
+        after a crash part-way through completes rather than fails.
+        """
+        target = self.integration_branch()
+        if self._git("status", "--porcelain=v1", "--untracked-files=all").stdout.strip():
+            raise GitSafetyError("uncommitted user work detected; integration branch left untouched")
+        for branch in (target, phase_branch):
+            if self._git("show-ref", "--verify", "--quiet", f"refs/heads/{branch}", check=False).returncode:
+                raise GitSafetyError(f"branch does not exist: {branch}")
+        phase_tip = self._git("rev-parse", f"refs/heads/{phase_branch}").stdout.strip()
+        if self._git("merge-base", "--is-ancestor", f"refs/heads/{target}", phase_tip,
+                     check=False).returncode:
+            raise GitSafetyError(f"{target} has commits that {phase_branch} does not; "
+                                 "refusing to merge, fast-forward only")
+        self._git("switch", target)
+        self._git("merge", "--ff-only", phase_tip)
+        if self.current_sha() != phase_tip:
+            raise GitSafetyError(f"{target} did not fast-forward to {phase_branch}")
+        return target
+
     def publish(self, phase: Any) -> str:
         git = self.config["git"]
         if not git["push"]:
-            return "committed_locally"
+            return f"integrated:{self.integrate(f'build/phase-{phase.number}')}"
         self._git("push", "-u", git["remote"], f"build/phase-{phase.number}")
         if not git["create_pr"]:
             return "pushed"
