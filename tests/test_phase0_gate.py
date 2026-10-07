@@ -15,8 +15,8 @@ from buildctl.supervisor.phases import load_config, phases_from
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = Path(__file__).resolve().parent / "fixtures" / "target"
 CONSTITUTION = ("README.md", "glossary.md", "adr-conventions.md", "mvp-definition.md",
-                "security-and-enterprise.md", "semantic-contract-principles.md",
-                "governance-boundaries.md", "deterministic-kernel-hypothesis.md")
+                "security.md", "api-contract-principles.md",
+                "operational-boundaries.md", "delivery-guarantees.md")
 
 
 def phase_zero():
@@ -26,7 +26,7 @@ def phase_zero():
 def populate(workspace: Path) -> None:
     constitution = workspace / "docs" / "constitution"
     constitution.mkdir(parents=True)
-    filler = "This document records the the original project project constitution. " * 6
+    filler = "This document records the Relay project constitution. " * 6
     for name in CONSTITUTION:
         (constitution / name).write_text(f"# {name}\n\n{filler}")
     (workspace / "docs" / "HANDOFF_PHASE_0.md").write_text(

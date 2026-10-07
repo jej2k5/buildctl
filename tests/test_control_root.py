@@ -1,4 +1,4 @@
-"""Where canonical state lives, now that it is no longer named after one product."""
+"""Where canonical state lives."""
 import os
 import unittest
 from pathlib import Path
@@ -10,7 +10,7 @@ from buildctl.buildctl import control_root_for
 class ControlRootTests(unittest.TestCase):
     def environment(self, **values):
         clean = {key: value for key, value in os.environ.items()
-                 if key not in ("BUILDCTL_STATE_DIR", "LEGACY_FACTORY_STATE_DIR", "XDG_STATE_HOME")}
+                 if key not in ("BUILDCTL_STATE_DIR", "XDG_STATE_HOME")}
         clean.update(values)
         return mock.patch.dict(os.environ, clean, clear=True)
 
@@ -24,13 +24,8 @@ class ControlRootTests(unittest.TestCase):
         self.assertEqual(first.parent, Path("/state/buildctl"))
         self.assertNotEqual(first, second)
 
-    def test_the_pre_extraction_variable_is_refused_rather_than_ignored(self):
-        with self.environment(LEGACY_FACTORY_STATE_DIR="/old/place"):
-            with self.assertRaisesRegex(ValueError, "BUILDCTL_STATE_DIR"):
-                control_root_for(Path("/repo"))
-
-    def test_the_new_variable_wins_when_both_are_set(self):
-        with self.environment(BUILDCTL_STATE_DIR="/new", LEGACY_FACTORY_STATE_DIR="/old"):
+    def test_the_override_wins_over_xdg(self):
+        with self.environment(BUILDCTL_STATE_DIR="/new", XDG_STATE_HOME="/state"):
             self.assertEqual(control_root_for(Path("/repo")), Path("/new").resolve())
 
 

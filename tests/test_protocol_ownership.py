@@ -2,8 +2,8 @@
 
 The supervisor used to read its output contracts and both prompts from fixed paths in the
 governed repository, ignored the `review_prompt` and `remediation_prompt` keys that build.yaml
-declared, and hardcoded four the original project documents as reviewer context — so no other
-repository could run a review at all.
+declared, and hardcoded one project's documents as reviewer context, so no other repository
+could run a review at all.
 """
 import copy
 import json
@@ -94,7 +94,7 @@ class PromptTests(Workspace):
         text = prompt(config_with(), "review", self.root)
         self.assertEqual(text, (PROTOCOL_ROOT / "prompts/review.md").read_text())
         self.assertIn(REVIEW_PROTOCOL_MARKER, text)
-        self.assertNotIn("Relay", text)
+        self.assertNotIn("Relay", text, "the kernel prompt must not carry any project's policy")
 
     def test_a_configured_review_prompt_overrides_it(self):
         (self.root / "prompts/review.md").write_text(f"{REVIEW_PROTOCOL_MARKER}\nPROJECT POLICY")
@@ -173,8 +173,8 @@ class ValidationTests(unittest.TestCase):
         config = config_with(); config["governance_documents"] = ["../outside.md"]
         self.refused(config, "not a safe relative path")
 
-    def test_the_relay_os_migration_validates(self):
-        """The fixture is the original project's build.yaml with the two lines it needs."""
+    def test_a_full_project_configuration_validates(self):
+        """The fixture is a complete multi-phase project: overrides, context and governed docs."""
         config = load_config(TARGET / "build.yaml")
         self.assertEqual(len(config["roles"]["reviewer"]["context_documents"]), 4)
         self.assertIn("docs/ROADMAP.md", config["governance_documents"])

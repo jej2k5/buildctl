@@ -14,7 +14,7 @@ Delegated: the core package stays dependency-free (`dependencies = []`). The UI 
 
 ## Users
 
-One operator: a senior engineer who wrote the roadmap (`build.yaml` plus phase prompts) and is accountable for what lands on `main`. They run builds of tens of phases (the original project ran 45) that take hours to days, unattended for long stretches. They come to the UI in four situations:
+One operator: a senior engineer who wrote the roadmap (`build.yaml` plus phase prompts) and is accountable for what lands on `main`. They run builds of tens of phases that take hours to days, unattended for long stretches. They come to the UI in four situations:
 
 1. **Setting up**: writing config, then working through trust, isolation and auth until `bootstrap` succeeds.
 2. **Watching a run**: which phase and step it's on, which agent call is in flight, and what it has spent today against the cap.
@@ -55,7 +55,7 @@ buildctl isn't a CI dashboard or an agent chat. Its distinctive claim is **gover
 ## Evidence on Hand
 
 - README.md (full command, escalation and configuration reference).
-- `tests/fixtures/target/` is a real 45+ phase the original project configuration with phase prompts, usable as realistic demo content.
+- `tests/fixtures/target/` is a complete 24-phase configuration for Relay, a fictional webhook delivery service, with phase prompts and governance documents. The console demo runs on it.
 - No screenshots, users, metrics or testimonials exist. Don't invent any.
 
 ## Product Principles

@@ -1,8 +1,7 @@
 """The supervisor kernel is pinned by the trust anchor, not by the governed repository.
 
-In the original project the supervisor lived at build/ inside the repository it governed, so the
-governance SHA pinned the enforcer along with the rules. As a standalone package that is no
-longer true: the anchor records the installed kernel's identity at `trust init`, and every
+A supervisor that lives inside the repository it governs is pinned by the governance SHA
+along with the rules. An installed package is not: the anchor records the installed kernel's identity at `trust init`, and every
 trusted load refuses to run under any other kernel.
 """
 import contextlib

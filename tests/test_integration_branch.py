@@ -1,8 +1,8 @@
 """A finished phase moves the integration branch forward.
 
 Phases used to commit to `build/phase-N` and leave the repository there, so every phase was
-based on the previous phase branch and the integration branch never moved: the original project
-ended up on build/phase-45 with main 63 commits behind. With push disabled the supervisor now
+based on the previous phase branch and the integration branch never moved: a long build
+ended up dozens of commits ahead of main. With push disabled the supervisor now
 fast-forwards the integration branch to each finished phase and leaves HEAD on it.
 """
 import tempfile

@@ -1,6 +1,7 @@
 """A synthetic build to look at: a real repository and real kernel state, made-up history.
 
-The repository is a copy of the the original project governed files in `tests/fixtures/target`.
+The repository is a copy of the Relay project in `tests/fixtures/target`, a fictional webhook
+delivery service.
 The state, audit chain, cost ledger and artifacts are written through the kernel's own stores,
 so the chain verifies and `buildctl inspect` reads it like any other build. Agent output,
 findings and costs are invented; the console labels a demo build as one.
@@ -26,28 +27,28 @@ FIXTURE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "target"
 COST = {"implement": 2.0, "remediate": 2.0, "review": 2.0, "debate": 5.0}
 
 FINDINGS = [
-    {"id": "f1", "severity": "HIGH", "kind": "correctness", "path": "src/relay/capabilities/discovery.py", "line": 142,
-     "claim_key": "discovery-ignores-tenant-scope",
-     "claim": "Capability discovery returns capabilities registered by every tenant, not only the caller's.",
-     "rationale": "resolve_capabilities() filters on agent_id but never on tenant_id, so a pilot tenant can "
-                  "enumerate another tenant's tools.",
-     "required_change": "Scope the registry query by the caller's tenant and add a cross-tenant test.",
+    {"id": "f1", "severity": "HIGH", "kind": "correctness", "path": "src/relay/replay.py", "line": 142,
+     "claim_key": "replay-ignores-tenant-scope",
+     "claim": "Replay selects events by time range across every tenant, not only the endpoint's owner.",
+     "rationale": "select_events() filters on received_at but never on tenant_id, so a replay can send another "
+                  "tenant's events to this endpoint.",
+     "required_change": "Scope the replay query by the endpoint's tenant and add a cross-tenant test.",
      "violated_invariant": "tenant_isolation", "treatment": "fix", "status": "still_open", "occurrences": 2},
-    {"id": "f2", "severity": "HIGH", "kind": "architecture", "path": "src/relay/capabilities/registry.py", "line": 58,
-     "claim_key": "registry-bypasses-semantic-contract",
-     "claim": "The registry writes capability records without going through the versioned semantic contract.",
-     "rationale": "Phase 2 made the contract the only write path. This adds a second one.",
-     "required_change": "Route registration through contract.write() or record an ADR for the exception.",
-     "violated_invariant": "single_write_path", "treatment": "debate", "status": "open", "occurrences": 1},
-    {"id": "f3", "severity": "MEDIUM", "kind": "testing", "path": "tests/test_capability_discovery.py", "line": 12,
-     "claim_key": "discovery-tests-share-fixture-state",
-     "claim": "Tests mutate a module-level registry fixture, so their order changes the result.",
+    {"id": "f2", "severity": "HIGH", "kind": "architecture", "path": "src/relay/replay_sender.py", "line": 58,
+     "claim_key": "replay-bypasses-delivery-path",
+     "claim": "Replays send directly instead of creating deliveries on the normal delivery path.",
+     "rationale": "Replayed sends get no retries, no attempt records and no dead-letter handling.",
+     "required_change": "Create deliveries for replayed events and let the worker send them, or record an ADR for the exception.",
+     "violated_invariant": "recorded_attempts", "treatment": "debate", "status": "open", "occurrences": 1},
+    {"id": "f3", "severity": "MEDIUM", "kind": "testing", "path": "tests/product/test_replay.py", "line": 12,
+     "claim_key": "replay-tests-share-store",
+     "claim": "Tests share one module-level event store, so their order changes the result.",
      "rationale": "Two tests pass alone and fail together.",
-     "required_change": "Build a fresh registry per test.", "violated_invariant": "deterministic_tests",
+     "required_change": "Build a fresh store per test.", "violated_invariant": "deterministic_tests",
      "treatment": "fix", "status": "open", "occurrences": 1},
     {"id": "f4", "severity": "LOW", "kind": "documentation", "path": "docs/HANDOFF_PHASE_12.md", "line": 1,
      "claim_key": "handoff-omits-open-question",
-     "claim": "The handoff does not mention the unresolved registry write path.",
+     "claim": "The handoff does not mention the unresolved replay send path.",
      "rationale": "The next phase inherits the question silently.", "required_change": "Name it under Open questions.",
      "violated_invariant": "handoff_completeness", "treatment": "fix", "status": "open", "occurrences": 1},
 ]
@@ -69,7 +70,7 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _repository(root: Path) -> Path:
-    repo = root / "the original project"
+    repo = root / "relay"
     shutil.copytree(FIXTURE, repo)
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "-c", "user.name=demo", "-c", "user.email=demo@example.invalid", "add", "-A")
@@ -148,13 +149,13 @@ def build(root: Path, scenario: str = "blocked") -> tuple[Path, Path]:
                 state.findings[f"demo:{finding['claim_key']}"] = dict(finding)
             if scenario == "blocked":
                 _escalate(store, state, "REVIEW_BLOCKED",
-                          "R5_STRATEGIC_UNRESOLVED: HIGH architecture finding registry-bypasses-semantic-contract "
+                          "R5_STRATEGIC_UNRESOLVED: HIGH architecture finding replay-bypasses-delivery-path "
                           "is open after 2 remediation laps and debate is disabled for this phase")
             elif scenario == "ceiling":
                 state.extra_attempt_grant = ExtraAttemptGrant(12, "REMEDIATION_ATTEMPTS_EXHAUSTED", state.generation,
                                                               "4b7e19c2d85a6f03e2c1b9a874d0f516")
                 _escalate(store, state, "REMEDIATION_ATTEMPTS_EXHAUSTED",
-                          "discovery-ignores-tenant-scope recurred after 3 remediation laps")
+                          "replay-ignores-tenant-scope recurred after 3 remediation laps")
             elif scenario == "unknown":
                 op_id = "phase-12:remediate-3:1"
                 state.operations[op_id] = Operation(op_id, "remediate-3", 12, status="unknown",
@@ -245,7 +246,7 @@ def _review_artifacts(control: Path, number: int, laps: int) -> None:
             "verdict": "REMEDIATE", "attempt": lap, "findings": findings,
             "coverage": [{"path": item["path"], "change_type": "modified", "disposition": "finding_refs",
                           "finding_refs": [item["id"]]} for item in findings]
-            + [{"path": "src/relay/capabilities/__init__.py", "change_type": "added", "disposition": "clear",
+            + [{"path": "src/relay/replay_window.py", "change_type": "added", "disposition": "clear",
                 "finding_refs": []}]}, indent=2) + "\n")
         (directory / f"GATE_RESULT-{lap}.json").write_text(json.dumps({
             "passed": True, "details": [

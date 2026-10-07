@@ -4,8 +4,6 @@ A supervisor for agent-built software. You write a roadmap of phases. buildctl h
 
 buildctl owns the state, the git history and the budget. Agents never touch any of them. They work in a disposable clone with no remote, and their output is checked before a single byte reaches your repository.
 
-It was extracted from the `build/` supervisor in the original project, which drove that product through 45 phases.
-
 ## Requirements
 
 - macOS. Agents run under `sandbox-exec`; there is no Linux backend yet.
@@ -226,23 +224,12 @@ You provide `build.yaml`, the phase prompts, and any governance and context docu
 
 Canonical state, the hash-chained audit log, the cost ledger, the trusted snapshot and every agent artifact live outside your repository, in `$XDG_STATE_HOME/buildctl/<hash of repo path>` (by default `~/.local/state/buildctl/...`). Set `BUILDCTL_STATE_DIR` to put it elsewhere. Agents cannot read it.
 
-`LEGACY_FACTORY_STATE_DIR` from the the original project supervisor is refused, not ignored, so state never quietly lands somewhere you did not intend.
-
-## Moving the original project onto buildctl
-
-1. Add the two required lists to its `build.yaml`. `tests/fixtures/target/build.yaml` here is its file with exactly those additions.
-2. Its existing review and remediation prompts keep working, now as overrides through the `review_prompt` and `remediation_prompt` keys it already declares.
-3. Its `templates/*_RESULT.json` files are no longer read. Delete them or leave them.
-4. Commit, then `trust init`, `isolation verify`, `bootstrap`.
-5. It currently sits on `build/phase-45` with `main` 63 commits behind. Start from `build/phase-45`, and the first finished phase brings `main` all the way forward.
-
 ## Limitations
 
 - macOS only: the sandbox is `sandbox-exec`.
 - The implementer is assumed to be Codex and the reviewer Claude. `auth check`, credential staging and parts of config validation are written for those two CLIs.
 - Dependency provisioning for acceptance commands is Python-only (`pyproject.toml`, `{python}`).
 - With `arbiter.mode` set to anything but `interactive`, the arbiter command's `{phase}`, `{review}` and `{rounds}` placeholders are not filled in. Use interactive debates.
-- The review protocol identifier is still `buildctl-review-v2`, the name it had in the original project, so existing review prompts keep working.
 
 ## Development
 
@@ -251,4 +238,4 @@ python3 -m unittest discover -s tests -t .
 PYTHONPATH=ui python3 -m unittest discover -s ui/uitests -t ui   # the console
 ```
 
-The suite needs only the standard library. Tests that need the real `codex` CLI or `pytest` skip when those are absent. `tests/fixtures/target/` is a frozen copy of the original project's governed files, used to check that a real configuration still validates.
+The suite needs only the standard library. Tests that need the real `codex` CLI or `pytest` skip when those are absent. `tests/fixtures/target/` is a complete configuration for Relay, a fictional webhook delivery service: 24 phases, governance documents, and review and remediation overrides. It checks that a full configuration validates, and the console's `--demo` builds run against it.
