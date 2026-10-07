@@ -1,0 +1,300 @@
+{
+  "version": 1,
+  "limits": {
+    "max_phase_attempts": 12,
+    "max_review_format_attempts": 4,
+    "max_semantic_review_attempts": 20,
+    "max_debate_rounds": 6,
+    "max_phase_minutes": 180,
+    "max_daily_cost_usd": 150.0,
+    "max_consecutive_failures": 3
+  },
+  "operation_cost_usd": {
+    "implementation": 2.0,
+    "review": 2.0,
+    "remediation": 2.0,
+    "debate": 5.0
+  },
+  "governance_documents": [
+    "docs/ARCHITECTURE_PRINCIPLES.md",
+    "docs/API_CONTRACT.md",
+    "docs/DECISIONS.md",
+    "docs/PRODUCT_THESIS.md",
+    "docs/ROADMAP.md"
+  ],
+  "git": {
+    "remote": "origin",
+    "push": false,
+    "create_pr": false,
+    "merge": false
+  },
+  "roles": {
+    "implementer": {
+      "vendor": "openai",
+      "model_family": "codex",
+      "prompt_lineage": "factory-v2",
+      "network": true,
+      "auth_mode": "host_cli",
+      "credential_env": [],
+      "command": [
+        "codex",
+        "exec",
+        "--ignore-user-config",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--output-last-message",
+        "{output}",
+        "{prompt}"
+      ],
+      "remediation_prompt": "prompts/remediation/codex-remediation.md"
+    },
+    "reviewer": {
+      "vendor": "anthropic",
+      "model_family": "claude",
+      "prompt_lineage": "factory-v2",
+      "protocol_version": "buildctl-review-v2",
+      "network": true,
+      "auth_mode": "host_cli",
+      "credential_env": [],
+      "command": [
+        "claude",
+        "-p",
+        "{prompt}",
+        "--no-session-persistence",
+        "--tools",
+        "Read,Grep,Glob"
+      ],
+      "review_prompt": "prompts/reviews/claude-adversarial-review.md",
+      "context_documents": [
+        "docs/ARCHITECTURE_PRINCIPLES.md",
+        "docs/API_CONTRACT.md",
+        "docs/DECISIONS.md",
+        "docs/PRODUCT_THESIS.md"
+      ]
+    },
+    "arbiter": {
+      "vendor": "jej2k5",
+      "model_family": "agent-debate",
+      "prompt_lineage": "factory-v2",
+      "network": false,
+      "auth_mode": "none",
+      "credential_env": [],
+      "mode": "interactive",
+      "command": [
+        "agent-debate",
+        "--phase",
+        "{phase}",
+        "--prompt",
+        "{prompt}",
+        "--review",
+        "{review}",
+        "--max-rounds",
+        "{rounds}",
+        "--output",
+        "{output}"
+      ]
+    }
+  },
+  "milestones": {
+    "mvp": 14,
+    "roadmap": 20
+  },
+  "checkpoints": {
+    "before_phases": [
+      0,
+      6,
+      14,
+      15
+    ],
+    "mvp_completion": 14
+  },
+  "phase_defaults": {
+    "required_files": [
+      "docs/HANDOFF_PHASE_{phase}.md"
+    ],
+    "commands": [
+      [
+        "{python}",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/product"
+      ]
+    ],
+    "invariants": [
+      "at_least_once_delivery",
+      "immutable_events",
+      "recorded_attempts",
+      "tenant_isolation",
+      "no_credentials_in_source",
+      "published_contract_versions_frozen"
+    ],
+    "claude_review_required": true,
+    "debate_on_architecture_disagreement": true,
+    "max_remediation_attempts": 8,
+    "merge_policy": "auto",
+    "allowed_paths": [
+      "src/",
+      "tests/product/",
+      "migrations/",
+      "pyproject.toml",
+      "docs/HANDOFF_PHASE_{phase}.md"
+    ]
+  },
+  "phases": [
+    {
+      "number": 0,
+      "name": "Project constitution",
+      "prompt": "prompts/phases/phase-00-project-constitution.md",
+      "acceptance": {
+        "merge_policy": "human",
+        "required_files": [
+          "docs/HANDOFF_PHASE_0.md",
+          "docs/constitution/README.md",
+          "docs/constitution/glossary.md",
+          "docs/constitution/adr-conventions.md",
+          "docs/constitution/mvp-definition.md",
+          "docs/constitution/security.md",
+          "docs/constitution/api-contract-principles.md",
+          "docs/constitution/operational-boundaries.md",
+          "docs/constitution/delivery-guarantees.md"
+        ],
+        "allowed_paths": [
+          "docs/constitution/",
+          "docs/HANDOFF_PHASE_0.md"
+        ],
+        "commands": [
+          [
+            "python3",
+            "-c",
+            "import json,pathlib,sys\nroot=pathlib.Path('docs/constitution')\nrequired=['README.md','glossary.md','adr-conventions.md','mvp-definition.md','security.md','api-contract-principles.md','operational-boundaries.md','delivery-guarantees.md']\nbad=[]\nfor name in required:\n    f=root/name\n    if not f.is_file() or f.is_symlink():\n        bad.append('missing:'+name); continue\n    text=f.read_text(errors='replace')\n    if len(text.strip())<200: bad.append('too-thin:'+name)\n    elif not text.lstrip().startswith('#'): bad.append('no-heading:'+name)\nh=pathlib.Path('docs/HANDOFF_PHASE_0.md')\nif not h.is_file() or h.is_symlink():\n    bad.append('missing:HANDOFF_PHASE_0.md')\nelse:\n    t=h.read_text(errors='replace').lower()\n    if len(t.strip())<200: bad.append('too-thin:HANDOFF_PHASE_0.md')\n    for s in ('summary','test','decision','next'):\n        if s not in t: bad.append('handoff-section-missing:'+s)\nfor f in sorted(root.rglob('*.json')):\n    try: json.loads(f.read_text())\n    except Exception: bad.append('invalid-json:'+f.as_posix())\nprint('phase0_gate=' + (','.join(bad) if bad else 'ok'))\nsys.exit(1 if bad else 0)\n"
+          ]
+        ]
+      }
+    },
+    {
+      "number": 1,
+      "name": "Service skeleton and configuration",
+      "prompt": "prompts/phases/phase-01-service-skeleton-and-configuration.md"
+    },
+    {
+      "number": 2,
+      "name": "Versioned API contract",
+      "prompt": "prompts/phases/phase-02-versioned-api-contract.md"
+    },
+    {
+      "number": 3,
+      "name": "Endpoint registry",
+      "prompt": "prompts/phases/phase-03-endpoint-registry.md"
+    },
+    {
+      "number": 4,
+      "name": "Durable event store",
+      "prompt": "prompts/phases/phase-04-durable-event-store.md"
+    },
+    {
+      "number": 5,
+      "name": "Payload signing",
+      "prompt": "prompts/phases/phase-05-payload-signing.md"
+    },
+    {
+      "number": 6,
+      "name": "Delivery worker",
+      "prompt": "prompts/phases/phase-06-delivery-worker.md",
+      "acceptance": {
+        "merge_policy": "human"
+      }
+    },
+    {
+      "number": 7,
+      "name": "Retry policy and backoff",
+      "prompt": "prompts/phases/phase-07-retry-policy-and-backoff.md"
+    },
+    {
+      "number": 8,
+      "name": "Dead-letter queue",
+      "prompt": "prompts/phases/phase-08-dead-letter-queue.md"
+    },
+    {
+      "number": 9,
+      "name": "Per-endpoint rate limits",
+      "prompt": "prompts/phases/phase-09-per-endpoint-rate-limits.md"
+    },
+    {
+      "number": 10,
+      "name": "Tenant isolation",
+      "prompt": "prompts/phases/phase-10-tenant-isolation.md"
+    },
+    {
+      "number": 11,
+      "name": "Delivery logs and metrics",
+      "prompt": "prompts/phases/phase-11-delivery-logs-and-metrics.md"
+    },
+    {
+      "number": 12,
+      "name": "Delivery replay",
+      "prompt": "prompts/phases/phase-12-delivery-replay.md"
+    },
+    {
+      "number": 13,
+      "name": "Admin API",
+      "prompt": "prompts/phases/phase-13-admin-api.md"
+    },
+    {
+      "number": 14,
+      "name": "MVP production readiness",
+      "prompt": "prompts/phases/phase-14-mvp-production-readiness.md",
+      "acceptance": {
+        "merge_policy": "human"
+      }
+    },
+    {
+      "number": 15,
+      "name": "Ordering guarantees",
+      "prompt": "prompts/phases/phase-15-ordering-guarantees.md",
+      "acceptance": {
+        "merge_policy": "human"
+      }
+    },
+    {
+      "number": 16,
+      "name": "Batch delivery",
+      "prompt": "prompts/phases/phase-16-batch-delivery.md"
+    },
+    {
+      "number": 17,
+      "name": "Payload transformations",
+      "prompt": "prompts/phases/phase-17-payload-transformations.md"
+    },
+    {
+      "number": 18,
+      "name": "Secret rotation",
+      "prompt": "prompts/phases/phase-18-secret-rotation.md"
+    },
+    {
+      "number": 19,
+      "name": "Multi-region failover",
+      "prompt": "prompts/phases/phase-19-multi-region-failover.md"
+    },
+    {
+      "number": 20,
+      "name": "Usage metering",
+      "prompt": "prompts/phases/phase-20-usage-metering.md"
+    },
+    {
+      "number": 21,
+      "name": "Billing export",
+      "prompt": "prompts/phases/phase-21-billing-export.md"
+    },
+    {
+      "number": 22,
+      "name": "Self-serve onboarding",
+      "prompt": "prompts/phases/phase-22-self-serve-onboarding.md"
+    },
+    {
+      "number": 23,
+      "name": "Operations runbook",
+      "prompt": "prompts/phases/phase-23-operations-runbook.md"
+    }
+  ]
+}
