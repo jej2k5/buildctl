@@ -19,7 +19,8 @@ def kernel_files(root: Path = KERNEL_ROOT) -> list[Path]:
     result = []
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root)
-        if any(part in GENERATED_DIRECTORIES for part in relative.parts):
+        # Hidden entries are host debris (Finder's .DS_Store), never kernel content.
+        if any(part in GENERATED_DIRECTORIES or part.startswith(".") for part in relative.parts):
             continue
         if path.suffix in GENERATED_SUFFIXES or path.is_dir():
             continue

@@ -73,7 +73,7 @@ class KernelPinningTests(unittest.TestCase):
         store = TrustStore(self.repo, self.control); store.initialize(self.sha, self.sha)
         upgraded = {"version": "9.9.9", "digest": "0" * 64}
         with mock.patch.object(trust_module, "kernel_identity", return_value=upgraded):
-            with self.assertRaisesRegex(TrustError, "kernel changed since trust init"):
+            with self.assertRaisesRegex(TrustError, r"kernel changed since trust init .* 000000000000"):
                 store.load()
 
     def test_re_trusting_accepts_the_new_kernel(self):
@@ -139,6 +139,11 @@ class KernelDigestTests(unittest.TestCase):
         root = self.tree(); before = kernel_digest(root)
         (root / "__pycache__").mkdir(); (root / "__pycache__/a.cpython-314.pyc").write_bytes(b"\0")
         (root / "stray.pyc").write_bytes(b"\0")
+        self.assertEqual(kernel_digest(root), before)
+
+    def test_host_debris_does_not_change_the_digest(self):
+        root = self.tree(); before = kernel_digest(root)
+        (root / ".DS_Store").write_bytes(b"\0"); (root / "supervisor/.DS_Store").write_bytes(b"\0")
         self.assertEqual(kernel_digest(root), before)
 
 

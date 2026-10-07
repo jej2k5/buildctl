@@ -176,8 +176,9 @@ class TrustStore:
             raise TrustError("trust anchor predates kernel pinning; re-run trust init with an exact commit SHA")
         current = kernel_identity()
         if current["digest"] != pinned["digest"]:
-            raise TrustError(f"supervisor kernel changed since trust init (trusted {pinned.get('version')}, "
-                             f"running {current['version']}); re-run trust init to accept it")
+            raise TrustError(f"supervisor kernel changed since trust init (trusted {pinned.get('version')} "
+                             f"{pinned['digest'][:12]}, running {current['version']} {current['digest'][:12]}); "
+                             "re-run trust init to accept it")
 
     def config(self) -> dict[str, Any]:
         self.load()
