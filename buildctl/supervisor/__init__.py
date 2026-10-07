@@ -1,4 +1,4 @@
-"""Deterministic orchestration for the the original project build."""
+"""Deterministic orchestration for an agent-built, phase-governed repository."""
 
 from .state import BuildState, StateStore
 

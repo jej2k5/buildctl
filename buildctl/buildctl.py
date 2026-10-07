@@ -44,12 +44,16 @@ class HumanEscalation(RuntimeError):
 
 
 def control_root_for(repo: Path) -> Path:
-    override = os.environ.get("LEGACY_FACTORY_STATE_DIR")
+    override = os.environ.get("BUILDCTL_STATE_DIR")
     if override:
         return Path(override).resolve()
+    if os.environ.get("LEGACY_FACTORY_STATE_DIR"):
+        # The pre-extraction name. Ignoring it would silently put canonical state, the cost
+        # ledger and the trust anchor somewhere other than where the operator pointed them.
+        raise ValueError("LEGACY_FACTORY_STATE_DIR is no longer read; set BUILDCTL_STATE_DIR instead")
     xdg = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
     identity = hashlib.sha256(str(repo.resolve()).encode()).hexdigest()[:16]
-    return xdg / "the original project-factory" / identity
+    return xdg / "buildctl" / identity
 
 
 class Supervisor:

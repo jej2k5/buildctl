@@ -9,6 +9,9 @@ from typing import Any
 SEVERITY = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 TREATMENT = {"debt": 1, "fix": 2, "debate": 3, "human": 4, "accept_risk": 4}
 REDUCER_VERSION = "2"
+# Wire identifier shared with the governed repository: its pinned reviewer prompt and
+# REVIEW_RESULT template must carry this exact string. It keeps the name it was born with
+# in the original project until prompts and templates move into the kernel.
 REVIEW_PROTOCOL_VERSION = "buildctl-review-v2"
 
 # Single source of truth for the coverage vocabulary. The reviewer prompt and the pinned

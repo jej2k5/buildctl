@@ -7,6 +7,7 @@ from typing import Any
 
 from .safety import ensure_safe_relative
 from .operations import PAID_OPERATION_IDS
+from .review import REVIEW_PROTOCOL_VERSION
 
 
 @dataclass(frozen=True)
@@ -103,8 +104,8 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
             raise ConfigurationError(f"role {name} none authentication cannot use credential_env")
     if roles["implementer"].get("auth_mode") == "host_cli" and "--ignore-user-config" not in roles["implementer"]["command"]:
         raise ConfigurationError("host_cli Codex implementer must ignore ambient user config")
-    if roles["reviewer"].get("protocol_version") != "buildctl-review-v2":
-        raise ConfigurationError("reviewer protocol_version must be buildctl-review-v2")
+    if roles["reviewer"].get("protocol_version") != REVIEW_PROTOCOL_VERSION:
+        raise ConfigurationError(f"reviewer protocol_version must be {REVIEW_PROTOCOL_VERSION}")
     if roles["reviewer"].get("auth_mode") == "host_cli":
         reviewer_command = roles["reviewer"].get("command", [])
         forbidden = {"Bash", "Edit", "Write", "NotebookEdit", "Web", "MCP"}
