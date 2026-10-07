@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>buildctl console</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="sig-danger" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" class="g-danger"/></symbol>
+  <symbol id="sig-caution" viewBox="0 0 16 16"><path d="M8 1.6 14.4 8 8 14.4 1.6 8Z" class="g-caution"/></symbol>
+  <symbol id="sig-clear" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.2" class="g-clear"/></symbol>
+  <symbol id="sig-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.9" class="g-unknown"/></symbol>
+  <symbol id="sig-occupied" viewBox="0 0 16 16"><rect x="1.5" y="5.5" width="13" height="5" class="g-occupied"/></symbol>
+  <symbol id="sig-pending" viewBox="0 0 16 16"><rect x="1.5" y="7.25" width="13" height="1.5" class="g-pending"/></symbol>
+  <symbol id="i-line" viewBox="0 0 20 20"><path d="M2 10h16M5 7v6M10 7v6M15 7v6" class="i-stroke"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 20 20"><rect x="5" y="5" width="10" height="10" class="i-stroke"/><path d="M10 2v3M10 15v3" class="i-stroke"/></symbol>
+  <symbol id="i-phases" viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h14M7 3v14" class="i-stroke"/></symbol>
+  <symbol id="i-ledger" viewBox="0 0 20 20"><path d="M5 3h10v14H5zM8 7h4M8 10h4M8 13h4" class="i-stroke"/></symbol>
+  <symbol id="i-setup" viewBox="0 0 20 20"><path d="M4 5h6M14 5h2M4 10h2M10 10h6M4 15h8M16 15h0" class="i-stroke"/><circle cx="12" cy="5" r="2" class="i-stroke"/><circle cx="8" cy="10" r="2" class="i-stroke"/><circle cx="14" cy="15" r="2" class="i-stroke"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" class="i-stroke"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" class="i-stroke"/></symbol>
+</svg>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar" id="bar">
+  <a class="brand" href="#/line"><span class="brand-word">buildctl</span></a>
+  <div class="bar-repo" id="bar-repo"></div>
+  <div class="bar-aspect" id="bar-aspect" role="status" aria-live="polite"></div>
+  <dl class="bar-facts" id="bar-facts"></dl>
+</header>
+
+<nav class="rail" aria-label="Console">
+  <a href="#/line" data-route="line"><svg class="ico"><use href="#i-line"/></svg><span>Line</span><kbd>1</kbd></a>
+  <a href="#/stop" data-route="stop"><svg class="ico"><use href="#i-stop"/></svg><span>Stop</span><b class="rail-flag" id="stop-flag" hidden></b><kbd>2</kbd></a>
+  <a href="#/phases" data-route="phases"><svg class="ico"><use href="#i-phases"/></svg><span>Phases</span><kbd>3</kbd></a>
+  <a href="#/ledger" data-route="ledger"><svg class="ico"><use href="#i-ledger"/></svg><span>Ledger</span><kbd>4</kbd></a>
+  <a href="#/setup" data-route="setup"><svg class="ico"><use href="#i-setup"/></svg><span>Setup</span><kbd>5</kbd></a>
+  <p class="rail-foot" id="rail-foot"></p>
+</nav>
+
+<main id="main" tabindex="-1">
+  <div class="loading" id="loading"><p>Reading the build…</p></div>
+</main>
+
+<div class="announce" id="announce" role="status" aria-live="polite"></div>
+</body>
+</html>

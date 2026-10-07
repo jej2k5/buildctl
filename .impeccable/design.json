@@ -1,0 +1,740 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-07T03:23:13Z",
+  "title": "Design System: buildctl",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Signal-Box Ink",
+        "canonical": "#171c19",
+        "canonicalOklch": "oklch(22.0% 0.009 159.2)",
+        "dark": "#e6ebe5",
+        "tonalRamp": [
+          "#080c0a",
+          "#212723",
+          "#3e4440",
+          "#5d635f",
+          "#7e8480",
+          "#a0a7a3",
+          "#c4cbc7",
+          "#e9f0ec"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "#434b46",
+        "canonicalOklch": "oklch(40.4% 0.013 158.4)",
+        "dark": "#b4bdb6",
+        "tonalRamp": [
+          "#070d09",
+          "#202723",
+          "#3c443f",
+          "#5b645e",
+          "#7c857f",
+          "#9ea8a2",
+          "#c2ccc6",
+          "#e8f1eb"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink 3",
+        "canonical": "#5c655f",
+        "canonicalOklch": "oklch(49.7% 0.015 156.7)",
+        "dark": "#8f9a92",
+        "tonalRamp": [
+          "#060d09",
+          "#1f2722",
+          "#3c443f",
+          "#5b645e",
+          "#7c857f",
+          "#9ea8a1",
+          "#c2ccc5",
+          "#e7f2ea"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Signal-Plan Paper",
+        "canonical": "#f3f5f1",
+        "canonicalOklch": "oklch(96.8% 0.006 128.5)",
+        "dark": "#111513",
+        "tonalRamp": [
+          "#0a0c09",
+          "#242623",
+          "#41433f",
+          "#60625e",
+          "#81837f",
+          "#a4a6a2",
+          "#c8cac6",
+          "#edefeb"
+        ]
+      },
+      "paper-2": {
+        "role": "neutral",
+        "displayName": "Plate Grey",
+        "canonical": "#e8ebe6",
+        "canonicalOklch": "oklch(93.6% 0.007 132.4)",
+        "dark": "#181d1a",
+        "tonalRamp": [
+          "#0a0c09",
+          "#242622",
+          "#40433f",
+          "#60625e",
+          "#81837f",
+          "#a3a6a1",
+          "#c7cac5",
+          "#edf0eb"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Sheet",
+        "canonical": "#fbfcfa",
+        "canonicalOklch": "oklch(99.0% 0.003 128.5)",
+        "dark": "#161b18",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252524",
+          "#414241",
+          "#616160",
+          "#828381",
+          "#a4a5a3",
+          "#c8c9c7",
+          "#eeefed"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#d3d8d2",
+        "canonicalOklch": "oklch(87.7% 0.010 140.5)",
+        "dark": "#2a322e",
+        "tonalRamp": [
+          "#090c08",
+          "#232622",
+          "#3f433e",
+          "#5e635d",
+          "#7f847e",
+          "#a2a7a1",
+          "#c6cbc5",
+          "#ebf0ea"
+        ]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Strong Rule",
+        "canonical": "#a3aba4",
+        "canonicalOklch": "oklch(73.3% 0.013 149.2)",
+        "dark": "#46514b",
+        "tonalRamp": [
+          "#070d08",
+          "#212722",
+          "#3d443e",
+          "#5c635d",
+          "#7d857e",
+          "#a0a7a0",
+          "#c3ccc4",
+          "#e9f1ea"
+        ]
+      },
+      "select": {
+        "role": "neutral",
+        "displayName": "Selection",
+        "canonical": "#d5ddd3",
+        "canonicalOklch": "oklch(88.9% 0.016 139.4)",
+        "dark": "#2c3a33",
+        "tonalRamp": [
+          "#080d07",
+          "#212720",
+          "#3e443c",
+          "#5d645b",
+          "#7e857c",
+          "#a0a89e",
+          "#c4ccc2",
+          "#e9f1e7"
+        ]
+      },
+      "bar": {
+        "role": "neutral",
+        "displayName": "Signal-Box Bar",
+        "canonical": "#18201d",
+        "canonicalOklch": "oklch(23.4% 0.013 170.4)",
+        "dark": "#0b0e0d",
+        "tonalRamp": [
+          "#060d0a",
+          "#1f2724",
+          "#3b4441",
+          "#5a6460",
+          "#7b8581",
+          "#9ea8a4",
+          "#c1ccc8",
+          "#e6f1ed"
+        ]
+      },
+      "bar-ink": {
+        "role": "neutral",
+        "displayName": "Bar Ink",
+        "canonical": "#e8ece6",
+        "canonicalOklch": "oklch(93.8% 0.009 134.9)",
+        "dark": "#e6ebe5",
+        "tonalRamp": [
+          "#0a0c08",
+          "#232622",
+          "#40433e",
+          "#5f625d",
+          "#80847e",
+          "#a3a6a1",
+          "#c7cac5",
+          "#ecf0ea"
+        ]
+      },
+      "bar-ink-2": {
+        "role": "neutral",
+        "displayName": "Bar Ink 2",
+        "canonical": "#a9b4ad",
+        "canonicalOklch": "oklch(75.9% 0.016 158.1)",
+        "dark": "#97a39b",
+        "tonalRamp": [
+          "#060d09",
+          "#1f2722",
+          "#3b453f",
+          "#5a645e",
+          "#7b857f",
+          "#9da8a1",
+          "#c1ccc5",
+          "#e6f2ea"
+        ]
+      },
+      "bar-rule": {
+        "role": "neutral",
+        "displayName": "Bar Rule",
+        "canonical": "#2f3a35",
+        "canonicalOklch": "oklch(33.7% 0.017 166.1)",
+        "dark": "#252d29",
+        "tonalRamp": [
+          "#050d09",
+          "#1d2823",
+          "#3a4540",
+          "#59645f",
+          "#798680",
+          "#9ca9a2",
+          "#bfcdc7",
+          "#e4f2ec"
+        ]
+      },
+      "danger": {
+        "role": "secondary",
+        "displayName": "Danger Red",
+        "canonical": "#c4261d",
+        "canonicalOklch": "oklch(53.2% 0.194 29.0)",
+        "dark": "#f0544a",
+        "tonalRamp": [
+          "#1f0000",
+          "#4c0302",
+          "#7c110c",
+          "#b6100c",
+          "#df4336",
+          "#f87a6a",
+          "#fbb5aa",
+          "#fee9e5"
+        ]
+      },
+      "danger-ink": {
+        "role": "secondary",
+        "displayName": "Danger Ink",
+        "canonical": "#a51f17",
+        "canonicalOklch": "oklch(46.9% 0.171 29.0)",
+        "dark": "#ff7d74",
+        "tonalRamp": [
+          "#1e0000",
+          "#4b0503",
+          "#800202",
+          "#ad291f",
+          "#d55042",
+          "#fe7564",
+          "#ffb3a7",
+          "#fee9e6"
+        ]
+      },
+      "danger-wash": {
+        "role": "secondary",
+        "displayName": "Danger Wash",
+        "canonical": "#fbe9e6",
+        "canonicalOklch": "oklch(94.8% 0.020 28.9)",
+        "dark": "#2e1513",
+        "tonalRamp": [
+          "#130807",
+          "#2e211f",
+          "#4c3e3c",
+          "#6c5d5b",
+          "#8e7e7b",
+          "#b1a19e",
+          "#d6c5c2",
+          "#fceae7"
+        ]
+      },
+      "caution": {
+        "role": "secondary",
+        "displayName": "Caution Amber",
+        "canonical": "#d49b0f",
+        "canonicalOklch": "oklch(72.5% 0.147 81.6)",
+        "dark": "#e8b330",
+        "tonalRamp": [
+          "#110a00",
+          "#312203",
+          "#573d00",
+          "#7d5b0e",
+          "#a67a16",
+          "#d39a0b",
+          "#f9be48",
+          "#feeccc"
+        ]
+      },
+      "caution-ink": {
+        "role": "secondary",
+        "displayName": "Caution Ink",
+        "canonical": "#8a5d00",
+        "canonicalOklch": "oklch(51.4% 0.108 76.1)",
+        "dark": "#f2c860",
+        "tonalRamp": [
+          "#120900",
+          "#332103",
+          "#5a3b01",
+          "#805810",
+          "#a7782c",
+          "#cc9b52",
+          "#f2c076",
+          "#fdecd3"
+        ]
+      },
+      "caution-wash": {
+        "role": "secondary",
+        "displayName": "Caution Wash",
+        "canonical": "#fbf1d8",
+        "canonicalOklch": "oklch(95.9% 0.035 88.8)",
+        "dark": "#2b2412",
+        "tonalRamp": [
+          "#100a00",
+          "#2c2410",
+          "#49412d",
+          "#69614b",
+          "#8b826b",
+          "#aea48d",
+          "#d2c8b0",
+          "#f8eed5"
+        ]
+      },
+      "clear": {
+        "role": "secondary",
+        "displayName": "Clear Green",
+        "canonical": "#2d7a3e",
+        "canonicalOklch": "oklch(51.7% 0.119 148.0)",
+        "dark": "#4cae62",
+        "tonalRamp": [
+          "#001003",
+          "#042e0f",
+          "#03511d",
+          "#257337",
+          "#4a9658",
+          "#6eba7a",
+          "#92df9d",
+          "#ccfed1"
+        ]
+      },
+      "clear-ink": {
+        "role": "secondary",
+        "displayName": "Clear Ink",
+        "canonical": "#24683a",
+        "canonicalOklch": "oklch(46.2% 0.101 151.0)",
+        "dark": "#74c785",
+        "tonalRamp": [
+          "#001004",
+          "#042e13",
+          "#025024",
+          "#2e7142",
+          "#519363",
+          "#74b784",
+          "#98dca8",
+          "#c7ffd3"
+        ]
+      },
+      "occupied": {
+        "role": "tertiary",
+        "displayName": "Occupancy Blue",
+        "canonical": "#1f5bd6",
+        "canonicalOklch": "oklch(51.2% 0.199 262.3)",
+        "dark": "#5b8cff",
+        "tonalRamp": [
+          "#000728",
+          "#021e5d",
+          "#00349f",
+          "#1955d0",
+          "#3b7af7",
+          "#78a4f7",
+          "#aecafc",
+          "#e7effe"
+        ]
+      },
+      "occupied-wash": {
+        "role": "tertiary",
+        "displayName": "Occupancy Wash",
+        "canonical": "#e6edfc",
+        "canonicalOklch": "oklch(94.5% 0.022 265.8)",
+        "dark": "#16213a",
+        "tonalRamp": [
+          "#070b14",
+          "#202530",
+          "#3c424e",
+          "#5b616e",
+          "#7c8290",
+          "#9fa5b3",
+          "#c2c9d8",
+          "#e8effe"
+        ]
+      },
+      "stamp": {
+        "role": "tertiary",
+        "displayName": "Stamp Violet",
+        "canonical": "#6a2c91",
+        "canonicalOklch": "oklch(43.0% 0.162 309.3)",
+        "dark": "#c08ae6",
+        "tonalRamp": [
+          "#150023",
+          "#380253",
+          "#5b1b81",
+          "#7c3fa5",
+          "#9f62ca",
+          "#c386f1",
+          "#deb6fe",
+          "#f4e9fe"
+        ]
+      },
+      "stamp-wash": {
+        "role": "tertiary",
+        "displayName": "Stamp Wash",
+        "canonical": "#f3eafa",
+        "canonicalOklch": "oklch(94.9% 0.023 310.7)",
+        "dark": "#2a1d35",
+        "tonalRamp": [
+          "#0e0812",
+          "#29222e",
+          "#463f4b",
+          "#655e6b",
+          "#877f8d",
+          "#aaa1b0",
+          "#cec5d5",
+          "#f3eafa"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "View titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings and lever names."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "All running UI text; tabular figures throughout."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Conditions, tables, buttons, definition lists."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Table headers, top-bar fact labels, DEMO flag."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Digests, tree hashes, nonces, commands, IDs, codes, numbers, money."
+      },
+      "mono-figure": {
+        "displayName": "Mono figure",
+        "purpose": "The stopped phase number in the Stop panel."
+      },
+      "stop-code": {
+        "displayName": "Stop code",
+        "purpose": "The escalation code in the Stop panel."
+      }
+    },
+    "signalShapes": [
+      {
+        "aspect": "danger",
+        "web": "filled square",
+        "tui": "■",
+        "meaning": "stopped / blocked / checkpoint at danger"
+      },
+      {
+        "aspect": "caution",
+        "web": "filled diamond",
+        "tui": "◆",
+        "meaning": "waiting for you"
+      },
+      {
+        "aspect": "clear",
+        "web": "filled circle",
+        "tui": "●",
+        "meaning": "clear / held"
+      },
+      {
+        "aspect": "unknown",
+        "web": "dashed hollow circle (ink-2 stroke)",
+        "tui": "◌",
+        "meaning": "outcome unknown / checked at call time"
+      },
+      {
+        "aspect": "occupied",
+        "web": "horizontal bar",
+        "tui": "▬",
+        "meaning": "in progress (in flight only)"
+      },
+      {
+        "aspect": "pending",
+        "web": "thin line (rule-strong)",
+        "tui": "·",
+        "meaning": "not started"
+      }
+    ],
+    "shadows": [
+      {
+        "name": "rail-current-ring",
+        "value": "inset 0 0 0 1px var(--rule)",
+        "purpose": "Hairline ring on the current rail item; not elevation."
+      },
+      {
+        "name": "row-selected-edge",
+        "value": "inset 2px 0 0 var(--ink)",
+        "purpose": "Ink edge on a selected table row; not elevation."
+      }
+    ],
+    "focus": [
+      {
+        "name": "focus-ring",
+        "value": "outline: 2px solid var(--focus); outline-offset: 2px",
+        "purpose": "All focusable elements."
+      },
+      {
+        "name": "field-focus",
+        "value": "border-color: var(--focus); outline: 1px solid var(--focus); outline-offset: 0",
+        "purpose": "Inputs."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Shared easing for all transitions and animations."
+      },
+      {
+        "name": "control-transition",
+        "value": ".15s",
+        "purpose": "Button background, colour and border changes."
+      },
+      {
+        "name": "stamp-press",
+        "value": ".45s scale 1.35 to 1 with fade",
+        "purpose": "A freshly applied SIGNED stamp."
+      },
+      {
+        "name": "cell-flip",
+        "value": ".9s select to transparent",
+        "purpose": "A table cell whose value changed in place."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "1ms",
+        "purpose": "All animation and transition durations under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "stack",
+        "value": "1100px",
+        "purpose": "Two-column views stack; top-bar facts wrap to a second row."
+      },
+      {
+        "name": "compact",
+        "value": "820px",
+        "purpose": "Rail becomes a horizontal sticky strip; Stop and readiness rows collapse."
+      }
+    ],
+    "terminal": {
+      "framework": "Textual",
+      "theme": "interlocking (dark)",
+      "background": "#111513",
+      "surface": "#161b18",
+      "panel": "#181d1a",
+      "foreground": "#e6ebe5",
+      "muted": "#97a39b",
+      "danger": "#f0544a",
+      "caution": "#e8b330",
+      "clear": "#4cae62",
+      "occupied": "#5b8cff"
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "A lever the kernel will accept without ceremony.",
+      "html": "<button class=\"ds-btn\">Retry</button>",
+      "css": ".ds-btn { font: 600 0.8125rem/1 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; padding: 9px 14px; min-height: 34px; border-radius: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .15s cubic-bezier(.16,1,.3,1), color .15s cubic-bezier(.16,1,.3,1), border-color .15s cubic-bezier(.16,1,.3,1); background: var(--ink, #171c19); color: var(--paper, #f3f5f1); border: 1px solid var(--ink, #171c19); } .ds-btn:hover { background: var(--ink-2, #434b46); border-color: var(--ink-2, #434b46); } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { outline: 2px solid var(--focus, #171c19); outline-offset: 2px; } .ds-btn:disabled { background: var(--paper-2, #e8ebe6); color: var(--ink-3, #5c655f); border-color: var(--rule, #d3d8d2); cursor: not-allowed; transform: none; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Opens a ceremony; also Cancel and Dismiss.",
+      "html": "<button class=\"ds-btn-quiet\">Review and sign</button>",
+      "css": ".ds-btn-quiet { font: 600 0.8125rem/1 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; padding: 9px 14px; min-height: 34px; border-radius: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .15s cubic-bezier(.16,1,.3,1), color .15s cubic-bezier(.16,1,.3,1), border-color .15s cubic-bezier(.16,1,.3,1); background: var(--surface, #fbfcfa); color: var(--ink, #171c19); border: 1px solid var(--rule-strong, #a3aba4); } .ds-btn-quiet:hover { border-color: var(--ink, #171c19); } .ds-btn-quiet:active { transform: translateY(1px); } .ds-btn-quiet:focus-visible { outline: 2px solid var(--focus, #171c19); outline-offset: 2px; }"
+    },
+    {
+      "name": "Sign Button",
+      "kind": "button",
+      "refersTo": "button-sign",
+      "description": "Only inside a ceremony; disabled until the typed evidence matches.",
+      "html": "<button class=\"ds-btn-sign\">Sign and approve</button>",
+      "css": ".ds-btn-sign { font: 600 0.8125rem/1 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; padding: 9px 14px; min-height: 34px; border-radius: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .15s cubic-bezier(.16,1,.3,1), color .15s cubic-bezier(.16,1,.3,1), border-color .15s cubic-bezier(.16,1,.3,1); background: var(--stamp, #6a2c91); color: var(--on-stamp, #ffffff); border: 1px solid var(--stamp, #6a2c91); } .ds-btn-sign:hover { filter: brightness(1.1); } .ds-btn-sign:focus-visible { outline: 2px solid var(--focus, #171c19); outline-offset: 2px; } .ds-btn-sign:disabled { background: var(--paper-2, #e8ebe6); color: var(--ink-3, #5c655f); border-color: var(--rule, #d3d8d2); cursor: not-allowed; filter: none; }"
+    },
+    {
+      "name": "Evidence Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Mono field for typed evidence and filters.",
+      "html": "<label class=\"ds-field\"><span>Type the first 7 characters of the tree hash</span><input value=\"07681c0\"><small>Matches. Signing records your approval in the audit chain.</small></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; color: var(--ink, #171c19); } .ds-field span { font-size: 0.8125rem; font-weight: 600; } .ds-field small { font-size: 0.75rem; color: var(--ink-3, #5c655f); } .ds-field input { font: 500 0.875rem ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; padding: 8px 10px; min-height: 36px; border: 1px solid var(--rule-strong, #a3aba4); background: var(--surface, #fbfcfa); color: var(--ink, #171c19); border-radius: 0; } .ds-field input:focus { border-color: var(--focus, #171c19); outline: 1px solid var(--focus, #171c19); outline-offset: 0; }"
+    },
+    {
+      "name": "Rail Navigation",
+      "kind": "nav",
+      "refersTo": "rail",
+      "description": "Left rail; current page on sheet with an ink edge bar.",
+      "html": "<nav class=\"ds-rail\"><a href=\"#\" aria-current=\"page\">Line<kbd>1</kbd></a><a href=\"#\">Stop<b class=\"ds-flag\"></b><kbd>2</kbd></a><a href=\"#\">Phases<kbd>3</kbd></a></nav>",
+      "css": ".ds-rail { background: var(--paper-2, #e8ebe6); padding: 16px 8px; display: flex; flex-direction: column; gap: 2px; width: 184px; font: 500 0.875rem system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; } .ds-rail a { position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 12px; text-decoration: none; color: var(--ink-2, #434b46); } .ds-rail a:hover { color: var(--ink, #171c19); background: var(--rule, #d3d8d2); } .ds-rail a:focus-visible { outline: 2px solid var(--focus, #171c19); outline-offset: 2px; } .ds-rail a[aria-current=page] { color: var(--ink, #171c19); background: var(--surface, #fbfcfa); box-shadow: inset 0 0 0 1px var(--rule, #d3d8d2); } .ds-rail a[aria-current=page]::before { content: ''; position: absolute; left: -8px; top: 6px; bottom: 6px; width: 3px; background: var(--ink, #171c19); } .ds-rail kbd { margin-left: auto; font: 0.75rem ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink-3, #5c655f); } .ds-flag { width: 8px; height: 8px; background: var(--danger, #c4261d); }"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Mono property tag on a lever.",
+      "html": "<span class=\"ds-tag\">paid</span> <span class=\"ds-tag\">runs detached</span>",
+      "css": ".ds-tag { font: 500 0.75rem/1 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink-2, #434b46); border: 1px solid var(--rule-strong, #a3aba4); padding: 2px 5px; white-space: nowrap; }"
+    },
+    {
+      "name": "Interlocking Lever",
+      "kind": "custom",
+      "refersTo": "lever-plate",
+      "description": "Signature: fixed lever number plate, conditions held/blocked/checked at call time, lock note.",
+      "html": "<article class=\"ds-lever\"><div class=\"ds-plate\"><b>01</b><svg class=\"ds-ico\" viewBox=\"0 0 16 16\" aria-hidden=\"true\"><rect x=\"3.5\" y=\"7\" width=\"9\" height=\"6.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/><path d=\"M5.5 7V5a2.5 2.5 0 0 1 5 0v2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/></svg></div><div class=\"ds-lbody\"><div class=\"ds-lhead\"><div><h3>Start <span class=\"ds-tag2\">paid</span></h3><p>Run every incomplete phase in order.</p></div><button class=\"ds-lbtn\" disabled>Start</button></div><ul class=\"ds-conds\"><li><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"held\"><circle cx=\"8\" cy=\"8\" r=\"5.2\" fill=\"var(--clear, #2d7a3e)\"/></svg><span>Trust anchor matches the kernel and snapshot</span></li><li class=\"ds-blocked\"><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"blocked\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" fill=\"var(--danger, #c4261d)\"/></svg><span>Build is idle</span><span class=\"ds-detail\">status is human_escalation</span></li><li><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"checked at call time\"><circle cx=\"8\" cy=\"8\" r=\"4.9\" fill=\"none\" stroke=\"var(--ink-2, #434b46)\" stroke-width=\"1.6\" stroke-dasharray=\"2.4 2\"/></svg><span>Both agent CLIs are logged in</span><span class=\"ds-detail\">checked when each agent call starts</span></li></ul><p class=\"ds-lock\"><svg class=\"ds-ico\" viewBox=\"0 0 16 16\" aria-hidden=\"true\"><rect x=\"3.5\" y=\"7\" width=\"9\" height=\"6.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/><path d=\"M5.5 7V5a2.5 2.5 0 0 1 5 0v2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/></svg>Locked by one condition: build is idle.</p></div></article>",
+      "css": ".ds-lever { display: grid; grid-template-columns: 44px 1fr; background: var(--surface, #fbfcfa); border: 1px solid var(--rule, #d3d8d2); font: 400 0.875rem/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; color: var(--ink, #171c19); font-variant-numeric: tabular-nums; } .ds-plate { border-right: 1px solid var(--rule, #d3d8d2); background: var(--paper-2, #e8ebe6); display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px; color: var(--ink-3, #5c655f); } .ds-plate b { font: 700 0.8125rem/1 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; border: 1.5px solid var(--rule-strong, #a3aba4); color: var(--ink-3, #5c655f); background: var(--surface, #fbfcfa); padding: 3px 4px; min-width: 26px; text-align: center; } .ds-ico { width: 14px; height: 14px; flex: none; } .ds-lbody { padding: 12px 16px 16px; min-width: 0; } .ds-lhead { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; } .ds-lhead h3 { margin: 0; font-size: 1rem; font-weight: 600; } .ds-lhead p { margin: 2px 0 0; color: var(--ink-2, #434b46); font-size: 0.8125rem; } .ds-tag2 { font: 500 0.75rem/1 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink-2, #434b46); border: 1px solid var(--rule-strong, #a3aba4); padding: 2px 5px; } .ds-lbtn { font: 600 0.8125rem/1 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; padding: 9px 14px; min-height: 34px; border-radius: 0; background: var(--paper-2, #e8ebe6); color: var(--ink-3, #5c655f); border: 1px solid var(--rule, #d3d8d2); cursor: not-allowed; } .ds-conds { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--rule, #d3d8d2); } .ds-conds li { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 1px 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px dotted var(--rule, #d3d8d2); font-size: 0.8125rem; } .ds-conds li:last-child { border-bottom: 0; } .ds-sig { width: 12px; height: 12px; } .ds-detail { grid-column: 2; font: 0.75rem ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink-3, #5c655f); } .ds-blocked, .ds-blocked .ds-detail { color: var(--danger-ink, #a51f17); font-weight: 500; } .ds-lock { display: flex; gap: 6px; align-items: center; margin: 8px 0 0; font-size: 0.8125rem; color: var(--ink-3, #5c655f); }"
+    },
+    {
+      "name": "Evidence Ceremony",
+      "kind": "custom",
+      "refersTo": "ceremony",
+      "description": "Typed-evidence confirmation inside a trust-critical lever.",
+      "html": "<div class=\"ds-cer\"><div><div class=\"ds-cer-what\">Tree hash under review</div><div class=\"ds-ev\"><mark>07681c0</mark>88db56cd82f630fe63277687f5b0716d3</div></div><div class=\"ds-cer-row\"><input aria-label=\"Type the first 7 characters\" value=\"07681c0\"><button class=\"ds-sign\">Sign and approve</button><button class=\"ds-cancel\">Cancel</button></div></div>",
+      "css": ".ds-cer { border: 1px solid var(--stamp, #6a2c91); background: var(--stamp-wash, #f3eafa); padding: 12px 16px; display: grid; gap: 12px; font: 400 0.875rem/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; color: var(--ink, #171c19); } .ds-cer-what { color: var(--ink-3, #5c655f); } .ds-ev { font: 500 0.8125rem/1.5 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink-2, #434b46); overflow-wrap: anywhere; } .ds-ev mark { background: none; color: var(--ink, #171c19); font-weight: 700; text-decoration: underline; text-decoration-color: var(--stamp, #6a2c91); text-decoration-thickness: 2px; text-underline-offset: 3px; } .ds-cer-row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; } .ds-cer-row input { font: 500 0.875rem ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; padding: 8px 10px; min-height: 36px; border: 1px solid var(--rule-strong, #a3aba4); background: var(--surface, #fbfcfa); border-radius: 0; } .ds-cer-row input:focus { border-color: var(--focus, #171c19); outline: 1px solid var(--focus, #171c19); outline-offset: 0; } .ds-sign, .ds-cancel { font: 600 0.8125rem/1 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; padding: 9px 14px; min-height: 34px; border-radius: 0; cursor: pointer; } .ds-sign { background: var(--stamp, #6a2c91); border: 1px solid var(--stamp, #6a2c91); color: var(--on-stamp, #ffffff); } .ds-sign:hover { filter: brightness(1.1); } .ds-cancel { background: var(--surface, #fbfcfa); color: var(--ink, #171c19); border: 1px solid var(--rule-strong, #a3aba4); } .ds-cancel:hover { border-color: var(--ink, #171c19); } .ds-sign:focus-visible, .ds-cancel:focus-visible { outline: 2px solid var(--focus, #171c19); outline-offset: 2px; }"
+    },
+    {
+      "name": "Signed Stamp",
+      "kind": "custom",
+      "refersTo": "stamp",
+      "description": "The one mark of a human signature.",
+      "html": "<div class=\"ds-stamp\" role=\"img\" aria-label=\"Signed by you\">SIGNED <span>approve checkpoint · 14:02:11</span></div>",
+      "css": ".ds-stamp { display: inline-grid; grid-template-columns: auto auto; gap: 0 8px; align-items: center; margin: 3px; border: 2px solid var(--stamp, #6a2c91); outline: 1px solid var(--stamp, #6a2c91); outline-offset: 2px; color: var(--stamp, #6a2c91); padding: 3px 8px; font: 700 0.75rem/1.3 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.06em; text-transform: uppercase; animation: ds-stamp .45s cubic-bezier(.16,1,.3,1) both; } .ds-stamp span { font-weight: 500; letter-spacing: 0; text-transform: none; } @keyframes ds-stamp { from { transform: scale(1.35); opacity: 0; } 60% { opacity: 1; } to { transform: scale(1); } } @media (prefers-reduced-motion: reduce) { .ds-stamp { animation: none; } }"
+    },
+    {
+      "name": "Stop Panel",
+      "kind": "card",
+      "refersTo": "stop-danger",
+      "description": "The halt, at the top of main: aspect glyph, code, meaning, remedy, phase.",
+      "html": "<section class=\"ds-stop\"><svg class=\"ds-sig-lg\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"stopped\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" fill=\"var(--danger, #c4261d)\"/></svg><div><div class=\"ds-code\">REVIEW_BLOCKED</div><p class=\"ds-meaning\">The reviewer could not clear the phase.</p><p class=\"ds-remedy\"><b>What to do:</b> Read the findings, then retry.</p></div><div class=\"ds-where\">Phase<b>12</b>attempt 1</div></section>",
+      "css": ".ds-stop { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; padding: 16px 24px; border: 1px solid var(--danger, #c4261d); background: var(--danger-wash, #fbe9e6); color: var(--ink, #171c19); font: 400 0.875rem/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; } .ds-sig-lg { width: 22px; height: 22px; } .ds-code { font: 600 1.25rem/1.2 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: -0.01em; } .ds-meaning { margin: 4px 0 0; font-size: 1rem; } .ds-remedy { margin: 8px 0 0; color: var(--ink-2, #434b46); } .ds-where { text-align: right; font-size: 0.8125rem; color: var(--ink-2, #434b46); } .ds-where b { display: block; font: 600 1.5rem/1 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink, #171c19); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Railway Interlocking",
+    "overview": "The console is a signal box. The build is a line of blocks; each action is a lever that unlocks only when its interlocking table proves every precondition. The operator reads the build's aspect at once, reads which condition holds or blocks, and pulls the one lever the kernel will accept. Everything is drawn on signal-plan paper: cool off-white with near-black ink in light mode, a blackened panel tone in dark mode, with hairline rules, square corners and dense tables.\n\nColour is scarce and semantic. Four signal aspects (danger, caution, clear, unknown) are drawn as distinct shapes so state survives colour loss, on a 16-colour terminal and under colour-vision deficiency. Two further colours are reserved for single meanings: occupancy blue for the operation actually in flight, and stamp violet for a human signature. Everything else is ink on paper.\n\nThe same world runs in two surfaces. The web console is static HTML/CSS/JS on system fonts; the Textual TUI mirrors the dark palette and draws the same shapes as Unicode glyphs. The system refuses the CI-dashboard arrangement of status pills over a log pane.",
+    "keyCharacteristics": [
+      "Shape carries state; colour reinforces it.",
+      "One colour per reserved meaning: occupied blue, stamp violet.",
+      "System sans for UI, system mono for digests, nonces, commands and numbers; no web fonts.",
+      "Square corners, 1px hairlines, flat surfaces, dense tables with tabular figures.",
+      "The interlocking table (lever plate, conditions, lock note) is the signature component.",
+      "Light and dark themes share every token name; the TUI uses the dark values."
+    ],
+    "rules": [
+      {
+        "name": "The Shape Carries State Rule",
+        "body": "Every aspect has its own silhouette: danger square, caution diamond, clear circle, unknown dashed hollow circle, occupied horizontal bar, pending thin line. Never show a state by colour alone, and never draw two states with the same shape. The hollow ink-stroked square of a milestone station is track furniture, not a signal, and stays unfilled.",
+        "section": "colors"
+      },
+      {
+        "name": "The Occupied Block Rule",
+        "body": "Occupancy blue means an operation is in flight right now. A finished, failed or idle operation is never blue.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Stamp Rule",
+        "body": "Stamp violet appears only where a human signs or has signed. No other control, link, chart or highlight uses it.",
+        "section": "colors"
+      },
+      {
+        "name": "The Waiting For You Rule",
+        "body": "Amber means the build is waiting on the operator. It is not a generic warning tint.",
+        "section": "colors"
+      },
+      {
+        "name": "The Machine Text Rule",
+        "body": "If the kernel produced it or the operator must type it back, set it in mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Web Fonts Rule",
+        "body": "System stacks only. Nothing is downloaded.",
+        "section": "typography"
+      },
+      {
+        "name": "The Plan Lettering Rule",
+        "body": "Capitals belong to machine vocabulary and plan lettering only: escalation codes, severity levels, the SIGNED word and the DEMO flag (all mono), and station names on the line. Sans UI labels, headings and captions are never uppercased; there are no kickers or eyebrows.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Plan Rule",
+        "body": "Surfaces sit on the plan, not above it. Separate with tone and hairlines, never with shadows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** draw every state with its own shape (square, diamond, circle, dashed hollow circle, bar, line) and name it in text or an accessible label.",
+      "**Do** reserve `occupied` for an operation that is started with the lock held.",
+      "**Do** reserve `stamp` for the ceremony, the Sign button, the SIGNED stamp and the signature receipt.",
+      "**Do** set digests, nonces, commands, codes, IDs and numbers in the system mono stack, with tabular figures.",
+      "**Do** keep corners square and borders 1px; step weight (1.5px, 2px) for emphasis.",
+      "**Do** give each lever its fixed kernel number in a plate, list its conditions as held, blocked or checked at call time, and explain a lock in a lock note.",
+      "**Do** require typed evidence before a trust-critical lever acts, and send the displayed nonce rather than asking for it.",
+      "**Do** update table cells in place and mark the change with the 0.9s selection flip.",
+      "**Do** keep the TUI on the dark palette with the same glyph per aspect."
+    ],
+    "donts": [
+      "**Don't** convey state by colour alone, or reuse a filled signal shape for another meaning (hollow station squares on the line are the one native exception).",
+      "**Don't** use occupancy blue for links, focus, selection, charts or completed work.",
+      "**Don't** use stamp violet anywhere a human is not signing.",
+      "**Don't** use amber as a general warning tint; amber means the build is waiting for the operator.",
+      "**Don't** load web fonts or introduce a display face.",
+      "**Don't** add rounded corners, drop shadows or gradients.",
+      "**Don't** add decorative icons; icons are stroked line drawings for navigation and the lock, and status is drawn only with the signal shapes.",
+      "**Don't** arrange status pills over a log pane.",
+      "**Don't** uppercase sans labels, headings or captions, and don't add kickers or eyebrows; capitals are for codes, severities, SIGNED, DEMO and station names."
+    ]
+  }
+}

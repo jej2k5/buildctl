@@ -79,8 +79,26 @@ Every step is recorded before and after it runs. If the process dies, the next r
 | `auth check` | Confirm both agent CLIs are logged in. |
 | `bootstrap` | Create the build state. Requires fresh isolation conformance. |
 | `validate` | Check `build.yaml`. |
+| `inspect` | Everything a front end needs, as one JSON document: state, phases, trust, isolation, budget, the stop and its meaning, and every action with the conditions that allow or lock it. Read-only; works before trust is set up. |
+| `audit --after <seq>` | Audit events after a sequence number, as JSON. |
 
 Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
+
+## Operator console
+
+`buildctl-ui` is an optional companion: a local web console and a terminal UI over the same build. It lives in `ui/` as its own distribution, so editing it never changes the kernel digest that `trust init` pins.
+
+```sh
+pip install -e ./ui            # web console only
+pip install -e './ui[tui]'     # adds the terminal UI (Textual)
+buildctl-ui                    # opens the console for the repository you are in
+buildctl-ui tui                # the same thing in the terminal
+buildctl-ui --demo checkpoint  # a synthetic build to look around in: blocked, checkpoint, ceiling, unknown, running, fresh
+```
+
+Both surfaces read `buildctl inspect` and change state only by running the `buildctl` CLI, so the kernel's checks, lock and audit apply exactly as in a terminal. Every action is shown with the conditions that allow or lock it. Approving, pinning trust, buying an extra attempt and reconciling ask you to type the evidence (the tree-hash prefix, the commit, the phase number or the operation); the console sends the nonce it showed you, so an approval made against state that has since moved is refused. Runs start detached and keep going if you close the console.
+
+The web console listens on 127.0.0.1 only. Every request needs the token in the link `buildctl-ui` prints, the Host header must name the console, and state changes must be JSON from the console's own origin.
 
 ## When it stops
 
@@ -230,6 +248,7 @@ Canonical state, the hash-chained audit log, the cost ledger, the trusted snapsh
 
 ```sh
 python3 -m unittest discover -s tests -t .
+PYTHONPATH=ui python3 -m unittest discover -s ui/uitests -t ui   # the console
 ```
 
 The suite needs only the standard library. Tests that need the real `codex` CLI or `pytest` skip when those are absent. `tests/fixtures/target/` is a frozen copy of the original project's governed files, used to check that a real configuration still validates.

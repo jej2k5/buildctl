@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "buildctl-ui"
+version = "0.1.0"
+description = "Local operator console and terminal UI for buildctl"
+requires-python = ">=3.11"
+# The kernel itself; the UI reads its state and drives it only through the `buildctl` CLI.
+dependencies = ["buildctl"]
+
+[project.optional-dependencies]
+tui = ["textual>=0.80,<9"]
+
+[project.scripts]
+buildctl-ui = "buildctl_ui.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["buildctl_ui", "buildctl_ui.*"]
+
+[tool.setuptools.package-data]
+buildctl_ui = ["web/*"]

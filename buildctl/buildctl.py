@@ -19,6 +19,7 @@ from .supervisor.budget import BudgetLedger, LimitExceeded, configured_cost
 from .supervisor.claude import ClaudeAdapter
 from .supervisor.codex import CodexAdapter
 from .supervisor.debate import DebateAdapter, validate_debate_result, write_adr
+from .supervisor.inspect import audit_events, inspect as inspect_build
 from .supervisor.gates import MechanicalGates, write_gate_result
 from .supervisor.git import Delta, GitManager, GitSafetyError
 from .supervisor.isolation import (FakeIsolationBackend, IsolationBackend, IsolationContext,
@@ -28,6 +29,7 @@ from .supervisor.phases import ConfigurationError, Phase, load_config, phases_fr
 from .supervisor.review import (ReviewValidationError, accumulate_findings, open_finding_obligations,
                                 realign_findings_to_delta, reduce_review, strategic_findings,
                                 validate_review)
+from .supervisor import levers
 from .supervisor.operations import PaidOperation
 from .supervisor.safety import digest_file, redact
 from .supervisor.state import (ApprovalRequirement, BuildState, ExtraAttemptGrant, Operation, StateConflict,
@@ -101,6 +103,7 @@ class Supervisor:
         return {"status": state.status, "generation": state.generation,
                 "current_phase": state.current_phase, "phase_step": state.phase_step,
                 "completed_phases": state.completed_phases, "escalation_code": state.escalation_code,
+                "escalation_detail": state.escalation_detail,
                 "pending_approval": vars(state.pending_approval) if state.pending_approval else None,
                 "extra_attempt_grant": vars(state.extra_attempt_grant) if state.extra_attempt_grant else None,
                 "unknown_operations": [key for key, value in state.operations.items() if value.status == "unknown"],
@@ -109,7 +112,7 @@ class Supervisor:
     def pause(self) -> None:
         with self.store.lock():
             state = self.store.load()
-            if state.status not in {"running", "idle"}:
+            if not levers.can_pause(state):
                 raise RuntimeError(f"cannot pause from {state.status}")
             state.status = "paused"
             self.store.event(state, "paused")
@@ -117,7 +120,7 @@ class Supervisor:
     def resume(self) -> None:
         with self.store.lock():
             state = self.store.load()
-            if state.status != "paused":
+            if not levers.can_resume(state):
                 raise RuntimeError(f"cannot resume from {state.status}")
             state.status = "idle"
             self.store.event(state, "resumed")
@@ -125,16 +128,15 @@ class Supervisor:
     def retry(self, authorize_extra_attempt: bool = False, nonce: str | None = None) -> None:
         with self.store.lock():
             state = self.store.load()
-            if state.status not in {"human_escalation", "failed"} or state.pending_approval:
+            if not levers.is_stopped(state) or state.pending_approval:
                 raise RuntimeError("retry requires a non-checkpoint escalation")
-            if any(op.status == "unknown" for op in state.operations.values()):
+            if levers.unknown_operations(state):
                 raise RuntimeError("unknown operation requires reconcile, not retry")
-            if state.escalation_code and state.escalation_code.endswith("_EXHAUSTED"):
+            if levers.is_ceiling(state):
                 if not authorize_extra_attempt:
                     raise RuntimeError("ceiling retry requires --authorize-extra-attempt")
                 grant = state.extra_attempt_grant
-                if (not grant or grant.phase != state.current_phase or grant.ceiling_code != state.escalation_code
-                        or grant.attempt_generation != state.generation - 1 or not nonce
+                if (not levers.grant_matches(state) or not nonce
                         or not secrets.compare_digest(grant.nonce, nonce)):
                     raise RuntimeError("extra-attempt authorization scope or nonce is invalid")
                 grant.authorized = True
@@ -202,10 +204,9 @@ class Supervisor:
             requirement = state.pending_approval
             if not requirement or not secrets.compare_digest(requirement.nonce, nonce):
                 raise RuntimeError("approval nonce does not match pending checkpoint")
-            if requirement.state_generation != state.generation - 1:
+            if not levers.approval_is_current(state):
                 raise RuntimeError("approval is stale for the current state generation")
-            phase_attempt = state.phase_attempts.get(str(requirement.phase), 0)
-            if phase_attempt != requirement.phase_attempt or self.git.tree_hash() != requirement.tree_hash:
+            if not levers.approval_scope_holds(state, self.git.tree_hash()):
                 raise RuntimeError("approval scope no longer matches phase attempt or tree")
             state.pending_approval = None
             state.status = "idle"
@@ -219,7 +220,7 @@ class Supervisor:
             state = self.store.load()
             if self.store.recover_stale_run(state):
                 raise HumanEscalation(state.escalation_code or "STALE_RUN")
-            if state.status in {"paused", "human_escalation", "failed", "running"}:
+            if state.status in levers.UNRUNNABLE_STATUSES:
                 raise RuntimeError(f"build is {state.status}")
             selected = [p for p in self.phases if p.number not in state.completed_phases]
             if only is not None:
@@ -723,6 +724,9 @@ def parser() -> argparse.ArgumentParser:
     auth = commands.add_parser("auth"); auth_sub = auth.add_subparsers(dest="auth_command", required=True)
     auth_sub.add_parser("check")
     commands.add_parser("validate")
+    commands.add_parser("inspect", help="the full read model as JSON: state, phases, trust, levers")
+    audit = commands.add_parser("audit", help="audit events after a sequence number, as JSON")
+    audit.add_argument("--after", type=int, default=0); audit.add_argument("--limit", type=int, default=500)
     return result
 
 
@@ -761,6 +765,10 @@ def main(argv: list[str] | None = None) -> int:
                 config = load_config(root / "build.yaml"); source = "untrusted worktree (trust not initialized)"
             print(f"build.yaml: valid ({len(config['phases'])} phases; {source})")
             return 0
+        if args.command == "inspect":
+            print(json.dumps(inspect_build(root, control_root), indent=2, sort_keys=True)); return 0
+        if args.command == "audit":
+            print(json.dumps(audit_events(control_root, args.after, args.limit), indent=2, sort_keys=True)); return 0
         if args.command == "auth":
             if args.auth_command != "check":
                 raise ValueError("unknown auth command")
