@@ -17,6 +17,12 @@ concurrency:
 
 jobs:
   publish:
+    # Only the owner publishes the manual, in this repository. A collaborator's push or dispatch,
+    # a re-run started by someone else, or a fork's copy of this file skips the job.
+    if: >-
+      github.repository == 'jej2k5/buildctl' &&
+      github.actor == 'jej2k5' &&
+      github.triggering_actor == 'jej2k5'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
