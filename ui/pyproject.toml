@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]  # PEP 639 license metadata
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,9 @@ name = "buildctl-ui"
 version = "0.1.0"
 description = "Local operator console and terminal UI for buildctl"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "John Joseph"}]
 # The kernel itself; the UI reads its state and drives it only through the `buildctl` CLI.
 dependencies = ["buildctl"]
 

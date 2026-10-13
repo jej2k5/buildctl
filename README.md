@@ -71,3 +71,7 @@ python3 docs/build.py                                            # after editing
 ```
 
 The kernel suite needs only the standard library. Tests that need the real `codex` CLI or `pytest` skip when those are absent. `tests/fixtures/target/` is a complete configuration for Relay, a fictional webhook delivery service, used to check that a full configuration validates and to drive the console's demo builds.
+
+## License
+
+buildctl is open source under the [Apache License 2.0](LICENSE). Copyright 2026 John Joseph; see [NOTICE](NOTICE). The `ui/` and `discover/` packages carry their own copies of both files so each ships its license.

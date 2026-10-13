@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]  # PEP 639 license metadata
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,9 @@ name = "buildctl-discover"
 version = "0.1.0"
 description = "Discovery that drafts a buildctl roadmap over MCP, for the operator to commit and trust"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "John Joseph"}]
 # The kernel only. The MCP server is written on the standard library.
 dependencies = ["buildctl"]
 

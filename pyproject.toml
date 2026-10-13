@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]  # PEP 639 license metadata
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,9 @@ name = "buildctl"
 dynamic = ["version"]
 description = "Deterministic, restart-safe supervisor for agent-built software phases"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "John Joseph"}]
 dependencies = []
 
 [project.scripts]
