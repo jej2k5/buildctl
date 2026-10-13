@@ -1,6 +1,7 @@
-# buildctl
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 ![buildctl: a supervisor for agent-built software. Codex builds each phase, Claude reviews it, acceptance runs sandboxed, and only reviewed work is committed.](.github/banner.png)
+# buildctl
 
 A supervisor for agent-built software. You write a roadmap of phases. buildctl has one agent implement each phase, another review it adversarially, runs your acceptance commands in a sandbox, and commits only what passed. A human approves the phases that matter.
 
