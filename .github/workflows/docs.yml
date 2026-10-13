@@ -28,6 +28,8 @@ jobs:
           python-version: "3.12"
       # The committed page must match its Markdown; publish exactly what the console ships.
       - run: python3 docs/build.py --check
+      # A committed page cannot name its own commit, so the published copy is stamped here.
+      - run: sed -i "s|<span data-commit></span>|<span data-commit> at ${GITHUB_SHA::7}</span>|" ui/buildctl_ui/web/docs/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ui/buildctl_ui/web/docs

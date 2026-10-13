@@ -74,6 +74,8 @@ body { margin: 0; background: var(--paper); color: var(--ink); font: 400 1rem/1.
 a { color: var(--ink); text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: var(--rule-strong); }
 a:hover { text-decoration-color: var(--ink); }
 code, pre { font-family: var(--mono); }
+/* Read by screen readers, not shown: "1. Start", not "1Start" */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 :not(pre) > code { font-size: 0.9em; background: var(--paper-2); padding: 1px 4px; }
 code .w { white-space: nowrap; }
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
@@ -96,15 +98,16 @@ code .w { white-space: nowrap; }
 .chapters ol { list-style: none; margin: 0; padding: 0; display: flex; height: 100%; }
 .chapters a { display: flex; align-items: center; gap: 6px; height: 100%; padding: 0 var(--s3); color: var(--bar-ink-2); text-decoration: none; font-size: var(--t-sm); white-space: nowrap; border-bottom: 2px solid transparent; }
 .chapters a:hover { color: var(--bar-ink); }
-.chapters a[aria-current="true"] { color: var(--bar-ink); border-bottom-color: var(--bar-ink); }
+.chapters a[aria-current] { color: var(--bar-ink); border-bottom-color: var(--bar-ink); }
 .chapters .num { font: 600 var(--t-xs)/1 var(--mono); color: inherit; opacity: .8; }
 
 /* Page */
 /* main is the reading column; wide reference tables break out of it, centred on the page */
 main { max-width: calc(72ch + 2 * var(--s6)); margin: 0 auto; padding: var(--s6) var(--s6) var(--s7); outline: none; }
-.table.wide { width: min(1100px, calc(100vw - 2 * var(--s6))); position: relative; left: 50%; transform: translateX(-50%); }
+.table.wide, pre.wide { width: min(1100px, calc(100vw - 2 * var(--s6))); position: relative; left: 50%; transform: translateX(-50%); }
 .title { padding-bottom: var(--s5); border-bottom: 1px solid var(--rule-strong); }
 .title + .chapter { padding-top: var(--s5); }
+.title .stamp { font: var(--t-sm)/1.4 var(--mono); color: var(--ink-3); margin: calc(var(--s2) * -1) 0 var(--s3); }
 .title h1 { font-size: 2.25rem; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 var(--s4); font-weight: 650; text-wrap: balance; }
 .title p { font-size: var(--t-xl); color: var(--ink-2); margin: 0 0 var(--s3); max-width: 62ch; }
 .chapter { padding-top: var(--s7); }
@@ -117,10 +120,17 @@ li { margin-bottom: var(--s2); }
 li::marker { color: var(--ink-3); }
 strong { font-weight: 650; }
 .permalink { margin-left: var(--s2); color: var(--ink-3); text-decoration: none; font-weight: 400; opacity: 0; transition: opacity .15s var(--ease); }
-h3:hover .permalink, h4:hover .permalink, .permalink:focus-visible { opacity: 1; }
+h3:hover .permalink, h4:hover .permalink, tr:hover .permalink, .permalink:focus-visible { opacity: 1; }
+/* No hover on a touch screen, so the links stay visible there */
+@media (hover: none) { .permalink { opacity: 1; } }
 
 pre { background: var(--surface); border: 1px solid var(--rule); padding: var(--s3) var(--s4); overflow-x: auto; font-size: var(--t-sm); line-height: 1.6; margin: 0 0 var(--s4); }
 pre code { background: none; padding: 0; font-size: inherit; }
+/* With script, a block gets a band on top: its language on the left, a copy button on the right */
+pre.has-copy { position: relative; padding-top: calc(var(--s3) + 28px); }
+pre.has-copy[data-lang]::before { content: attr(data-lang); position: absolute; top: var(--s2); left: var(--s4); font-size: var(--t-xs); color: var(--ink-3); }
+.copy { position: absolute; top: 4px; right: 4px; min-height: 32px; padding: 0 var(--s3); font: 500 var(--t-xs)/1 var(--sans); color: var(--ink-2); background: transparent; border: 1px solid transparent; cursor: pointer; user-select: none; }
+.copy:hover { color: var(--ink); border-color: var(--rule); }
 
 .table { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); margin: 0 0 var(--s4); }
 table { border-collapse: collapse; width: 100%; font-size: var(--t-sm); line-height: 1.5; }
@@ -139,6 +149,9 @@ tr:target { background: var(--select); }
 .code-entry h4 code { background: none; padding: 0; font-weight: 700; font-size: inherit; overflow-wrap: anywhere; }
 .code-entry p { margin: var(--s3) var(--s4); }
 .code-entry p:last-child { margin-bottom: var(--s4); }
+.code-entry .back { font-size: var(--t-sm); margin-top: var(--s2); }
+.code-entry .back a { color: var(--ink-2); }
+.code-entry .back a::before { content: "\2191\00a0" / ""; }
 .code-entry:target { outline: 2px solid var(--ink); outline-offset: 2px; }
 .code-entry:target h4 { animation: arrive 1.2s var(--ease); }
 @keyframes arrive { from { background: var(--select); } }
@@ -154,14 +167,23 @@ tr:target { background: var(--select); }
   .chapters a { min-height: 44px; }
   main { padding: var(--s5) var(--s4) var(--s7); }
   .table.wide { width: calc(100vw - 2 * var(--s4)); }
+  pre.wide { width: calc(100vw - 2 * var(--s4)); }
+  /* No phone is wide enough for a config line, so code wraps rather than hide its end
+     off the right edge. Wrapping is visual only: a copied block keeps its lines. */
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--s3); }
+  pre .ln { display: inline-block; width: 100%; padding-left: 4ch; text-indent: -4ch; }
   .title h1 { font-size: 1.75rem; }
   .title p { font-size: var(--t-lg); }
   td:first-child { white-space: normal; }
-  /* Reference tables stack: the name whole on its own line, the meaning under it */
-  .table.wide thead { display: none; }
-  .table.wide tr { display: block; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--rule); }
-  .table.wide tr:last-child { border-bottom: 0; }
-  .table.wide td { display: block; border: 0; padding: 2px 0; width: auto; }
+  /* Tables stack: the name whole on its own line, the meaning under it. Past the second
+     column a cell carries its own heading, so a remedy never hides off the right edge. */
+  .table { overflow-x: visible; }
+  thead { display: none; }
+  tr { display: block; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--rule); }
+  tr:last-child { border-bottom: 0; }
+  td, td:first-child { display: block; border: 0; padding: 2px 0; width: auto; }
+  td[data-label] { padding-top: var(--s1); }
+  td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; color: var(--ink-2); }
 }
 
 /* Every stop code at a glance, for the reader who arrives mid-incident */

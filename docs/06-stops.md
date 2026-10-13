@@ -2,7 +2,7 @@
 
 buildctl stops with an escalation code whenever it cannot continue safely. `buildctl status` and the console's Stop view show the code and, where relevant, the nonce the fix needs. Each code below says what happened and what clears it.
 
-The signal shapes match the console: a diamond waits for you, a square is a stop, a dashed circle is an outcome nobody knows yet.
+The signal shapes match the console. A diamond is a wait buildctl planned for: nothing failed. A square is a stop: something failed, or a limit was hit and needs your grant. A dashed circle is an outcome nobody knows yet.
 
 {.stop-index}
 
@@ -14,13 +14,21 @@ A phase in `checkpoints.before_phases`, a `merge_policy: human` merge, or the MV
 
 **Clear it:** review the evidence, then approve. `buildctl approve --nonce <n>`, with the nonce from `status`. In the console, the Approve lever asks you to type the first 7 characters of the tree hash you reviewed. An approval made against state that has since moved is refused.
 
+#### DEBATE_REQUIRES_HUMAN {#DEBATE_REQUIRES_HUMAN signal=caution}
+
+With `roles.arbiter.mode: interactive`, the review routed the phase to a debate, and the debate is yours to run. buildctl wrote `DEBATE_REQUEST.json`: the strategic findings, the evidence digest, the exact output format and the `output_path` to write the result to. The status detail is the request's path, in the phase's `artifacts/phase-N/` directory.
+
+**Clear it:** run the debate (for example with `agent-debate`), write the result to the request's `output_path`, then `buildctl retry`. A result that agrees becomes an ADR in `decisions/` and is implemented. One that does not stops at [DEBATE_UNRESOLVED](#DEBATE_UNRESOLVED).
+
+This stop is a wait, not a failure: it does not count toward `max_consecutive_failures`. The debate call is still charged its configured `operation_cost_usd.debate` in the budget ledger. The Ledger lists the call as failed until the result is consumed.
+
 ### Stopped {#stops-stopped}
 
 #### REVIEW_BLOCKED {#REVIEW_BLOCKED signal=danger}
 
 The reviewer could not clear the phase.
 
-**Clear it:** read the findings in the phase's artifacts directory, adjust the phase prompt or decide, then `buildctl retry`.
+**Clear it:** read the findings in `artifacts/phase-N/REVIEW_RESULT-<n>.json` in the [state directory](#state), or in the console's Stop view. Adjust the phase prompt or decide the question, then `buildctl retry`.
 
 #### UNREVIEWABLE_DELTA {#UNREVIEWABLE_DELTA signal=danger}
 
@@ -33,8 +41,6 @@ The change has binary or oversized files the reviewer cannot read.
 The debate ended without agreement.
 
 **Clear it:** decide the question, adjust the phase prompt, then `buildctl retry`.
-
-With `roles.arbiter.mode: interactive`, a debate writes `DEBATE_REQUEST.json` to the phase's artifacts directory and stops. It contains the findings, the evidence digest and the exact output format. Run the debate (for example with `agent-debate`), write the result to the `output_path` the request names, then `buildctl retry`. A result that agrees becomes an ADR in `decisions/` and is implemented.
 
 #### STALE_DEBATE_RESULT {#STALE_DEBATE_RESULT signal=danger}
 
@@ -62,9 +68,26 @@ The phase passed review, but the budget ledger or a required approval no longer 
 
 #### AGENT_OPERATION_FAILED {#AGENT_OPERATION_FAILED signal=danger}
 
-An agent call failed. The status detail has a redacted reason.
+An agent call failed. The status detail starts with a detail code, then a redacted reason. Find the code below. `<ROLE>` is `IMPLEMENTER`, `REVIEWER` or `ARBITER`. `<KIND>` is the role, or `DEBATE` for an interactive debate result.
 
-**Clear it:** fix the cause, then `buildctl retry`.
+**Clear it:** do what the detail code's row says, then `buildctl retry`.
+
+{.anchors prefix=detail-}
+| Detail code | What happened | Clear it |
+|---|---|---|
+| `<ROLE>_EXECUTABLE_UNAVAILABLE` | The agent CLI is not where trust pinned it, or not on `PATH`. | Reinstall it, run `trust init` again, then retry. |
+| `<ROLE>_EXECUTABLE_INTEGRITY_FAILURE` | The agent CLI changed since `trust init`, usually an upgrade. | Run `trust init` again to pin the new binary, then retry. |
+| `<ROLE>_AUTH_MODE_INVALID` | `roles.<role>.auth_mode` is not `environment`, `host_cli` or `none`. | Fix `build.yaml`, commit, trust the commit, then retry. |
+| `<ROLE>_PROCESS_FAILED` | The agent CLI exited with an error. Its own message follows the colon. | Read that message: a rate limit, an expired login or a model error. Fix it, then retry. |
+| `<ROLE>_SECRET_OUTPUT` | A credential appeared in the agent's output or result file, so nothing was stored. The detail names the source and the credential kind, never the value. | Rotate that credential. Find why the agent printed it, then retry. |
+| `REVIEWER_MUTATED_WORKSPACE` | The reviewer changed files during a read-only review. | Check the reviewer command still limits it to `--tools Read,Grep,Glob`, then retry. |
+| `IMPLEMENTER_OUTPUT_SCHEMA_INVALID` | The implementer's `PHASE_RESULT` did not have the contract's fields. | Retry. If it repeats, check the phase prompt does not ask for another format. |
+| `<KIND>_OUTPUT_MISSING` | The agent finished without writing a result. | Retry. If it repeats, check the agent command writes to `{output}` or prints its result. |
+| `<KIND>_OUTPUT_EMPTY` | The result file was empty. | Retry. |
+| `<KIND>_OUTPUT_INVALID_JSON` | The result was not valid JSON. The detail quotes the text near the error. | Retry. If it repeats, check the phase prompt does not ask for prose around the JSON. |
+| `<KIND>_OUTPUT_NOT_OBJECT` | The result was JSON, but not an object. | Retry. |
+
+A reviewer's malformed report never stops here: it is retried, and counts toward [REVIEW_FORMAT_ATTEMPTS_EXHAUSTED](#REVIEW_FORMAT_ATTEMPTS_EXHAUSTED).
 
 #### PHASE_DEADLINE_EXCEEDED {#PHASE_DEADLINE_EXCEEDED signal=danger}
 
@@ -74,9 +97,9 @@ The phase ran past `max_phase_minutes`.
 
 #### DELTA_CHANGED_AFTER_REVIEW {#DELTA_CHANGED_AFTER_REVIEW signal=danger}
 
-What would be committed differs from what was reviewed. This should never happen.
+What would be committed differs from what the reviewer attested. This should never happen. Nothing was committed.
 
-**Clear it:** investigate before retrying. Nothing was committed.
+**Clear it:** investigate before retrying, because a retry starts a fresh attempt and the evidence moves on. In the [state directory](#state), the last `review_reduced` event in `audit.jsonl` holds the `delta_id` the reviewer saw, and `workspace` in `state.json` is the phase workspace that holds what would have been committed. Something changed one of them after review: a process writing into the workspace, or a different `allowed_paths`. Once you know which, `buildctl retry`.
 
 #### STALE_RUN {#STALE_RUN signal=danger}
 

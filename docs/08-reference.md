@@ -55,7 +55,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `roles.reviewer.context_documents` | Governed files the reviewer gets as architecture context. Required; may be `[]`. |
 | `roles.reviewer.review_prompt` | Optional. Your own governed review prompt, replacing the built-in one. |
 | `roles.implementer.remediation_prompt` | Optional. Your own governed remediation prompt. |
-| `roles.arbiter.mode` | `interactive`: debates stop for a human. See [DEBATE_UNRESOLVED](#DEBATE_UNRESOLVED). |
+| `roles.arbiter.mode` | `interactive`: debates stop for a human. See [DEBATE_REQUIRES_HUMAN](#DEBATE_REQUIRES_HUMAN). |
 | `milestones` | Names for `run --until`. |
 | `checkpoints.before_phases` | Phases that need your approval before they start. |
 | `checkpoints.mvp_completion` | The phase after which the build stops for your sign-off. |

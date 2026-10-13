@@ -26,6 +26,14 @@ def kernel_codes() -> set[str]:
     return set(ESCALATIONS) | set(re.findall(r'"([A-Z_]+_EXHAUSTED)"', source))
 
 
+def detail_codes() -> set[str]:
+    """Every detail code an agent call can fail with, without its `{role}_` or `{kind}_` prefix."""
+    source = "\n".join(path.read_text() for path in (ROOT / "buildctl").rglob("*.py"))
+    found = re.findall(r'AgentError\(f?"((?:\{[^}]+\}_)?[A-Z_]+)', source)
+    # The interactive debate is not a failure: it has its own escalation code.
+    return {re.sub(r"^\{[^}]+\}_", "", code) for code in found} - {"INTERACTIVE_DEBATE_REQUIRES_HUMAN"}
+
+
 def commands() -> set[str]:
     names = set()
     for action in parser()._subparsers._group_actions:
@@ -44,6 +52,12 @@ class ManualTests(unittest.TestCase):
     def test_every_escalation_code_has_a_section(self):
         missing = sorted(kernel_codes() - ids())
         self.assertEqual(missing, [], "escalation codes with no section in the manual")
+
+    def test_every_agent_detail_code_has_a_row(self):
+        codes = detail_codes()
+        self.assertIn("EXECUTABLE_INTEGRITY_FAILURE", codes)  # the scan still sees templated codes
+        missing = sorted(code for code in codes if f"detail-{code.lower()}" not in ids())
+        self.assertEqual(missing, [], "agent detail codes with no row under AGENT_OPERATION_FAILED")
 
     def test_every_command_has_a_reference_row(self):
         missing = sorted(f"cmd-{name}" for name in commands() if f"cmd-{name}" not in ids())
@@ -68,6 +82,19 @@ class ManualTests(unittest.TestCase):
                     keys.add(f"roles.{role}.{key}")
         expected = {"config-" + re.sub(r"[^a-z0-9_]+", "-", key.lower()).strip("-") for key in keys}
         self.assertEqual(sorted(expected - ids()), [], "configuration keys with no row in the reference")
+
+    def test_the_page_reads_cleanly_to_a_screen_reader(self):
+        page = PAGE.read_text()
+        every_id = re.findall(r'\sid="([^"]+)"', page)
+        self.assertEqual(sorted({i for i in every_id if every_id.count(i) > 1}), [], "duplicate ids")
+        permalinks = re.findall(r'class="permalink"[^>]*aria-label="([^"]+)"', page)
+        self.assertEqual(len(permalinks), len(set(permalinks)), "permalinks a screen reader cannot tell apart")
+        # The stop index is navigation: its group labels are not headings, its shapes are not read out
+        index = re.search(r'<nav class="stop-index".*?</nav>', page, re.S).group(0)
+        self.assertNotRegex(index, r"<h\d")
+        self.assertNotIn('role="img"', index)
+        self.assertNotRegex(page, r'<span class="num">\d+</span>(?!<span class="vh">)')
+        self.assertIn('"location"', (PAGE.parent / "docs.js").read_text())
 
     def test_the_console_serves_the_manual(self):
         self.assertTrue(PAGE.is_file())

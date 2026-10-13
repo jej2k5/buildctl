@@ -18,7 +18,7 @@ Run `trust init` again after you:
 
 - change any governed file. The change only takes effect once you trust the new commit.
 - upgrade, reinstall or edit buildctl. Until you do, buildctl refuses to start and shows both digests.
-- upgrade the `codex` or `claude` CLI. Until you do, the next call to it fails with `EXECUTABLE_INTEGRITY_FAILURE`.
+- upgrade the `codex` or `claude` CLI. Until you do, the next call to it stops at [AGENT_OPERATION_FAILED](#AGENT_OPERATION_FAILED) with `<ROLE>_EXECUTABLE_INTEGRITY_FAILURE`.
 
 The console (`buildctl-ui`) is a separate package, so updating it never requires a new `trust init`.
 

@@ -1,5 +1,7 @@
 # buildctl
 
+![buildctl: a supervisor for agent-built software. Codex builds each phase, Claude reviews it, acceptance runs sandboxed, and only reviewed work is committed.](.github/banner.png)
+
 A supervisor for agent-built software. You write a roadmap of phases. buildctl has one agent implement each phase, another review it adversarially, runs your acceptance commands in a sandbox, and commits only what passed. A human approves the phases that matter.
 
 buildctl owns the state, the git history and the budget. Agents never touch any of them. They work in a disposable clone with no remote, and their output is checked before a single byte reaches your repository.

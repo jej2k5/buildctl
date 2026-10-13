@@ -22,6 +22,10 @@ ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT.parent / "ui" / "buildctl_ui" / "web" / "docs" / "index.html"
 SIGNALS = {"danger": "stopped", "caution": "waiting for you", "unknown": "outcome unknown", "clear": "clear"}
 CODES: dict[str, str] = {}  # stop code -> signal aspect, collected before rendering
+VERSION = re.search(r'__version__ = "([^"]+)"', (ROOT.parent / "buildctl" / "__init__.py").read_text()).group(1)
+# A reader who landed on one stop code from the console gets back to the rest in one step
+END_ENTRY = '<p class="back"><a href="#stop-index">All stop codes</a></p></article>'
+WIDE_CODE = 76  # characters of code that fit the 72ch reading column at the code size
 HEADING = re.compile(r"^(#{1,4})\s+(.*?)\s*(?:\{([^}]*)\})?\s*$")
 ATTRS = re.compile(r"^\{([^}]*)\}\s*$")
 
@@ -30,14 +34,27 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "-", text.lower()).strip("-")
 
 
+def code_groups(code: str) -> list[str]:
+    """The pieces a code span may wrap between. A short span stays whole, a placeholder like
+    `<N or milestone>` stays whole, and a flag keeps its value, so `--nonce <n>` never splits."""
+    if len(code) <= 20:
+        return [code]
+    groups: list[str] = []
+    for token in re.findall(r"\"[^\"]*\"|<[^>]*>|\S+", code):
+        if groups and groups[-1].startswith("-") and " " not in groups[-1] and not token.startswith("-"):
+            groups[-1] += " " + token
+        else:
+            groups.append(token)
+    return groups
+
+
 def inline(text: str) -> str:
     """Escape, then render code spans, links and bold. Code spans are protected first."""
     spans: list[str] = []
 
     def keep(match: re.Match[str]) -> str:
-        # Each word stays whole, so a command copied mid-incident never breaks inside a flag.
-        words = (match.group(1) or match.group(2)).split(" ")
-        spans.append("<code>" + " ".join(f'<span class="w">{html.escape(w)}</span>' for w in words) + "</code>")
+        spans.append("<code>" + " ".join(f'<span class="w">{html.escape(g)}</span>'
+                                         for g in code_groups(match.group(1) or match.group(2))) + "</code>")
         return f"\x00{len(spans) - 1}\x00"
 
     text = re.sub(r"``\s?(.+?)\s?``|`([^`]+)`", keep, text)
@@ -54,6 +71,15 @@ def inline(text: str) -> str:
     return re.sub(r"\x00(\d+)\x00", lambda m: spans[int(m.group(1))], text)
 
 
+def row_cell(cell: str) -> str:
+    """A cell; an anchored row's first cell also carries its permalink."""
+    if "\x01" not in cell:
+        return inline(cell)
+    cell, ident, name = cell.split("\x01")
+    return (inline(cell) + f'<a class="permalink" href="#{ident}" '
+            f'aria-label="Link to {html.escape(name, quote=True)}">#</a>')
+
+
 def parse_attrs(raw: str | None) -> dict[str, str]:
     result: dict[str, str] = {}
     for token in (raw or "").split():
@@ -68,9 +94,10 @@ def parse_attrs(raw: str | None) -> dict[str, str]:
     return result
 
 
-def signal_svg(aspect: str) -> str:
-    return (f'<svg class="sig" role="img" aria-label="{SIGNALS[aspect]}">'
-            f'<use href="#sig-{aspect}"/></svg>')
+def signal_svg(aspect: str, decorative: bool = False) -> str:
+    """The aspect's shape. Decorative where the surrounding text already names the aspect."""
+    a11y = 'aria-hidden="true" focusable="false"' if decorative else f'role="img" aria-label="{SIGNALS[aspect]}"'
+    return f'<svg class="sig" {a11y}><use href="#sig-{aspect}"/></svg>'
 
 
 def table(lines: list[str], attrs: dict[str, str]) -> str:
@@ -81,14 +108,17 @@ def table(lines: list[str], attrs: dict[str, str]) -> str:
     for row in body:
         row_id = ""
         if prefix is not None:
-            name = re.sub(r"`", "", row[0])
+            name = re.sub(r"^<[A-Z]+>_", "", re.sub(r"`", "", row[0]))  # `<ROLE>_X` anchors as x
             words = []
             for word in name.split():
                 if word.startswith(("-", "<")):
                     break
                 words.append(word)
             row_id = f' id="{prefix}{slug(" ".join(words))}"'
-        cells = "".join(f"<td>{inline(c)}</td>" for c in row)
+            row[0] += f'\x01{prefix}{slug(" ".join(words))}\x01{re.sub(r"`", "", row[0])}'
+        # A stacked table on a phone loses its header row, so later cells keep their label.
+        cells = "".join((f'<td data-label="{html.escape(re.sub(r"`", "", head[n]))}">' if n >= 2 else "<td>")
+                        + f"{row_cell(cell)}</td>" for n, cell in enumerate(row))
         out.append(f"<tr{row_id}>{cells}</tr>")
     out.append("</tbody></table>")
     wide = "wide" in attrs.get("class", "") or len(head) > 3
@@ -133,7 +163,11 @@ def render(sources: list[Path]) -> tuple[str, list[tuple[str, str]], str]:
             while not lines[i].startswith("```"):
                 block.append(lines[i]); i += 1
             label = f' data-lang="{html.escape(language)}"' if language else ""
-            out.append(f"<pre{label}><code>{html.escape(chr(10).join(block))}</code></pre>")
+            # Lines past the reading column would clip, so the block breaks out like a wide table
+            label += ' class="wide"' if max(map(len, block), default=0) > WIDE_CODE else ""
+            # One span per line, so a line wrapped on a phone can hang under its own start
+            lines_html = chr(10).join(f'<span class="ln">{html.escape(line)}</span>' for line in block)
+            out.append(f"<pre{label}><code>{lines_html}</code></pre>")
             i += 1
             continue
         heading = HEADING.match(line)
@@ -142,10 +176,12 @@ def render(sources: list[Path]) -> tuple[str, list[tuple[str, str]], str]:
             level, text, attrs = len(heading.group(1)), heading.group(2), parse_attrs(heading.group(3))
             ident = attrs.get("id") or slug(re.sub(r"`", "", text))
             if open_entry and level <= 4:
-                out.append("</article>"); open_entry = False
+                out.append(END_ENTRY); open_entry = False
             if level == 1:
                 title = text
-                out.append(f'<header class="title"><h1>{inline(text)}</h1>')
+                # The commit is filled in by the Pages workflow; a committed page cannot name its own commit
+                out.append(f'<header class="title"><h1>{inline(text)}</h1>'
+                           f'<p class="stamp">For buildctl {VERSION}<span data-commit></span></p>')
             elif level == 2:
                 if open_section:
                     out.append("</section>")
@@ -153,7 +189,7 @@ def render(sources: list[Path]) -> tuple[str, list[tuple[str, str]], str]:
                     out.append("</header>")
                 chapters.append((ident, re.sub(r"`", "", text)))
                 out.append(f'<section class="chapter" id="{ident}" aria-labelledby="{ident}-h">'
-                           f'<h2 id="{ident}-h"><span class="num">{len(chapters)}</span>{inline(text)}</h2>')
+                           f'<h2 id="{ident}-h"><span class="num">{len(chapters)}</span><span class="vh">. </span>{inline(text)}</h2>')
                 open_section = True
             elif level == 4 and attrs.get("signal") in SIGNALS:
                 aspect = attrs["signal"]
@@ -163,7 +199,7 @@ def render(sources: list[Path]) -> tuple[str, list[tuple[str, str]], str]:
                 open_entry = True
             else:
                 out.append(f'<h{level} id="{ident}">{inline(text)}'
-                           f'<a class="permalink" href="#{ident}" aria-label="Link to this section">#</a></h{level}>')
+                           f'<a class="permalink" href="#{ident}" aria-label="Link to {html.escape(re.sub(r"`", "", text))}">#</a></h{level}>')
             i += 1
             continue
         marker = ATTRS.match(line)
@@ -171,10 +207,13 @@ def render(sources: list[Path]) -> tuple[str, list[tuple[str, str]], str]:
             flush()
             groups: dict[str, list[str]] = {}
             for name, code, aspect in entries:
+                # The group label names the aspect, so each code's shape is not read out again
                 groups.setdefault(name, []).append(
-                    f'<li><a href="#{code}">{signal_svg(aspect)}<code>{html.escape(code)}</code></a></li>')
-            out.append('<nav class="stop-index" aria-label="Every stop code">' + "".join(
-                f'<div><h3 class="index-head">{html.escape(name)}</h3><ul>{"".join(items)}</ul></div>'
+                    f'<li><a href="#{code}">{signal_svg(aspect, decorative=True)}<code>{html.escape(code)}</code></a></li>')
+            # Plain labels, not headings: the outline already has a heading for each group below
+            out.append('<nav class="stop-index" id="stop-index" aria-label="Every stop code">' + "".join(
+                f'<div><p class="index-head" id="index-{slug(name)}">{html.escape(name)}</p>'
+                f'<ul aria-labelledby="index-{slug(name)}">{"".join(items)}</ul></div>'
                 for name, items in groups.items()) + "</nav>")
             i += 1
             continue
@@ -207,7 +246,7 @@ def render(sources: list[Path]) -> tuple[str, list[tuple[str, str]], str]:
         paragraph.append(line.strip()); i += 1
     flush()
     if open_entry:
-        out.append("</article>")
+        out.append(END_ENTRY)
     if open_section:
         out.append("</section>")
     return title, chapters, "\n".join(out)
@@ -253,7 +292,7 @@ TEMPLATE = """<!doctype html>
 def build() -> str:
     sources = sorted(ROOT.glob("*.md"))
     title, chapters, body = render(sources)
-    nav = "\n".join(f'    <li><a href="#{ident}" data-chapter="{ident}"><span class="num">{n}</span>{html.escape(label)}</a></li>'
+    nav = "\n".join(f'    <li><a href="#{ident}" data-chapter="{ident}"><span class="num">{n}</span><span class="vh">. </span>{html.escape(label)}</a></li>'
                     for n, (ident, label) in enumerate(chapters, 1))
     return TEMPLATE.format(title=html.escape(title), nav=nav, body=body)
 

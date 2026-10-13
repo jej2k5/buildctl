@@ -57,7 +57,7 @@ A roadmap is `build.yaml` plus one prompt file per phase. `build.yaml` is JSON, 
 }
 ```
 
-Every key is described in [Configuration](#config).
+Every key is described in [Configuration](#config). The implementer's `--dangerously-bypass-approvals-and-sandbox` turns off Codex's own sandbox and approval prompts: buildctl already runs Codex inside its `sandbox-exec` profile, and an unattended run has no one to answer a prompt. See [Trust and the sandbox](#trust) for what that profile holds.
 
 ### Phase prompts {#phase-prompts}
 
