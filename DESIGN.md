@@ -208,6 +208,10 @@ components:
     backgroundColor: "{colors.surface}"
     rounded: "{rounded.none}"
     width: "min(1100px, calc(100vw - 64px))"
+  code-block-wide:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.none}"
+    width: "min(1100px, calc(100vw - 64px))"
   inline-code:
     backgroundColor: "{colors.paper-2}"
     textColor: "{colors.ink}"
@@ -294,7 +298,7 @@ The manual uses the same faces with a larger ramp. These sizes belong to Read su
 - **Read chapter** (650, 1.5rem, 1.25, -0.01em): chapter headings, led by the chapter plate.
 - **Read section** (600, the `t-xl` step 1.25rem, 1.3): section headings inside a chapter, 32px above, 8px below; a hover-revealed `#` permalink in `ink-3` follows the text.
 - **Read body** (400, 1rem, 1.6, tabular figures): running prose at a 72ch measure. Tables and code blocks inside the column stay at 0.8125rem; `strong` is 650.
-- **Inline code** (mono 0.9em on a `paper-2` field, 1px by 4px padding): each word of a code span is wrapped to never break internally, so a command or key breaks only between its words.
+- **Inline code** (mono 0.9em on a `paper-2` field, 1px by 4px padding): a span of 20 characters or fewer never wraps. A longer one wraps only between groups: a flag keeps its value (`--nonce <n>`), and a `<placeholder>` or quoted string stays whole.
 
 ### Named Rules
 **The Machine Text Rule.** If the kernel produced it or the operator must type it back, set it in mono.
@@ -305,7 +309,7 @@ The manual uses the same faces with a larger ramp. These sizes belong to Read su
 
 **The Two Ramps Rule.** Operate surfaces use the dense ramp (0.75rem to 1.5rem, weight 600). Read surfaces add the reading ramp (body 1rem/1.6, headings to 2.25rem, weight 650). Neither ramp crosses into the other's surface.
 
-**The Unbroken Token Rule.** A command, key or code never breaks inside a word. Wrap between words; let a wide table scroll or stack rather than split a name.
+**The Unbroken Token Rule.** A command, key or code never breaks inside a word, and a flag never parts from its value. Wrap between groups; let a table stack rather than split a name.
 
 ## Layout
 
@@ -316,9 +320,9 @@ Spacing steps through `s1`–`s7` (4, 8, 12, 16, 24, 32, 48px). Sections sit 32p
 At 1100px the columns stack and the top bar's facts wrap onto a second row under a `bar-rule` hairline. At 820px the rail becomes a horizontal, sticky, scrolling strip under the bar (kbd hints and footer hidden, the current-page marker moves to the bottom edge), the Stop panel's phase block moves below the code, and readiness and finding rows collapse to one column.
 
 ### Read surfaces
-The manual has no rail. Main is a centred reading column, 72ch plus 32px padding each side, padded 32px / 32px / 48px (24px / 16px / 48px at 820px and below). Chapters sit 48px apart; the title block closes with a `rule-strong` hairline and 24px below. Code blocks and ordinary tables stay inside the column. Only a table marked wide breaks out: it is centred on the page at `min(1100px, 100vw - 64px)` (`100vw - 32px` at 820px and below), so reference tables read in full without widening the prose. Anchored targets scroll clear of the sticky bar (116px offset; 150px at 820px and below, where the bar takes two rows).
+The manual has no rail. Main is a centred reading column, 72ch plus 32px padding each side, padded 32px / 32px / 48px (24px / 16px / 48px at 820px and below). Chapters sit 48px apart; the title block closes with a `rule-strong` hairline and 24px below. Code blocks and ordinary tables stay inside the column. Two things break out, centred on the page at `min(1100px, 100vw - 64px)` (`100vw - 32px` at 820px and below): a table marked wide, and a code block with a line longer than 76 characters, which `docs/build.py` marks wide. Shell blocks are reflowed to fit the column instead (comments on their own lines, `\` continuations), so only data such as the build.yaml example breaks out. At 820px and below every table stacks, and code wraps instead of scrolling: each line hangs 4ch under its own start, so a wrapped continuation never reads as a new command. Anchored targets scroll clear of the sticky bar (116px offset; 150px at 820px and below, where the bar takes two rows).
 
-**The Reading Column Rule.** Prose never runs wider than about 72ch. Only reference tables marked wide break out, centred, up to 1100px; nothing else leaves the column.
+**The Reading Column Rule.** Prose never runs wider than about 72ch. Only wide reference tables and code blocks whose lines would clip break out, centred, up to 1100px; nothing else leaves the column, and nothing is ever clipped.
 
 ## Elevation & Depth
 
@@ -394,19 +398,28 @@ The Textual TUI uses the dark palette (`#111513` background, `#161b18` surface, 
 The manual's navigation is the console's top bar carrying chapters instead of facts: `bar` mass, sticky, 52px, the mono wordmark `buildctl` with a `bar-ink-2` "manual" caption, then a numbered list of chapters. Each chapter link is sans 0.8125rem `bar-ink-2` led by its number in mono 600 0.75rem; hover lifts to `bar-ink`. The chapter being read (the last whose top has passed 40% of the viewport) turns `bar-ink` with a 2px `bar-ink` underline, the ink of the bar, never occupancy blue. The list scrolls sideways when it overflows and keeps the current chapter in view. At 820px and below the bar takes two rows, wordmark above and chapters under a `bar-rule` hairline, with 44px tap targets.
 
 ### The Chapter Plate (Read)
-Every chapter heading leads with its number in a plate, the same plate language as a lever number: mono 700 at 0.8125rem, a 1.5px ink border, square, 5px by 6px padding, 30px minimum width, centred. The chapter plate sits on `surface` rather than inside a `paper-2` column. The same number labels the chapter in the bar.
+Every chapter heading leads with its number in a plate, the same plate language as a lever number: mono 700 at 0.8125rem, a 1.5px ink border, square, 5px by 6px padding, 30px minimum width, centred. The chapter plate sits on `surface` rather than inside a `paper-2` column. The same number labels the chapter in the bar. A visually hidden ". " follows the number in both places, so a screen reader says "1. Start", not "1Start". The current chapter carries `aria-current="location"`; the others carry no `aria-current` at all.
 
 ### The Stop-Code Entry (Read)
-The console's Stop panel, small, one per escalation code. A `surface` block with a 1px `rule` border, 12px apart. Its header band carries the aspect's wash (`danger-wash`, `caution-wash`, or `paper-2` for unknown) over a `rule` hairline, 8px by 16px: the 16px signal glyph, then the code in mono 700 at 1rem, then the permalink. The body is the meaning, then a line that opens with a bold "Clear it:" and gives the remedy and command. When the entry is the URL target it takes a 2px ink outline offset 2px and its band settles from `select` to its wash over 1.2s on the shared ease. Unlike the console Stop panel, the border stays `rule` for every aspect and is never dashed; the band alone carries the aspect.
+The console's Stop panel, small, one per escalation code. A `surface` block with a 1px `rule` border, 12px apart. Its header band carries the aspect's wash (`danger-wash`, `caution-wash`, or `paper-2` for unknown) over a `rule` hairline, 8px by 16px: the 16px signal glyph, then the code in mono 700 at 1rem, then the permalink. The body is the meaning, then a line that opens with a bold "Clear it:" and gives the remedy and command. The entry closes with "↑ All stop codes" (0.8125rem, `ink-2`; the arrow is hidden from screen readers), back to the index: a reader the console dropped on one code is one step from the rest. When the entry is the URL target it takes a 2px ink outline offset 2px and its band settles from `select` to its wash over 1.2s on the shared ease. Unlike the console Stop panel, the border stays `rule` for every aspect and is never dashed; the band alone carries the aspect.
 
 ### The Stop-Code Index (Read)
-Every stop code at a glance, for a reader who arrives mid-incident. A `surface` panel with a 1px `rule` border and 16px padding, set in balanced columns (minimum 260px, 24px gap). Codes group under sans 600 0.8125rem `ink-2` headings (Waiting for you, Stopped, and so on); each is a link of its 16px signal glyph and the code in mono 0.8125rem, underlined in `rule-strong` (ink on hover). Groups never split across columns.
+Every stop code at a glance, for a reader who arrives mid-incident. A `surface` panel with a 1px `rule` border and 16px padding, set in balanced columns (minimum 260px, 24px gap). Codes group under sans 600 0.8125rem `ink-2` labels (Waiting for you, Stopped, and so on). The labels are plain text that names its list, not headings, because the chapter already has a heading for each group below it. Each code is a link of its 16px signal glyph and the code in mono 0.8125rem, underlined in `rule-strong` (ink on hover). Here the glyph is hidden from screen readers, since the group label already names the aspect; everywhere else a glyph is announced. Groups never split across columns.
 
 ### Code Links (Read)
 A link to a stop code from prose or a table carries the code's 12px signal glyph before the code, so its aspect reads before the page jumps.
 
 ### Reference Tables (Read)
-The console's data table, set for reference: `surface` in a 1px `rule` frame, `paper-2` header at 600 0.75rem `ink-2` over a `rule-strong` line, 8px by 12px cells, 0.8125rem at 1.5. The name column is nowrap and 1% wide so the meaning takes the rest; a code in it drops its field and sets 600. A row that is the URL target fills `select`. Wide reference tables (commands, config keys) break out of the column per the Reading Column Rule; at 820px and below they lose their header row and stack, each row a block with the name whole on its own line and the meaning under it.
+The console's data table, set for reference: `surface` in a 1px `rule` frame, `paper-2` header at 600 0.75rem `ink-2` over a `rule-strong` line, 8px by 12px cells, 0.8125rem at 1.5. The name column is nowrap and 1% wide so the meaning takes the rest; a code in it drops its field and sets 600. A row that is the URL target fills `select`. Wide reference tables (commands, config keys) break out of the column per the Reading Column Rule. At 820px and below every table, wide or not, loses its header row and stacks: each row a block, the name whole on its own line and the meaning under it, and from the third column on each cell leads with its column label in 600 `ink-2` ("Clear it: …"), so no remedy hides off the right edge. A row with an anchor carries its own permalink after the name.
+
+### Code Blocks (Read)
+`surface` in a 1px `rule` frame, mono 0.8125rem at 1.6, 12px by 16px padding. With script, the block gains a band on top: its language in 0.75rem `ink-3` on the left, and a quiet Copy button on the right (sans 500 0.75rem, `ink-2`, transparent with a transparent border that turns `rule` on hover, 32px tall). Copy writes the block's exact text and says "Copied" for 2s, in the button and through a polite live region. Without script the block has no band and reads the same. Long lines follow the Reading Column Rule.
+
+### Permalinks (Read)
+A "#" in `ink-3` after every h3, h4 and anchored table row, named for its target ("Link to Quick start"), never a generic "Link to this section". It appears on hover of its heading or row and on focus; on a device without hover it is always shown.
+
+### The Version Stamp (Read)
+Under the title, mono 0.8125rem `ink-3`: "For buildctl 0.1.0", read from `buildctl/__init__.py` by `docs/build.py`. The Pages workflow appends " at <short commit>" to the published copy only, because a committed page cannot name its own commit.
 
 ## Do's and Don'ts
 
@@ -435,5 +448,5 @@ The console's data table, set for reference: `surface` in a 1px `rule` frame, `p
 - **Don't** arrange status pills over a log pane.
 - **Don't** uppercase sans labels, headings or captions, and don't add kickers or eyebrows; capitals are for codes, severities, SIGNED, DEMO and station names.
 - **Don't** mark reading position, links or the current chapter in occupancy blue.
-- **Don't** let anything but a wide reference table leave the reading column, and don't let a command, key or code break inside a word.
+- **Don't** let anything but a wide reference table or an over-long code block leave the reading column, and don't let a command, key or code break inside a word or part a flag from its value.
 - **Don't** carry the reading ramp into the console or the TUI.

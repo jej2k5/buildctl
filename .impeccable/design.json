@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-07T12:00:00Z",
+  "generatedAt": "2026-10-12T23:45:00Z",
   "title": "Design System: buildctl",
   "extensions": {
     "colorMeta": {
@@ -605,17 +605,21 @@
       "measure": "72ch",
       "column": "max-width: calc(72ch + 2 * 32px); margin: 0 auto; padding: 32px 32px 48px",
       "columnCompact": "padding: 24px 16px 48px",
-      "wideTable": "width: min(1100px, calc(100vw - 64px)); position: relative; left: 50%; transform: translateX(-50%)",
-      "wideTableCompact": "width: calc(100vw - 32px); thead hidden; rows and cells display block (name over meaning)",
+      "wideTable": "width: min(1100px, calc(100vw - 64px)); position: relative; left: 50%; transform: translateX(-50%). Also applies to pre.wide, a code block with a line over 76 characters (marked by docs/build.py)",
+      "wideTableCompact": "every table at 820px and below: width calc(100vw - 32px) when wide; thead hidden; rows and cells display block (name over meaning); cells from the third column lead with their column label from data-label",
       "compactBreakpoint": "820px",
       "scrollPaddingTop": "116px (150px at 820px and below)",
-      "chapterMarker": "aria-current chapter: bar-ink text and 2px bar-ink bottom border; the last chapter whose top has passed 40% of the viewport",
-      "inlineCode": "mono 0.9em on paper-2, padding 1px 4px; every word wrapped in a white-space: nowrap span",
+      "chapterMarker": "aria-current=\"location\" on the current chapter only: bar-ink text and 2px bar-ink bottom border; the last chapter whose top has passed 40% of the viewport",
+      "inlineCode": "mono 0.9em on paper-2, padding 1px 4px; a span of 20 characters or fewer is one nowrap group; longer spans wrap only between groups, where a flag keeps its value and a <placeholder> or quoted string stays whole",
       "targetMotion": {
         "name": "arrive",
         "value": "background from var(--select) over 1.2s var(--ease)",
         "purpose": "A stop-code entry that is the URL target settles into its wash; reduced motion collapses it to 1ms."
-      }
+      },
+      "codeCompact": "at 820px and below: white-space pre-wrap, overflow-wrap anywhere, padding 12px; each line is a span.ln, inline-block, width 100%, padding-left 4ch, text-indent -4ch, so a wrapped continuation hangs under its own line",
+      "chapterNumber": "the number is followed by a visually hidden '. ' (class vh) in the h2 and the bar, so it reads '1. Start'",
+      "permalinks": "ink-3 '#' after every h3, h4 and anchored table row, labelled 'Link to <target>'; shown on hover or focus, always shown under (hover: none)",
+      "versionStamp": "p.stamp under the title, mono 0.8125rem ink-3: 'For buildctl <version>'; the Pages workflow appends ' at <short sha>' to the published copy"
     }
   },
   "components": [
@@ -719,25 +723,33 @@
       "name": "Stop-Code Entry",
       "kind": "card",
       "refersTo": "stop-entry-caution",
-      "description": "Read surfaces: one escalation code, header band in the aspect's wash with glyph and mono code, then meaning and a 'Clear it:' remedy.",
-      "html": "<article class=\"ds-entry\"><h4><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"waiting for you\"><path d=\"M8 1.6 14.4 8 8 14.4 1.6 8Z\" fill=\"var(--caution, #d49b0f)\"/></svg><code>CHECKPOINT_REQUIRED</code></h4><p>A phase in <code>checkpoints.before_phases</code> needs your approval.</p><p><strong>Clear it:</strong> review the evidence, then approve. <code>buildctl approve --nonce &lt;n&gt;</code></p></article>",
-      "css": ".ds-entry { border: 1px solid var(--rule, #d3d8d2); background: var(--surface, #fbfcfa); color: var(--ink, #171c19); font: 400 1rem/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; } .ds-entry h4 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 16px; background: var(--caution-wash, #fbf1d8); border-bottom: 1px solid var(--rule, #d3d8d2); font-size: 1rem; } .ds-entry h4 code { font: 700 1rem/1.6 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; background: none; padding: 0; overflow-wrap: anywhere; } .ds-sig { width: 16px; height: 16px; flex: none; } .ds-entry p { margin: 12px 16px; } .ds-entry p:last-child { margin-bottom: 16px; } .ds-entry strong { font-weight: 650; } .ds-entry p code { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; background: var(--paper-2, #e8ebe6); padding: 1px 4px; } .ds-entry:target { outline: 2px solid var(--ink, #171c19); outline-offset: 2px; }"
+      "description": "Read surfaces: one escalation code, header band in the aspect's wash with glyph and mono code, then meaning and a 'Clear it:' remedy. It closes with an '↑ All stop codes' link back to the index.",
+      "html": "<article class=\"ds-entry\"><h4><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"waiting for you\"><path d=\"M8 1.6 14.4 8 8 14.4 1.6 8Z\" fill=\"var(--caution, #d49b0f)\"/></svg><code>CHECKPOINT_REQUIRED</code></h4><p>A phase in <code>checkpoints.before_phases</code> needs your approval.</p><p><strong>Clear it:</strong> review the evidence, then approve. <code>buildctl approve --nonce &lt;n&gt;</code></p><p class=\"ds-back\"><a href=\"#\">All stop codes</a></p></article>",
+      "css": ".ds-entry { border: 1px solid var(--rule, #d3d8d2); background: var(--surface, #fbfcfa); color: var(--ink, #171c19); font: 400 1rem/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; } .ds-entry h4 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 16px; background: var(--caution-wash, #fbf1d8); border-bottom: 1px solid var(--rule, #d3d8d2); font-size: 1rem; } .ds-entry h4 code { font: 700 1rem/1.6 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; background: none; padding: 0; overflow-wrap: anywhere; } .ds-sig { width: 16px; height: 16px; flex: none; } .ds-entry p { margin: 12px 16px; } .ds-entry p:last-child { margin-bottom: 16px; } .ds-entry strong { font-weight: 650; } .ds-entry p code { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; background: var(--paper-2, #e8ebe6); padding: 1px 4px; } .ds-entry:target { outline: 2px solid var(--ink, #171c19); outline-offset: 2px; } .ds-back { font-size: 0.8125rem; margin-top: 8px; } .ds-back a { color: var(--ink-2, #434b46); } .ds-back a::before { content: \"\\2191\\00a0\" / \"\"; }"
     },
     {
       "name": "Stop-Code Index",
       "kind": "nav",
       "refersTo": "stop-index",
-      "description": "Read surfaces: every stop code grouped by aspect, each link carrying its signal glyph and an underlined mono code.",
-      "html": "<nav class=\"ds-sindex\"><div><h3>Waiting for you</h3><ul><li><a href=\"#\"><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"waiting for you\"><path d=\"M8 1.6 14.4 8 8 14.4 1.6 8Z\" fill=\"var(--caution, #d49b0f)\"/></svg><code>CHECKPOINT_REQUIRED</code></a></li></ul></div><div><h3>Stopped</h3><ul><li><a href=\"#\"><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"stopped\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" fill=\"var(--danger, #c4261d)\"/></svg><code>REVIEW_BLOCKED</code></a></li><li><a href=\"#\"><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"stopped\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" fill=\"var(--danger, #c4261d)\"/></svg><code>UNREVIEWABLE_DELTA</code></a></li></ul></div></nav>",
-      "css": ".ds-sindex { columns: 2 260px; column-gap: 24px; background: var(--surface, #fbfcfa); border: 1px solid var(--rule, #d3d8d2); padding: 16px; font: 400 1rem/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; color: var(--ink, #171c19); } .ds-sindex > div { break-inside: avoid; padding-bottom: 16px; } .ds-sindex h3 { font-size: 0.8125rem; font-weight: 600; color: var(--ink-2, #434b46); margin: 0 0 8px; } .ds-sindex ul { list-style: none; padding: 0; margin: 0; } .ds-sindex li { margin: 0 0 4px; } .ds-sindex a { display: inline-flex; align-items: center; gap: 6px; color: var(--ink, #171c19); text-decoration: none; } .ds-sindex code { font: 400 0.8125rem/1.6 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; text-decoration: underline; text-decoration-color: var(--rule-strong, #a3aba4); text-underline-offset: 3px; } .ds-sindex a:hover code { text-decoration-color: var(--ink, #171c19); } .ds-sindex a:focus-visible { outline: 2px solid var(--ink, #171c19); outline-offset: 2px; } .ds-sig { width: 16px; height: 16px; flex: none; }"
+      "description": "Read surfaces: every stop code grouped by aspect under plain-text labels (not headings; each list is aria-labelledby its label). Each link carries its signal glyph, hidden from screen readers here because the label names the aspect, and an underlined mono code.",
+      "html": "<nav class=\"ds-sindex\"><div><p class=\"ds-ilabel\" id=\"ds-iw\">Waiting for you</p><ul aria-labelledby=\"ds-iw\"><li><a href=\"#\"><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M8 1.6 14.4 8 8 14.4 1.6 8Z\" fill=\"var(--caution, #d49b0f)\"/></svg><code>CHECKPOINT_REQUIRED</code></a></li></ul></div><div><p class=\"ds-ilabel\" id=\"ds-is\">Stopped</p><ul aria-labelledby=\"ds-is\"><li><a href=\"#\"><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" aria-hidden=\"true\" focusable=\"false\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" fill=\"var(--danger, #c4261d)\"/></svg><code>REVIEW_BLOCKED</code></a></li><li><a href=\"#\"><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" aria-hidden=\"true\" focusable=\"false\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" fill=\"var(--danger, #c4261d)\"/></svg><code>UNREVIEWABLE_DELTA</code></a></li></ul></div></nav>",
+      "css": ".ds-sindex { columns: 2 260px; column-gap: 24px; background: var(--surface, #fbfcfa); border: 1px solid var(--rule, #d3d8d2); padding: 16px; font: 400 1rem/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; color: var(--ink, #171c19); } .ds-sindex > div { break-inside: avoid; padding-bottom: 16px; } .ds-sindex .ds-ilabel { font-size: 0.8125rem; font-weight: 600; color: var(--ink-2, #434b46); margin: 0 0 8px; } .ds-sindex ul { list-style: none; padding: 0; margin: 0; } .ds-sindex li { margin: 0 0 4px; } .ds-sindex a { display: inline-flex; align-items: center; gap: 6px; color: var(--ink, #171c19); text-decoration: none; } .ds-sindex code { font: 400 0.8125rem/1.6 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; text-decoration: underline; text-decoration-color: var(--rule-strong, #a3aba4); text-underline-offset: 3px; } .ds-sindex a:hover code { text-decoration-color: var(--ink, #171c19); } .ds-sindex a:focus-visible { outline: 2px solid var(--ink, #171c19); outline-offset: 2px; } .ds-sig { width: 16px; height: 16px; flex: none; }"
     },
     {
       "name": "Wide Reference Table",
       "kind": "custom",
       "refersTo": "reference-table-wide",
-      "description": "Read surfaces: a command or config table; name column nowrap and 1% wide, code links carry their glyph. In the manual it breaks out of the 72ch column, centred, up to 1100px, and stacks at 820px.",
+      "description": "Read surfaces: a command or config table; name column nowrap and 1% wide, code links carry their glyph, anchored rows carry a permalink. In the manual it breaks out of the 72ch column, centred, up to 1100px. At 820px and below every table stacks, later cells labelled.",
       "html": "<div class=\"ds-rtable\"><table><thead><tr><th>Key</th><th>Meaning</th></tr></thead><tbody><tr><td><code>limits.max_phase_attempts</code></td><td>Attempts a phase may start before <a href=\"#\" class=\"ds-clink\"><svg class=\"ds-sig\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"stopped\"><rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" fill=\"var(--danger, #c4261d)\"/></svg><code>PHASE_ATTEMPTS_EXHAUSTED</code></a>.</td></tr><tr><td><code>run --until</code></td><td>Run up to phase N, or a milestone named in <code>build.yaml</code>.</td></tr></tbody></table></div>",
       "css": ".ds-rtable { overflow-x: auto; background: var(--surface, #fbfcfa); border: 1px solid var(--rule, #d3d8d2); color: var(--ink, #171c19); font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; } .ds-rtable table { border-collapse: collapse; width: 100%; font-size: 0.8125rem; line-height: 1.5; } .ds-rtable th { text-align: left; font-weight: 600; color: var(--ink-2, #434b46); font-size: 0.75rem; padding: 8px 12px; border-bottom: 1px solid var(--rule-strong, #a3aba4); background: var(--paper-2, #e8ebe6); white-space: nowrap; } .ds-rtable td { padding: 8px 12px; border-bottom: 1px solid var(--rule, #d3d8d2); vertical-align: top; } .ds-rtable tr:last-child td { border-bottom: 0; } .ds-rtable td:first-child { white-space: nowrap; width: 1%; padding-right: 24px; } .ds-rtable code { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; background: var(--paper-2, #e8ebe6); padding: 1px 4px; } .ds-rtable td:first-child code { background: none; padding: 0; font-weight: 600; } .ds-clink { display: inline-flex; align-items: center; gap: 6px; color: var(--ink, #171c19); text-decoration-color: var(--rule-strong, #a3aba4); text-underline-offset: 3px; } .ds-clink:hover { text-decoration-color: var(--ink, #171c19); } .ds-clink code { background: none; padding: 0; } .ds-clink .ds-sig { width: 12px; height: 12px; flex: none; } .ds-rtable tr:target { background: var(--select, #d5ddd3); }"
+    },
+    {
+      "name": "Code Block",
+      "kind": "custom",
+      "refersTo": "code-block-wide",
+      "description": "Read surfaces: a code block on surface in a hairline frame. With script it gains a band: language left in ink-3, a quiet Copy button right that copies the exact text and announces 'Copied'. Lines over 76 characters break out like a wide table; on phones lines wrap with a 4ch hanging indent.",
+      "html": "<pre class=\"ds-pre\" data-lang=\"sh\"><button type=\"button\" class=\"ds-copy\" aria-label=\"Copy sh code\">Copy</button><code><span class=\"ln\">buildctl isolation verify</span>\n<span class=\"ln\">buildctl auth check</span></code></pre>",
+      "css": ".ds-pre { position: relative; background: var(--surface, #fbfcfa); border: 1px solid var(--rule, #d3d8d2); color: var(--ink, #171c19); padding: 40px 16px 12px; margin: 0; font: 400 0.8125rem/1.6 ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; overflow-x: auto; } .ds-pre::before { content: attr(data-lang); position: absolute; top: 8px; left: 16px; font-size: 0.75rem; color: var(--ink-3, #5c655f); } .ds-copy { position: absolute; top: 4px; right: 4px; min-height: 32px; padding: 0 12px; font: 500 0.75rem/1 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; color: var(--ink-2, #434b46); background: transparent; border: 1px solid transparent; cursor: pointer; } .ds-copy:hover { color: var(--ink, #171c19); border-color: var(--rule, #d3d8d2); } .ds-copy:focus-visible { outline: 2px solid var(--ink, #171c19); outline-offset: 2px; }"
     }
   ],
   "narrative": {
@@ -800,12 +812,12 @@
       },
       {
         "name": "The Unbroken Token Rule",
-        "body": "A command, key or code never breaks inside a word. Wrap between words; let a wide table scroll or stack rather than split a name.",
+        "body": "A command, key or code never breaks inside a word, and a flag never parts from its value. Wrap between groups; let a table stack rather than split a name.",
         "section": "typography"
       },
       {
         "name": "The Reading Column Rule",
-        "body": "Prose never runs wider than about 72ch. Only reference tables marked wide break out, centred, up to 1100px; nothing else leaves the column.",
+        "body": "Prose never runs wider than about 72ch. Only wide reference tables and code blocks whose lines would clip break out, centred, up to 1100px; nothing else leaves the column, and nothing is ever clipped.",
         "section": "layout"
       }
     ],
@@ -834,7 +846,7 @@
       "**Don't** arrange status pills over a log pane.",
       "**Don't** uppercase sans labels, headings or captions, and don't add kickers or eyebrows; capitals are for codes, severities, SIGNED, DEMO and station names.",
       "**Don't** mark reading position, links or the current chapter in occupancy blue.",
-      "**Don't** let anything but a wide reference table leave the reading column, and don't let a command, key or code break inside a word.",
+      "Don't let anything but a wide reference table or an over-long code block leave the reading column, and don't let a command, key or code break inside a word or part a flag from its value.",
       "**Don't** carry the reading ramp into the console or the TUI."
     ]
   }
