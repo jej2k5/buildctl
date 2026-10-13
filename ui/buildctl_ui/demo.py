@@ -19,6 +19,7 @@ from typing import Iterator
 
 from buildctl.supervisor import state as state_module
 from buildctl.supervisor.isolation import IsolationError, conformance_record, production_backend
+from buildctl.supervisor.levers import WAITING_CODES
 from buildctl.supervisor.state import ApprovalRequirement, BuildState, ExtraAttemptGrant, Operation, StateStore
 from buildctl.supervisor.trust import TrustError, TrustStore
 
@@ -232,7 +233,7 @@ def _phase(store: StateStore, state: BuildState, clock: Clock, costs: list, numb
 
 def _escalate(store: StateStore, state: BuildState, code: str, detail: str) -> None:
     state.status, state.escalation_code, state.escalation_detail = "human_escalation", code, detail
-    if code != "CHECKPOINT_REQUIRED":
+    if code not in WAITING_CODES:
         state.consecutive_failures += 1
     store.event(state, "human_escalation", code=code)
 

@@ -32,6 +32,8 @@ ESCALATIONS: dict[str, tuple[str, str]] = {
                        "Read the findings, adjust the phase prompt or decide, then retry."),
     "UNREVIEWABLE_DELTA": ("The change has binary or oversized files the reviewer cannot read.",
                            "Adjust the phase so its output is reviewable, then retry."),
+    "DEBATE_REQUIRES_HUMAN": ("An interactive debate is waiting for you. Its request is written.",
+                              "Run the debate, write the result where the request says, then retry."),
     "DEBATE_UNRESOLVED": ("The debate ended without agreement.",
                           "Decide the question, adjust the phase prompt, then retry."),
     "UNKNOWN_EXTERNAL_OPERATION": ("An agent call may or may not have finished.",
@@ -72,11 +74,13 @@ def checkpoint_meaning(checkpoint: str) -> str:
 def explain(code: str | None, checkpoint: str | None = None) -> dict[str, str] | None:
     if not code:
         return None
+    aspect = "caution" if code in lever_rules.WAITING_CODES else "danger"
     if code == "CHECKPOINT_REQUIRED" and checkpoint:
-        return {"code": code, "meaning": checkpoint_meaning(checkpoint), "remedy": ESCALATIONS[code][1]}
+        return {"code": code, "aspect": aspect, "meaning": checkpoint_meaning(checkpoint),
+                "remedy": ESCALATIONS[code][1]}
     meaning, remedy = CEILING if code.endswith("_EXHAUSTED") else ESCALATIONS.get(
         code, ("buildctl stopped.", "Read the detail."))
-    return {"code": code, "meaning": meaning, "remedy": remedy}
+    return {"code": code, "aspect": aspect, "meaning": meaning, "remedy": remedy}
 
 
 def _git(repo: Path, *args: str, runner: Callable[..., Any] = subprocess.run) -> str | None:
@@ -256,8 +260,9 @@ def inspect(repo: Path, control_root: Path, runner: Callable[..., Any] = subproc
             if number in state.completed_phases:
                 aspect = "clear"
             elif number == state.current_phase:
-                aspect = ("danger" if state.status in lever_rules.STOPPED_STATUSES and not state.pending_approval
-                          else "caution" if state.pending_approval else "occupied")
+                waiting = state.pending_approval or lever_rules.is_waiting(state)
+                aspect = ("caution" if waiting else "danger" if lever_rules.is_stopped(state)
+                          else "occupied")
             else:
                 aspect = "pending"
             operations = [asdict(op) for op in state.operations.values() if op.phase == number]

@@ -65,7 +65,7 @@ def build_aspect(m: dict[str, Any]) -> tuple[str, str, str]:
         return "unknown", "Run died", "no live process holds the build"
     if any(lever["action"] == "reconcile-retry" for lever in m["levers"]):
         return "unknown", "Outcome unknown", code
-    if st["pending_approval"]:
+    if st["pending_approval"] or (m["escalation"] or {}).get("aspect") == "caution":
         return "caution", "Waiting for you", code
     if st["status"] in ("human_escalation", "failed"):
         return "danger", "Stopped", code

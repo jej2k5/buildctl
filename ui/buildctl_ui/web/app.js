@@ -80,7 +80,7 @@ function buildAspect(m) {
   }
   if (st.status === "running") return { aspect: "unknown", word: "Run died", sub: "no live process holds the build" };
   if (unknown) return { aspect: "unknown", word: "Outcome unknown", sub: m.escalation?.code };
-  if (st.pending_approval) return { aspect: "caution", word: "Waiting for you", sub: m.escalation?.code };
+  if (st.pending_approval || m.escalation?.aspect === "caution") return { aspect: "caution", word: "Waiting for you", sub: m.escalation?.code };
   if (st.status === "human_escalation" || st.status === "failed") return { aspect: "danger", word: "Stopped", sub: m.escalation?.code };
   if (st.status === "paused") return { aspect: "caution", word: "Paused", sub: "no new work starts" };
   if (st.status === "complete") return { aspect: "clear", word: "Complete", sub: `${st.completed_phases.length} phases` };
@@ -109,8 +109,9 @@ function renderBar(m) {
 
   const flag = $("#stop-flag");
   flag.hidden = !m.escalation;
-  flag.className = `rail-flag ${m.state.pending_approval ? "caution" : ""}`;
-  flag.setAttribute("aria-label", m.escalation ? `stopped: ${m.escalation.code}` : "");
+  const waiting = m.escalation?.aspect === "caution";
+  flag.className = `rail-flag ${waiting ? "caution" : ""}`;
+  flag.setAttribute("aria-label", m.escalation ? `${waiting ? "waiting for you" : "stopped"}: ${m.escalation.code}` : "");
   const root = m.control_root.split("/").filter(Boolean);
   $("#rail-foot").innerHTML = `<span title="${esc(m.control_root)}">State in <code>…/${esc(root.slice(-2).join("/"))}</code></span><br>Generation ${m.state.generation}`;
   for (const link of document.querySelectorAll(".rail a")) {

@@ -10,6 +10,14 @@ from .protocol import contract
 from .safety import redact
 
 
+class DebateRequiresHuman(AgentError):
+    """An interactive debate wrote its request and waits for a human to answer it."""
+
+    def __init__(self, request: Path):
+        super().__init__("INTERACTIVE_DEBATE_REQUIRES_HUMAN")
+        self.request = request
+
+
 class DebateAdapter:
     def __init__(self, role_runner: RoleRunner, snapshot: Path, config: dict[str, Any]):
         self.role_runner, self.snapshot, self.config = role_runner, snapshot, config
@@ -28,7 +36,7 @@ class DebateAdapter:
                                            "base_sha": evidence["base_sha"],
                                            "output_contract": json.loads(contract("DEBATE_RESULT")),
                                            "output_path": str(output)}, indent=2) + "\n")
-            raise AgentError("INTERACTIVE_DEBATE_REQUIRES_HUMAN")
+            raise DebateRequiresHuman(request)
         prompt = TRUSTED_PREAMBLE + "\nResolve only the typed strategic findings."
         prompt += untrusted("strategic_findings", json.dumps(findings, indent=2))
         prompt += untrusted("evidence", json.dumps(evidence, indent=2))

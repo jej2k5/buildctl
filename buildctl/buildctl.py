@@ -18,7 +18,7 @@ from .supervisor.auth import AuthPreflight, AuthenticationRequired, HostAuthUnsu
 from .supervisor.budget import BudgetLedger, LimitExceeded, configured_cost
 from .supervisor.claude import ClaudeAdapter
 from .supervisor.codex import CodexAdapter
-from .supervisor.debate import DebateAdapter, validate_debate_result, write_adr
+from .supervisor.debate import DebateAdapter, DebateRequiresHuman, validate_debate_result, write_adr
 from .supervisor.inspect import audit_events, inspect as inspect_build
 from .supervisor.gates import MechanicalGates, write_gate_result
 from .supervisor.git import Delta, GitManager, GitSafetyError
@@ -474,6 +474,14 @@ class Supervisor:
         except subprocess.TimeoutExpired:
             operation.status = "unknown"
             self._escalate(state, "OPERATION_TIMEOUT_UNKNOWN", operation_id)
+        except DebateRequiresHuman as exc:
+            # Not a failure: the request is written and waits for a human. The operation is
+            # still closed as failed, so retry is not blocked as unknown, and the next run finds
+            # it by output path when it consumes the result.
+            operation.status, operation.detail_code = "failed", str(exc)
+            self.store.event(state, "operation_failed", operation=operation_id, code=operation.detail_code,
+                             diagnostic=str(exc))
+            self._escalate(state, "DEBATE_REQUIRES_HUMAN", str(exc.request))
         except AgentError as exc:
             # RoleRunner has already redacted staged/configured secrets out of this message;
             # keep the stable code for control flow and a bounded detail for the operator.
@@ -614,7 +622,7 @@ class Supervisor:
         self._escalate(state, code, detail)
 
     def _escalate(self, state: BuildState, code: str, detail: str) -> None:
-        if code != "CHECKPOINT_REQUIRED":
+        if code not in levers.WAITING_CODES:
             state.consecutive_failures += 1
             if state.consecutive_failures >= self.config["limits"]["max_consecutive_failures"]:
                 code = "MAX_CONSECUTIVE_FAILURES_EXHAUSTED"
