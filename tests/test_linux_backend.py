@@ -178,7 +178,11 @@ class LinuxRefusalTests(unittest.TestCase):
         self.assertIn("unprivileged_userns_clone=1", self.classify(kernel__unprivileged_userns_clone="0"))
         self.assertIn("max_user_namespaces", self.classify(user__max_user_namespaces="0"))
         self.assertIn("systempaths=unconfined", self.classify("bwrap: Can't mount proc on /newroot/proc"))
-        self.assertIn("gVisor", self.classify(container=True, kernel__apparmor_restrict_unprivileged_userns="1"))
+        self.assertIn("gVisor", self.classify(container=True))
+        self.assertNotIn("AppArmor", self.classify(container=True))
+        # Measured on GitHub's Ubuntu 24.04: the three flags alone still refuse there.
+        self.assertIn("AppArmor profile on the host",
+                      self.classify(container=True, kernel__apparmor_restrict_unprivileged_userns="1"))
         self.assertIn("bwrap failed: something new", self.classify("something new\nmore"))
         for message in (self.classify(), self.classify(container=True)):
             self.assertTrue(message.startswith("ISOLATION_HOST_UNSUPPORTED: "))

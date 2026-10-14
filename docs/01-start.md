@@ -62,7 +62,7 @@ Elsewhere:
 
 - **Debian with user namespaces disabled:** `sudo sysctl -w kernel.unprivileged_userns_clone=1`.
 - **Ubuntu 22.04 and RHEL 9** ship bubblewrap 0.6, which is too old. Install a newer bubblewrap, or upgrade the host.
-- **Inside a container,** the default seccomp profile blocks namespaces. Start the container with `--security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined`, or run it under gVisor or Sysbox. On Kubernetes, set the same through the pod's `securityContext`.
+- **Inside a container,** the default seccomp profile blocks namespaces. Start the container with `--security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined`, or run it under gVisor or Sysbox. On Kubernetes, set the same through the pod's `securityContext`. If the host is Ubuntu 24.04, those flags are not enough: also load the AppArmor profile above **on the host**.
 - **If you use the system Python** for acceptance commands, install `python3-venv` as well. Without it, gates cannot build the product environment.
 
 Two things differ from macOS:

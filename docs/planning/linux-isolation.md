@@ -2,6 +2,8 @@
 
 Status: spiked 2026-10-14 on `spike/linux-bwrap` (`c5b613a`). The draft backend passed the full isolation probe on GitHub's Ubuntu 24.04 runners, x86_64 and arm64 (run 38577564533). Build in progress on the same branch: steps 1 to 5 written, CI not yet run.
 
+CI 2026-10-14 (run 38580904994, `feec2d2`): all jobs green on Ubuntu 24.04 x86_64 and arm64 (full kernel suite with the real probe) and 22.04 (refused bubblewrap 0.6.1). The container job found that on an Ubuntu 24.04 host the three container flags are not enough: the host's AppArmor restriction still applies, and the probe passed only once the host loaded `bwrap-userns-restrict` or turned the restriction off. The refusal and the manual now say so.
+
 Resolved 2026-10-14: both open decisions went with the recommendation. `host_cli` is refused on Linux for both roles, and Linux CI runs the whole kernel suite.
 
 Decided 2026-10-14:

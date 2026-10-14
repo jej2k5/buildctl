@@ -211,9 +211,12 @@ def classify_bwrap_failure(stderr: str, settings: dict[str, str | None] | None =
     if "Can't mount proc" in stderr:
         return f"{UNSUPPORTED}: Docker masks /proc. Add --security-opt systempaths=unconfined. {see}"
     if in_container:
-        # Inside a container /proc/sys shows the host's settings, so name the container first.
+        # Inside a container /proc/sys shows the host's settings, and an Ubuntu host's AppArmor
+        # restriction still applies with the container flags set, so name both fixes.
+        host = (" On this Ubuntu host, also load the bwrap-userns-restrict AppArmor profile on the host."
+                if settings.get("kernel.apparmor_restrict_unprivileged_userns") == "1" else "")
         return (f"{UNSUPPORTED}: this container blocks user namespaces. Run it with the three "
-                f"flags in the manual, or under gVisor or Sysbox. {see}")
+                f"flags in the manual, or under gVisor or Sysbox.{host} {see}")
     if settings.get("user.max_user_namespaces") == "0":
         return f"{UNSUPPORTED}: user namespaces are off. Set user.max_user_namespaces above 0. {see}"
     if settings.get("kernel.unprivileged_userns_clone") == "0":
