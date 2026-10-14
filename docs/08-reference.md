@@ -46,7 +46,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `git.integration_branch` | The branch fast-forwarded after each phase. Default `main`. Fast-forward only: if it has commits the phase lacks, buildctl stops instead of merging. |
 | `roles.*.command` | The argv for each agent. `{prompt}` and `{output}` are substituted. |
 | `roles.*.network` | Whether the agent has network access in the sandbox. |
-| `roles.*.auth_mode` | How the agent authenticates: `host_cli` (your CLI login), `environment` (the named variables) or `none`. |
+| `roles.*.auth_mode` | How the agent authenticates: `host_cli` (your CLI login; macOS only), `environment` (the named variables) or `none`. |
 | `roles.*.credential_env` | The `*_API_KEY` or `*_TOKEN` variables an `environment` agent receives. Must be empty otherwise. |
 | `roles.reviewer.vendor` | Reviewer identity every review report must echo back exactly. |
 | `roles.reviewer.model_family` | Reviewer identity every review report must echo back exactly. |
