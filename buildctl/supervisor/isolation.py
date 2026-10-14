@@ -148,6 +148,99 @@ class MacOSSandboxBackend(IsolationBackend):
         return ["/usr/bin/sandbox-exec", "-p", profile, *argv]
 
 
+# Classic BPF for seccomp, as bwrap --seccomp reads it: an array of struct sock_filter.
+_SECCOMP_ARCH = {"x86_64": (0xC000003E, 41), "aarch64": (0xC00000B7, 198)}  # audit arch, socket nr
+_IO_URING_SETUP = 425  # the same number on both architectures
+
+
+def offline_seccomp_filter(machine: str | None = None) -> bytes:
+    """Refuse socket(AF_UNIX) and io_uring; kill any other syscall ABI.
+
+    macOS denies Unix-socket connects with the network, and a network namespace does not:
+    docker.sock, an SSH agent or the session bus stay reachable through the read-only root.
+    socketpair stays allowed. io_uring is refused because its socket ops bypass seccomp, and
+    a foreign ABI (i386 socketcall, x32) is killed because it would bypass the number check.
+    """
+    machine = machine or platform.machine()
+    if machine not in _SECCOMP_ARCH:
+        raise IsolationError(f"no seccomp filter for {machine}")
+    audit_arch, socket_nr = _SECCOMP_ARCH[machine]
+    kill, deny, allow = 0x80000000, 0x00050000 | 13, 0x7FFF0000  # KILL_PROCESS, ERRNO(EACCES), ALLOW
+    load, jeq, jge, ret = 0x20, 0x15, 0x35, 0x06
+    program = [(load, 0, 0, 4), (jeq, 1, 0, audit_arch), (ret, 0, 0, kill), (load, 0, 0, 0)]
+    if machine == "x86_64":
+        program += [(jge, 0, 1, 0x40000000), (ret, 0, 0, kill)]
+    program += [(jeq, 0, 1, _IO_URING_SETUP), (ret, 0, 0, deny),
+                (jeq, 0, 3, socket_nr), (load, 0, 0, 16), (jeq, 0, 1, 1), (ret, 0, 0, deny),
+                (ret, 0, 0, allow)]
+    import struct
+    return b"".join(struct.pack("=HBBI", *instruction) for instruction in program)
+
+
+class LinuxBubblewrapBackend(IsolationBackend):
+    """The macOS profile as a bubblewrap mount layout, rule for rule and in the same order.
+
+    The root is bound read-only (macOS: allow file-read*). Writable paths are bound over it,
+    and each deny is an empty read-only tmpfs mounted after them, so a later deny wins as it
+    does in the profile. Symlinked aliases resolve into the tmpfs. No network namespace is
+    shared unless the role allows network.
+    """
+    name = "linux-bwrap-v1"
+    executable = Path("/usr/bin/bwrap")
+
+    def available(self) -> bool:
+        return platform.system() == "Linux" and self.executable.is_file()
+
+    def command(self, argv: list[str], context: IsolationContext) -> list[str]:
+        if not self.available():
+            raise IsolationError("Linux bubblewrap backend is unavailable")
+        if context.host_session:
+            # Linux hosts authenticate agents per operation; no host login is ever readable.
+            raise IsolationError("host-session isolation is not supported on Linux")
+        context = context.canonical()
+        # No nested user namespace: nothing inside can gain mount rights over the deny layout.
+        args = [str(self.executable), "--die-with-parent", "--new-session", "--unshare-user",
+                "--disable-userns", "--unshare-pid", "--unshare-ipc", "--unshare-uts",
+                "--unshare-cgroup-try", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
+        if not context.network_allowed:
+            args.append("--unshare-net")
+        def bind(path: Path) -> None:
+            args.extend(("--bind", str(path), str(path)))
+        def deny(path: Path) -> None:
+            if path.exists():
+                args.extend(("--perms", "0000", "--tmpfs", str(path), "--remount-ro", str(path)))
+        if not context.read_only_workspace:
+            bind(context.workspace)
+        # Runtime credentials are denied as a class and only this operation's output is bound
+        # back. The tmpfs is traversable but not listable (macOS: metadata on the node only),
+        # and goes read-only after the bind so its mount point can be created first.
+        runtime_area = (context.workspace / ".factory-runtime").resolve()
+        if runtime_area.exists():
+            args.extend(("--perms", "0111", "--tmpfs", str(runtime_area)))
+        for path in (context.output_dir, context.home_dir):
+            if path:
+                bind(path)
+        if runtime_area.exists():
+            args.extend(("--remount-ro", str(runtime_area)))
+        deny(context.control_root)
+        deny(context.authoritative_repo)
+        git_dir = context.workspace / ".git"
+        if git_dir.exists():
+            args.extend(("--ro-bind", str(git_dir), str(git_dir)))
+        if context.host_home:
+            deny(context.host_home)
+        if context.network_allowed:
+            return [*args, "--", *argv]
+        # bwrap reads the filter from a descriptor; the shell opens it from the control root,
+        # which the sandbox cannot see, and then becomes bwrap.
+        context.control_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        program = context.control_root / "seccomp-offline.bpf"
+        staged = program.with_suffix(f".{os.getpid()}.tmp")
+        staged.write_bytes(offline_seccomp_filter()); staged.replace(program)
+        return ["/bin/sh", "-c", 'exec "$@" 3<"$0"', str(program),
+                *args, "--seccomp", "3", "--", *argv]
+
+
 class FakeIsolationBackend(IsolationBackend):
     """Test-only backend; never accepted by production bootstrap."""
     name = "fake-test-only"
@@ -160,10 +253,10 @@ class FakeIsolationBackend(IsolationBackend):
 
 
 def production_backend() -> IsolationBackend:
-    backend = MacOSSandboxBackend()
-    if not backend.available():
-        raise IsolationError("no conformant IsolationBackend is available; autonomous execution is blocked")
-    return backend
+    for backend in (MacOSSandboxBackend(), LinuxBubblewrapBackend()):
+        if backend.available():
+            return backend
+    raise IsolationError("no conformant IsolationBackend is available; autonomous execution is blocked")
 
 
 def isolation_policy_hash(backend: IsolationBackend, snapshot_digest: str) -> str:

@@ -1,0 +1,47 @@
+name: Linux sandbox spike
+
+on:
+  push:
+    branches: [spike/linux-bwrap]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    # Only the owner runs the spike, in this repository.
+    if: >-
+      github.repository == 'jej2k5/buildctl' &&
+      github.actor == 'jej2k5' &&
+      github.triggering_actor == 'jej2k5'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap netcat-openbsd apparmor-profiles
+      - name: Host facts
+        run: |
+          uname -srm; bwrap --version; /usr/bin/python3 --version
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+      # Stock Ubuntu 24.04: the restriction is on, so the probe must refuse, not pass.
+      - name: Probe before the fix (expected to refuse)
+        run: |
+          if /usr/bin/python3 spike/linux-bwrap/probe.py > before.log 2>&1; then
+            echo "probe passed with the AppArmor restriction on"; exit 1
+          fi
+          grep -o "stderr=bwrap[^']*" before.log | head -1
+      # The documented operator fix: load the profile that lets bwrap create namespaces.
+      - name: Load the bwrap AppArmor profile
+        run: |
+          sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+      - name: Isolation probe
+        run: /usr/bin/python3 spike/linux-bwrap/probe.py
+      - name: Escape tests
+        run: /usr/bin/python3 spike/linux-bwrap/escape.py
