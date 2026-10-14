@@ -96,6 +96,16 @@ class ManualTests(unittest.TestCase):
         self.assertNotRegex(page, r'<span class="num">\d+</span>(?!<span class="vh">)')
         self.assertIn('"location"', (PAGE.parent / "docs.js").read_text())
 
+    def test_linux_refusals_point_at_a_fix_that_ci_proves(self):
+        from buildctl.supervisor.isolation import UNSUPPORTED
+        self.assertIn(UNSUPPORTED, ids())
+        manual = (ROOT / "docs" / "01-start.md").read_text()
+        block = re.search(r"```sh\n(sudo apt-get install -y bubblewrap.*?)```", manual, re.S).group(1)
+        fix = [line for line in block.splitlines() if not line.startswith("sudo apt-get")]
+        workflow = (ROOT / ".github" / "workflows" / "linux.yml").read_text()
+        for line in fix:
+            self.assertIn(line, workflow, "the manual's Linux fix is not the one CI runs")
+
     def test_the_console_serves_the_manual(self):
         self.assertTrue(PAGE.is_file())
         for name in ("docs.css", "docs.js", "icon.svg"):

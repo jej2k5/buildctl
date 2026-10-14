@@ -11,9 +11,9 @@ buildctl owns the state, the git history and the budget. Agents never touch any 
 
 ## Requirements
 
-- macOS. Agents run under `sandbox-exec`; there is no Linux backend yet.
+- macOS (`sandbox-exec`) or Linux (bubblewrap 0.8.0 or newer; see [Running on Linux](https://jej2k5.github.io/buildctl/#linux)).
 - Python 3.11 or newer.
-- The `codex` CLI (implementer) and the `claude` CLI (reviewer), both logged in: `codex login`, `claude auth login`.
+- The `codex` CLI (implementer) and the `claude` CLI (reviewer). On macOS, log both in: `codex login`, `claude auth login`. On Linux, give them API keys.
 
 ## Install
 

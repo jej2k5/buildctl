@@ -37,6 +37,7 @@ def _context(root: Path, role: str = "implementer"):
                             runtime, home, True, Path.home()), workspace, runtime, home
 
 
+@unittest.skipUnless(DARWIN, "production macOS sandbox backend not supported on this host")
 class ImplementerLaunchProfileTests(unittest.TestCase):
     def test_profile_grants_sysctl_read_and_runtime_metadata_only(self):
         with tempfile.TemporaryDirectory() as directory:

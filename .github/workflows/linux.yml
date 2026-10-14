@@ -1,0 +1,98 @@
+name: Linux
+
+on:
+  push:
+    paths: ["buildctl/**", "tests/**", "docs/01-start.md", ".github/workflows/linux.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    # Only the owner runs it, in this repository.
+    if: >-
+      github.repository == 'jej2k5/buildctl' &&
+      github.actor == 'jej2k5' &&
+      github.triggering_actor == 'jej2k5'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap apparmor-profiles netcat-openbsd
+      # Stock Ubuntu 24.04 restricts user namespaces, so buildctl must refuse and name AppArmor.
+      - name: Refuses before the fix
+        run: |
+          if python -c "from buildctl.supervisor.isolation import LinuxBubblewrapBackend as B; B().preflight()" 2> refusal.txt; then
+            echo "preflight passed with the AppArmor restriction on"; exit 1
+          fi
+          cat refusal.txt
+          grep -q "ISOLATION_HOST_UNSUPPORTED: Ubuntu restricts user namespaces" refusal.txt
+      # The manual's fix, verbatim (a docs test keeps the two in step).
+      - name: Load the bwrap AppArmor profile
+        run: |
+          sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+      - name: Kernel tests, including the real isolation probe
+        run: |
+          git config --global user.email ci@invalid && git config --global user.name ci
+          python -m unittest discover -s tests -t . -v 2>&1 | tee tests.log | tail -5
+          grep -q "test_the_real_backend_passes_the_probe .* ok" tests.log
+          tail -1 tests.log | grep -q "^OK"
+
+  old-bubblewrap:
+    if: >-
+      github.repository == 'jej2k5/buildctl' &&
+      github.actor == 'jej2k5' &&
+      github.triggering_actor == 'jej2k5'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
+      - name: Refuses and names the version
+        run: |
+          bwrap --version
+          if python -c "from buildctl.supervisor.isolation import LinuxBubblewrapBackend as B; B().preflight()" 2> refusal.txt; then
+            echo "preflight accepted bubblewrap older than 0.8.0"; exit 1
+          fi
+          cat refusal.txt
+          grep -q "is too old; 0.8.0 or newer is required" refusal.txt
+
+  # Evidence for the manual, not a gate: what a container on an Ubuntu 24.04 host needs.
+  container:
+    if: >-
+      github.repository == 'jej2k5/buildctl' &&
+      github.actor == 'jej2k5' &&
+      github.triggering_actor == 'jej2k5'
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image with bubblewrap and a non-root user
+        run: |
+          printf '%s\n' 'FROM ubuntu:24.04' \
+            'RUN apt-get update -qq && apt-get install -y -qq bubblewrap git python3 python3-venv netcat-openbsd >/dev/null && useradd -m op' \
+            'USER op' > Dockerfile.ci
+          docker build -q -t probe -f Dockerfile.ci .
+      - name: Probe in each container setting
+        run: |
+          probe='import tempfile; from pathlib import Path; from buildctl.supervisor.isolation import LinuxBubblewrapBackend, verify_backend
+          r = Path(tempfile.mkdtemp()); (r/"repo").mkdir(); verify_backend(LinuxBubblewrapBackend(), r/"control", r/"repo"); print("PASS")'
+          flags="--security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined"
+          attempt() { echo "== $1"; docker run --rm $2 -v "$PWD:/src:ro" -e PYTHONPATH=/src probe python3 -c "$probe" 2>&1 | grep -oE "PASS|ISOLATION_HOST_UNSUPPORTED[^;']*|stderr=bwrap[^'\\]*" | head -2; }
+          attempt "stock container" ""
+          attempt "three flags" "$flags"
+          sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/ 2>/dev/null || { sudo apt-get install -y -qq apparmor-profiles && sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/; }
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          attempt "three flags, host profile loaded" "$flags"
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          attempt "three flags, host restriction off" "$flags"

@@ -9,6 +9,7 @@ import json
 import sys
 import hashlib
 import socket
+import struct
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +54,16 @@ class IsolationBackend:
 
     def command(self, argv: list[str], context: IsolationContext) -> list[str]:
         raise NotImplementedError
+
+    def preflight(self) -> None:
+        """Refuse, naming the fix, when this host cannot run the backend at all."""
+
+    def prepare(self, control_root: Path) -> None:
+        """Write anything command() needs into the trusted control root. Runs at verify."""
+
+    def host_facts(self) -> dict[str, str]:
+        """What the conformance record pins about this host, beyond the OS string."""
+        return {"machine": platform.machine()}
 
 
 class MacOSSandboxBackend(IsolationBackend):
@@ -148,6 +159,180 @@ class MacOSSandboxBackend(IsolationBackend):
         return ["/usr/bin/sandbox-exec", "-p", profile, *argv]
 
 
+# Classic BPF for seccomp, as bwrap --seccomp reads it: an array of struct sock_filter.
+_SECCOMP_ARCH = {"x86_64": (0xC000003E, 41), "aarch64": (0xC00000B7, 198)}  # audit arch, socket nr
+_IO_URING_SETUP = 425  # the same number on both architectures
+
+
+def offline_seccomp_filter(machine: str | None = None) -> bytes:
+    """Refuse socket(AF_UNIX) and io_uring; kill any other syscall ABI.
+
+    macOS denies Unix-socket connects with the network, and a network namespace does not:
+    docker.sock, an SSH agent or the session bus stay reachable through the read-only root.
+    socketpair stays allowed. io_uring is refused because its socket ops bypass seccomp, and
+    a foreign ABI (i386 socketcall, x32) is killed because it would bypass the number check.
+    """
+    machine = machine or platform.machine()
+    if machine not in _SECCOMP_ARCH:
+        raise IsolationError(f"no seccomp filter for {machine}")
+    audit_arch, socket_nr = _SECCOMP_ARCH[machine]
+    kill, deny, allow = 0x80000000, 0x00050000 | 13, 0x7FFF0000  # KILL_PROCESS, ERRNO(EACCES), ALLOW
+    load, jeq, jge, ret = 0x20, 0x15, 0x35, 0x06
+    program = [(load, 0, 0, 4), (jeq, 1, 0, audit_arch), (ret, 0, 0, kill), (load, 0, 0, 0)]
+    if machine == "x86_64":
+        program += [(jge, 0, 1, 0x40000000), (ret, 0, 0, kill)]
+    program += [(jeq, 0, 1, _IO_URING_SETUP), (ret, 0, 0, deny),
+                (jeq, 0, 3, socket_nr), (load, 0, 0, 16), (jeq, 0, 1, 1), (ret, 0, 0, deny),
+                (ret, 0, 0, allow)]
+    return b"".join(struct.pack("=HBBI", *instruction) for instruction in program)
+
+
+BWRAP_MINIMUM = (0, 8, 0)  # --disable-userns
+UNSUPPORTED = "ISOLATION_HOST_UNSUPPORTED"
+
+
+def _read_setting(path: str) -> str | None:
+    try:
+        return Path(path).read_text().strip()
+    except OSError:
+        return None
+
+
+def classify_bwrap_failure(stderr: str, settings: dict[str, str | None] | None = None,
+                           in_container: bool | None = None) -> str:
+    """Turn bwrap's refusal into the operator's fix. bwrap names the symptom, not the cause."""
+    if settings is None:
+        settings = {name: _read_setting(f"/proc/sys/{name.replace('.', '/')}") for name in (
+            "kernel.apparmor_restrict_unprivileged_userns", "kernel.unprivileged_userns_clone",
+            "user.max_user_namespaces")}
+    if in_container is None:
+        in_container = Path("/.dockerenv").exists() or "container" in os.environ
+    see = "See the manual, Running on Linux."
+    if "Can't mount proc" in stderr:
+        return f"{UNSUPPORTED}: Docker masks /proc. Add --security-opt systempaths=unconfined. {see}"
+    if in_container:
+        # Inside a container /proc/sys shows the host's settings, and an Ubuntu host's AppArmor
+        # restriction still applies with the container flags set, so name both fixes.
+        host = (" On this Ubuntu host, also load the bwrap-userns-restrict AppArmor profile on the host."
+                if settings.get("kernel.apparmor_restrict_unprivileged_userns") == "1" else "")
+        return (f"{UNSUPPORTED}: this container blocks user namespaces. Run it with the three "
+                f"flags in the manual, or under gVisor or Sysbox.{host} {see}")
+    if settings.get("user.max_user_namespaces") == "0":
+        return f"{UNSUPPORTED}: user namespaces are off. Set user.max_user_namespaces above 0. {see}"
+    if settings.get("kernel.unprivileged_userns_clone") == "0":
+        return (f"{UNSUPPORTED}: Debian disables user namespaces. "
+                f"Set kernel.unprivileged_userns_clone=1. {see}")
+    if settings.get("kernel.apparmor_restrict_unprivileged_userns") == "1":
+        return (f"{UNSUPPORTED}: Ubuntu restricts user namespaces. "
+                f"Load the bwrap-userns-restrict AppArmor profile. {see}")
+    first = (stderr.strip().splitlines() or ["no output"])[0][:200]
+    return f"{UNSUPPORTED}: bwrap failed: {first}"
+
+
+class LinuxBubblewrapBackend(IsolationBackend):
+    """The macOS profile as a bubblewrap mount layout, rule for rule and in the same order.
+
+    The root is bound read-only (macOS: allow file-read*). Writable paths are bound over it,
+    and each deny is an empty read-only tmpfs mounted after them, so a later deny wins as it
+    does in the profile. Symlinked aliases resolve into the tmpfs. No network namespace is
+    shared unless the role allows network, and then a seccomp filter also refuses Unix sockets.
+    """
+    name = "linux-bwrap-v1"
+    executable = Path("/usr/bin/bwrap")
+    filter_name = "seccomp-offline.bpf"
+
+    def available(self) -> bool:
+        return platform.system() == "Linux" and self.executable.is_file()
+
+    def version(self) -> tuple[int, ...]:
+        completed = subprocess.run([str(self.executable), "--version"], capture_output=True, text=True)
+        try:
+            return tuple(int(part) for part in completed.stdout.split()[-1].split("."))
+        except (IndexError, ValueError) as exc:
+            raise IsolationError(f"{UNSUPPORTED}: cannot read the bwrap version") from exc
+
+    def preflight(self) -> None:
+        if not self.available():
+            raise IsolationError(f"{UNSUPPORTED}: install bubblewrap at {self.executable}")
+        found = self.version()
+        if found < BWRAP_MINIMUM:
+            raise IsolationError(f"{UNSUPPORTED}: bubblewrap {'.'.join(map(str, found))} is too old; "
+                                 f"0.8.0 or newer is required. See the manual, Running on Linux.")
+        trial = subprocess.run([*self._base(network_allowed=False), "--", "/bin/true"],
+                               capture_output=True, text=True, timeout=15)
+        if trial.returncode != 0:
+            raise IsolationError(classify_bwrap_failure(trial.stderr))
+
+    def prepare(self, control_root: Path) -> None:
+        control_root = control_root.resolve()
+        control_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        program = control_root / self.filter_name
+        staged = program.with_name(f"{self.filter_name}.{os.getpid()}.tmp")
+        staged.write_bytes(offline_seccomp_filter()); staged.replace(program)
+
+    def host_facts(self) -> dict[str, str]:
+        return {"machine": platform.machine(), "bwrap": str(self.executable),
+                "bwrap_version": ".".join(map(str, self.version())),
+                "bwrap_sha256": hashlib.sha256(self.executable.read_bytes()).hexdigest(),
+                "seccomp_sha256": hashlib.sha256(offline_seccomp_filter()).hexdigest()}
+
+    def _base(self, network_allowed: bool) -> list[str]:
+        # No nested user namespace: nothing inside can gain mount rights over the deny layout.
+        args = [str(self.executable), "--die-with-parent", "--new-session", "--unshare-user",
+                "--disable-userns", "--unshare-pid", "--unshare-ipc", "--unshare-uts",
+                "--unshare-cgroup-try", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
+        return args if network_allowed else [*args, "--unshare-net"]
+
+    def command(self, argv: list[str], context: IsolationContext) -> list[str]:
+        if not self.available():
+            raise IsolationError("Linux bubblewrap backend is unavailable")
+        if context.host_session:
+            # Linux hosts authenticate agents per operation; no host login is ever readable.
+            raise IsolationError("host-session isolation is not supported on Linux")
+        context = context.canonical()
+        git_dir = context.workspace / ".git"
+        for required in (context.control_root, context.authoritative_repo, git_dir):
+            # A deny over a missing path would let the sandbox create it.
+            if not required.exists():
+                raise IsolationError(f"isolation requires {required} to exist")
+        args = self._base(context.network_allowed)
+        def bind(path: Path) -> None:
+            args.extend(("--bind", str(path), str(path)))
+        def deny(path: Path) -> None:
+            args.extend(("--perms", "0000", "--tmpfs", str(path), "--remount-ro", str(path)))
+        if not context.read_only_workspace:
+            bind(context.workspace)
+        # Runtime credentials are denied as a class and only this operation's output is bound
+        # back. The tmpfs is traversable but not listable (macOS: metadata on the node only),
+        # and goes read-only after the bind so its mount point can be created first.
+        runtime_area = (context.workspace / ".factory-runtime").resolve()
+        if runtime_area.exists():
+            args.extend(("--perms", "0111", "--tmpfs", str(runtime_area)))
+        for path in (context.output_dir, context.home_dir):
+            if path:
+                bind(path)
+        if runtime_area.exists():
+            args.extend(("--remount-ro", str(runtime_area)))
+        deny(context.control_root)
+        deny(context.authoritative_repo)
+        args.extend(("--ro-bind", str(git_dir), str(git_dir)))
+        if context.host_home and context.host_home.exists():
+            deny(context.host_home)
+        if context.network_allowed:
+            return [*args, "--", *argv]
+        # bwrap reads the filter from a descriptor. The shell opens it from the control root,
+        # which the sandbox cannot see, and then becomes bwrap. It was written at verify.
+        program = context.control_root / self.filter_name
+        try:
+            written = program.read_bytes()
+        except OSError:
+            written = b""
+        if written != offline_seccomp_filter():
+            raise IsolationError("the offline seccomp filter is missing or changed; run buildctl isolation verify")
+        return ["/bin/sh", "-c", 'exec "$@" 3<"$0"', str(program),
+                *args, "--seccomp", "3", "--", *argv]
+
+
 class FakeIsolationBackend(IsolationBackend):
     """Test-only backend; never accepted by production bootstrap."""
     name = "fake-test-only"
@@ -160,10 +345,10 @@ class FakeIsolationBackend(IsolationBackend):
 
 
 def production_backend() -> IsolationBackend:
-    backend = MacOSSandboxBackend()
-    if not backend.available():
-        raise IsolationError("no conformant IsolationBackend is available; autonomous execution is blocked")
-    return backend
+    for backend in (MacOSSandboxBackend(), LinuxBubblewrapBackend()):
+        if backend.available():
+            return backend
+    raise IsolationError("no conformant IsolationBackend is available; autonomous execution is blocked")
 
 
 def isolation_policy_hash(backend: IsolationBackend, snapshot_digest: str) -> str:
@@ -183,7 +368,7 @@ def probe_owned_path(control_root: Path, relative: str) -> Path:
 
 def conformance_record(control_root: Path, backend: IsolationBackend, snapshot_digest: str) -> dict[str, Any]:
     return {"verified_at": datetime.now(timezone.utc).isoformat(), "os": platform.platform(),
-            "backend": backend.name, "policy_hash": isolation_policy_hash(backend, snapshot_digest),
+            "host": backend.host_facts(), "backend": backend.name, "policy_hash": isolation_policy_hash(backend, snapshot_digest),
             "snapshot_digest": snapshot_digest, "status": "PASS"}
 
 
@@ -196,7 +381,7 @@ def require_fresh_conformance(control_root: Path, backend: IsolationBackend, sna
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise IsolationError("production isolation has not been verified; run buildctl isolation verify") from exc
     expected = conformance_record(control_root, backend, snapshot_digest)
-    for key in ("os", "backend", "policy_hash", "snapshot_digest", "status"):
+    for key in ("os", "host", "backend", "policy_hash", "snapshot_digest", "status"):
         if value.get(key) != expected[key]:
             raise IsolationError("production isolation conformance is stale or has the wrong policy binding")
     if datetime.now(timezone.utc) - verified > timedelta(hours=max_age_hours):
@@ -220,6 +405,8 @@ def verify_backend(backend: IsolationBackend, control_root: Path, authoritative_
     if trusted_config.exists() and trusted_config.is_symlink():
         raise IsolationError("isolation probe target cannot be a symlink")
     trusted_config.write_text("trusted")
+    backend.preflight()
+    backend.prepare(control_root)
     results: dict[str, Any] = {"backend": backend.name, "roles": {}}
     with tempfile.TemporaryDirectory(prefix="buildctl-isolation-check-") as directory:
         workspace = Path(directory).resolve()
@@ -245,6 +432,13 @@ def verify_backend(backend: IsolationBackend, control_root: Path, authoritative_
         repo_alias = workspace / "repo-alias"; repo_alias.symlink_to(authoritative_repo, target_is_directory=True)
         probe = authoritative_repo / ".buildctl-isolation-probe"
         listener = socket.socket(); listener.bind(("127.0.0.1", 0)); listener.listen(5)
+        # A host Unix socket (docker.sock, an SSH agent, the session bus) is network too. It sits
+        # outside the workspace and outside every deny, so only the network rule can refuse it.
+        socket_dir = Path(tempfile.mkdtemp(prefix="buildctl-sock-", dir="/tmp")).resolve()
+        unix_path = socket_dir / "host.sock"
+        unix_listener = socket.socket(socket.AF_UNIX); unix_listener.bind(str(unix_path)); unix_listener.listen(16)
+        unix_connect = ["/usr/bin/python3", "-c",
+                        f"import socket; socket.socket(socket.AF_UNIX).connect({str(unix_path)!r})"]
         network_port = listener.getsockname()[1]
         for role, read_only in (("implementer", False), ("reviewer", True), ("gate", False)):
             target = workspace / f"{role}-write"
@@ -272,6 +466,8 @@ def verify_backend(backend: IsolationBackend, control_root: Path, authoritative_
                 return execute(argv).returncode == 0
             network_context = IsolationContext(role, workspace, control_root, authoritative_repo, read_only,
                                                output, isolated_home, True, home)
+            unix_prerequisite_result = runner(backend.command(unix_connect, network_context), cwd=workspace,
+                                              text=True, capture_output=True, timeout=15, env=environment)
             network_prerequisite_result = runner(
                 backend.command(["/usr/bin/nc", "-z", "-w", "1", "127.0.0.1", str(network_port)],
                                 network_context),
@@ -317,6 +513,8 @@ def verify_backend(backend: IsolationBackend, control_root: Path, authoritative_
                 "home_write": succeeds(["/usr/bin/touch", str(home / "escape")]),
                 "network_probe_prerequisite": network_prerequisite_result.returncode == 0,
                 "network": succeeds(["/usr/bin/nc", "-z", "-w", "1", "127.0.0.1", str(network_port)]),
+                "unix_socket_prerequisite": unix_prerequisite_result.returncode == 0,
+                "unix_socket_connect": succeeds(unix_connect),
                 "git_push_succeeded": push.returncode == 0,
                 "git_push_reached_transport": push_reached,
                 "git_push_failure_reason": "protected_remote_denied" if push_reached and push.returncode != 0 else "prerequisite_failure",
@@ -337,11 +535,16 @@ def verify_backend(backend: IsolationBackend, control_root: Path, authoritative_
                         "stale_implementer_auth_read": False,
                         "home_write": False, "network_probe_prerequisite": True, "network": False,
                         "git_push_succeeded": False, "git_push_reached_transport": True,
-                        "git_push_failure_reason": "protected_remote_denied", "environment_clean": True}
+                        "git_push_failure_reason": "protected_remote_denied", "environment_clean": True,
+                        "unix_socket_prerequisite": True, "unix_socket_connect": False}
+            if isinstance(backend, LinuxBubblewrapBackend):
+                # Nested user namespaces would give the sandbox mount rights over the deny layout.
+                observed["nested_userns"] = succeeds(["/usr/bin/unshare", "-U", "/bin/true"])
+                expected["nested_userns"] = False
             if observed != expected:
                 raise IsolationError(f"isolation backend is nonconformant for {role}: {observed}; {diagnostics}")
             results["roles"][role] = observed
-        listener.close()
+        listener.close(); unix_listener.close(); shutil.rmtree(socket_dir)
         if probe.exists():
             raise IsolationError("isolation probe modified the authoritative repository")
         if subprocess.run(["/usr/bin/git", "--git-dir", str(remote), "show-ref"], capture_output=True).stdout:

@@ -28,9 +28,11 @@ The console (`buildctl-ui`) is a separate package, so updating it never requires
 
 Runs refuse to start once that record is over 24 hours old. The record is also bound to the sandbox policy and the trusted snapshot, so run `isolation verify` again after any `trust init` that changed governed files or followed a buildctl upgrade.
 
+On macOS the sandbox is `sandbox-exec`. On Linux it is bubblewrap, and the record also pins its version and digest, so run `isolation verify` again after a bubblewrap upgrade too.
+
 ### What the sandbox holds {#sandbox}
 
 - Agents work in a disposable clone with no remote.
-- Gate commands run with no network.
+- Gate commands run with no network. Without network, nothing in the sandbox can reach a Unix socket on the host either, such as the Docker daemon or an SSH agent.
 - Agent output is checked before a single byte reaches your repository: only allowed, non-governed paths are copied, and the copy must match what the reviewer saw.
 - The canonical state, audit log and cost ledger live outside your repository, where agents cannot read them.
