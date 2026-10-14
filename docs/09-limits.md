@@ -18,7 +18,8 @@
 
 ### Current limitations {#limitations}
 
-- macOS only: the sandbox is `sandbox-exec`.
+- On Linux, the host must allow unprivileged user namespaces. Stock containers do not, so buildctl refuses to run in them. See [Running on Linux](#linux).
+- On Linux, a role with network access reaches the whole network. There is no per-host allowlist yet.
 - The implementer is assumed to be Codex and the reviewer Claude. `auth check`, credential staging and parts of config validation are written for those two CLIs.
 - Dependency provisioning for acceptance commands is Python-only (`pyproject.toml`, `{python}`).
 - With `arbiter.mode` set to anything but `interactive`, the arbiter command only receives `{prompt}` and `{output}`. A command that uses `{phase}`, `{review}` or `{rounds}` fails. Use interactive debates.

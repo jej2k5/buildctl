@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import platform
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,15 @@ def load_config_text(text: str, root: Path) -> dict[str, Any]:
         raise ConfigurationError(f"invalid JSON-compatible YAML: {exc}") from exc
     validate_config(config, root)
     return config
+
+
+def host_cli_supported() -> bool:
+    """host_cli reads a personal login on the operator's machine, which only macOS has.
+
+    Linux hosts are servers, containers and CI runners: agents there authenticate per
+    operation with keys or cloud identity, never with someone's interactive session.
+    """
+    return platform.system() == "Darwin"
 
 
 def validate_config(config: dict[str, Any], root: Path) -> None:
@@ -104,6 +114,8 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
             raise ConfigurationError(f"role {name} requires an explicit credential_env allowlist")
         if role.get("auth_mode") not in {"host_cli", "environment", "none"}:
             raise ConfigurationError(f"role {name} requires a supported explicit auth_mode")
+        if role["auth_mode"] == "host_cli" and not host_cli_supported():
+            raise ConfigurationError(f"role {name}: auth_mode host_cli is macOS only; use environment")
         if role["auth_mode"] == "host_cli" and role["credential_env"]:
             raise ConfigurationError(f"role {name} host_cli authentication cannot use credential_env")
         if role["auth_mode"] == "none" and role["credential_env"]:

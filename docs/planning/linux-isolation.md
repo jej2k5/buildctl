@@ -1,6 +1,8 @@
 # Spec: a Linux isolation backend on bubblewrap
 
-Status: spiked 2026-10-14 on `spike/linux-bwrap` (`c5b613a`). The draft backend passed the full isolation probe on GitHub's Ubuntu 24.04 runners, x86_64 and arm64 (run 38577564533). Not built.
+Status: spiked 2026-10-14 on `spike/linux-bwrap` (`c5b613a`). The draft backend passed the full isolation probe on GitHub's Ubuntu 24.04 runners, x86_64 and arm64 (run 38577564533). Build in progress on the same branch: steps 1 to 5 written, CI not yet run.
+
+Resolved 2026-10-14: both open decisions went with the recommendation. `host_cli` is refused on Linux for both roles, and Linux CI runs the whole kernel suite.
 
 Decided 2026-10-14:
 - Linux runs on a remote VM or server, inside a container, and on CI runners. No Linux workstation target.
@@ -120,10 +122,10 @@ Adding keys changes the probe on macOS, so this ships in the same release.
 
 ```json
 {"machine": "x86_64", "bwrap": "/usr/bin/bwrap", "bwrap_version": "0.9.0",
- "bwrap_sha256": "<digest>", "seccomp_sha256": "<digest>", "kernel": "6.17.0-1022-azure"}
+ "bwrap_sha256": "<digest>", "seccomp_sha256": "<digest>"}
 ```
 
-`require_fresh_conformance` compares `machine`, the bwrap digest and the filter digest. A package upgrade then means "run `isolation verify` again", the same rule the manual already gives for a buildctl upgrade. Kernel is recorded but not compared, since hosts patch kernels routinely.
+`require_fresh_conformance` compares the whole `host` block. A package upgrade then means "run `isolation verify` again", the same rule the manual already gives for a buildctl upgrade. The kernel is not in `host`: the existing `os` field (`platform.platform()`) already carries the kernel release and is compared, so a kernel patch also means re-verifying. That is as conservative as macOS, where an OS update does the same.
 
 **bubblewrap 0.8.0 or newer** is required (`--disable-userns`). Older versions refuse at `available()` with a message naming the version found. Ubuntu 22.04 ships 0.6.1 and RHEL 9 ships 0.6.3 (checked 2026-10-14), so the manual says to install a newer bubblewrap there or to upgrade the host. Debian 12 ships 0.8.0 and qualifies. The spike only ran 0.9.0, so acceptance includes a 22.04 runner to prove the refusal.
 
