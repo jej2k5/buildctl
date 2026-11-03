@@ -19,6 +19,9 @@ from .supervisor.budget import BudgetLedger, LimitExceeded, configured_cost
 from .supervisor.claude import ClaudeAdapter
 from .supervisor.codex import CodexAdapter
 from .supervisor.debate import DebateAdapter, DebateRequiresHuman, validate_debate_result, write_adr
+from .supervisor.evidence import (EvidenceBranch, EvidenceError, EvidenceStore, NO_RECEIPT, RecordIncomplete,
+                                  build_manifest, discrepancies, phase_records, prune_records, recording_enabled,
+                                  show as evidence_show, unclosed_records, verify as evidence_verify)
 from .supervisor.inspect import audit_events, inspect as inspect_build
 from .supervisor.gates import MechanicalGates, write_gate_result
 from .supervisor.git import Delta, GitManager, GitSafetyError
@@ -55,6 +58,8 @@ def control_root_for(repo: Path) -> Path:
 
 
 class Supervisor:
+    evidence: EvidenceStore | None = None
+
     def __init__(self, root: Path, *, dry_run: bool = False, runner: Any = subprocess.run,
                  backend: IsolationBackend | None = None, control_root: Path | None = None,
                  trusted: bool = True):
@@ -80,6 +85,7 @@ class Supervisor:
         self.git = GitManager(self.root, self.config, runner)
         self.budget = BudgetLedger(self.control_root, self.config["limits"]["max_daily_cost_usd"])
         self.runner = runner
+        self.evidence = EvidenceStore(self.control_root) if recording_enabled(self.config) else None
 
     def bootstrap(self) -> None:
         if self.dry_run:
@@ -258,6 +264,7 @@ class Supervisor:
         if state.phase_attempts[key] > self.config["limits"]["max_phase_attempts"]:
             self._ceiling_reached(state, phase, "PHASE_ATTEMPTS_EXHAUSTED", "phase attempt ceiling")
         if state.phase_step == "committed":
+            self._seal_evidence(state, phase)  # A crash between commit and seal lands here.
             if phase.merge_policy == "human" and not self._approval_recorded(state, phase, f"merge-phase-{phase.number}"):
                 self._require_approval(state, phase, f"merge-phase-{phase.number}")
             self._finish_phase(state, phase, state.active_branch or f"build/phase-{phase.number}")
@@ -276,7 +283,7 @@ class Supervisor:
             baseline_path.write_text(json.dumps(self.git.manifest(workspace), sort_keys=True))
         baseline = json.loads(baseline_path.read_text())
         context = IsolationContext("implementer", workspace, self.control_root, self.root)
-        role_runner = RoleRunner(self.config, self.backend, context, self.runner)
+        role_runner = RoleRunner(self.config, self.backend, context, self.runner, self.evidence)
         codex, claude = CodexAdapter(role_runner, self.snapshot), ClaudeAdapter(role_runner, self.snapshot)
         debate = DebateAdapter(role_runner, self.snapshot, self.config)
         paths = self._paths(phase)
@@ -325,6 +332,8 @@ class Supervisor:
                              # The reviewer cannot retire a finding it has never been shown,
                              # and cannot guess a prior claim_key. Hand it the register.
                              "open_findings": open_finding_obligations(state.findings)})
+            if self.evidence is not None:
+                evidence["evidence_discrepancies"] = self._discrepancies(state, phase, delta, paths)
             if evidence["unreviewable"] and phase.claude_review_required:
                 self._escalate(state, "UNREVIEWABLE_DELTA", ", ".join(evidence["unreviewable"]))
             semantic = state.semantic_review_attempts.get(key, 0) + 1
@@ -416,12 +425,66 @@ class Supervisor:
         if publication_delta.digest != delta.digest:
             self._escalate(state, "DELTA_CHANGED_AFTER_REVIEW", "publication delta does not match reviewer attestation")
         delta = publication_delta
+        self._require_complete_records(state, phase)
         branch = self.git.apply_and_commit(workspace, delta, phase, state.base_sha or "")
         state.active_branch, state.phase_step = branch, "committed"
         self.store.event(state, "phase_committed", phase=phase.number, branch=branch)
+        self._seal_evidence(state, phase)
         if phase.merge_policy == "human":
             self._require_approval(state, phase, f"merge-phase-{phase.number}")
         self._finish_phase(state, phase, branch)
+
+    def _attempt_records(self, state: BuildState, phase: Phase) -> list[dict[str, Any]]:
+        attempt = state.phase_attempts[str(phase.number)]
+        return [record for record in phase_records(self.control_root, phase.number)
+                if record["header"].get("attempt") == attempt]
+
+    def _discrepancies(self, state: BuildState, phase: Phase, delta: Any, paths: dict[str, Path]) -> list[dict[str, Any]]:
+        flags = discrepancies(self._attempt_records(state, phase), [*delta.added_or_modified, *delta.deleted],
+                              exempt=(f"decisions/ADR-phase-{phase.number}.md",))  # The kernel wrote that one.
+        target = paths["result"].with_name("EVIDENCE_FLAGS.json")
+        target.write_text(json.dumps({"flags": flags, "generated_at": now()}, indent=2, sort_keys=True) + "\n")
+        return flags
+
+    def _require_complete_records(self, state: BuildState, phase: Phase) -> None:
+        """Checked before the commit, because a retry from here still gets a fresh workspace."""
+        if self.evidence is None:
+            return
+        unclosed = unclosed_records(self.control_root, phase.number, state.phase_attempts[str(phase.number)])
+        if unclosed:
+            self._escalate(state, "AGENT_RECORD_INCOMPLETE", ", ".join(unclosed))
+
+    def _seal_evidence(self, state: BuildState, phase: Phase) -> None:
+        """Write this phase's receipt. Before approval and publication, so both can rely on it."""
+        if self.evidence is None:
+            return
+        branch_name = state.active_branch or f"build/phase-{phase.number}"
+        receipts = EvidenceBranch(self.root, self.runner)
+        code_commit = self.git._git("rev-parse", f"refs/heads/{branch_name}").stdout.strip()
+        tree_hash = self.git._git("rev-parse", f"{code_commit}^{{tree}}").stdout.strip()
+        attempt = state.phase_attempts[str(phase.number)]
+        changed = self.git._git("diff", "--name-only", state.base_sha or "", code_commit).stdout.split("\n")
+        flags = discrepancies(self._attempt_records(state, phase), [path for path in changed if path],
+                              exempt=(f"decisions/ADR-phase-{phase.number}.md",))
+        try:
+            if receipts.find(code_commit):
+                return
+            manifest = build_manifest(self.control_root, self.config, phase=phase.number, code_commit=code_commit,
+                                      tree_hash=tree_hash, base_sha=state.base_sha or "",
+                                      governance_sha=state.governance_sha or "", attempt=attempt,
+                                      previous=receipts.latest_manifest_sha(), flags=flags,
+                                      ledger=self.budget._entries())
+            sha = receipts.append(manifest, self.control_root / "tmp")
+        except (RecordIncomplete, EvidenceError, OSError) as exc:
+            self._escalate(state, "AGENT_RECORD_INCOMPLETE", f"the receipt could not be sealed: {exc}")
+        self.store.event(state, "evidence_sealed", phase=phase.number, code_commit=code_commit, manifest_sha256=sha)
+
+    def _note_closed_records(self, state: BuildState) -> None:
+        """The audit chain vouches for each record's hash. Actions stay out: `append` re-verifies the file."""
+        if self.evidence is None:
+            return
+        while self.evidence.closed:
+            self.store.event(state, "agent_record_closed", **self.evidence.closed.pop(0))
 
     def _finish_phase(self, state: BuildState, phase: Phase, branch: str) -> None:
         publication = self.git.publish(phase)
@@ -463,8 +526,13 @@ class Supervisor:
         self.store.event(state, "operation_started", operation=operation_id,
                          paid_operation=paid_operation.value, role=role_name,
                          network_allowed=self.config["roles"][role_name]["network"])
+        if self.evidence is not None:
+            self.evidence.operation = (operation_id, phase.number, state.phase_attempts[str(phase.number)])
         try:
-            result = function(self._remaining_seconds(state))
+            try:
+                result = function(self._remaining_seconds(state))
+            finally:
+                self._note_closed_records(state)
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
             operation.output_digest = digest_file(output)
@@ -474,6 +542,11 @@ class Supervisor:
         except subprocess.TimeoutExpired:
             operation.status = "unknown"
             self._escalate(state, "OPERATION_TIMEOUT_UNKNOWN", operation_id)
+        except RecordIncomplete as exc:
+            operation.status, operation.detail_code = "failed", "AGENT_RECORD_INCOMPLETE"
+            self.store.event(state, "operation_failed", operation=operation_id, code=operation.detail_code,
+                             diagnostic=redact(str(exc), limit=DIAGNOSTIC_LIMIT))
+            self._escalate(state, "AGENT_RECORD_INCOMPLETE", str(exc))
         except DebateRequiresHuman as exc:
             # Not a failure: the request is written and waits for a human. The operation is
             # still closed as failed, so retry is not blocked as unknown, and the next run finds
@@ -731,6 +804,13 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("inspect", help="the full read model as JSON: state, phases, trust, levers")
     audit = commands.add_parser("audit", help="audit events after a sequence number, as JSON")
     audit.add_argument("--after", type=int, default=0); audit.add_argument("--limit", type=int, default=500)
+    evidence = commands.add_parser("evidence", help="receipts of what agents did: show, verify, prune")
+    evidence_sub = evidence.add_subparsers(dest="evidence_command", required=True)
+    evidence_show = evidence_sub.add_parser("show"); evidence_show.add_argument("commit")
+    evidence_verify = evidence_sub.add_parser("verify"); evidence_verify.add_argument("commit")
+    evidence_verify.add_argument("--records", help="directory of full records (default: this machine's, if any)")
+    evidence_prune = evidence_sub.add_parser("prune"); evidence_prune.add_argument("--phase", type=int, required=True)
+    evidence_prune.add_argument("--confirm", type=int, required=True, help="type the phase number again")
     return result
 
 
@@ -749,6 +829,30 @@ def resolve_repository(value: str | None, runner: Any = subprocess.run) -> Path:
     if value and toplevel != start:
         raise ValueError(f"--repo must name the repository toplevel ({toplevel}), not {start}")
     return toplevel
+
+
+def evidence_command(args: argparse.Namespace, root: Path, control_root: Path) -> int:
+    """Runs on any clone: reading receipts needs no trust, sandbox or control root."""
+    if args.evidence_command == "show":
+        manifest = evidence_show(root, args.commit)
+        print(json.dumps(manifest, indent=2, sort_keys=True) if manifest else NO_RECEIPT)
+        return 0 if manifest else 1
+    if args.evidence_command == "verify":
+        records = Path(args.records) if args.records else control_root / "records"
+        report = evidence_verify(root, args.commit, records if records.is_dir() else None)
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if report["status"].startswith("verified") else 1
+    if args.phase != args.confirm:
+        raise ValueError("--confirm must repeat the phase number")
+    store = StateStore(control_root)
+    with store.lock():
+        state = store.load()
+        if state.current_phase == args.phase:
+            raise ValueError(f"phase {args.phase} is in progress; its records are still evidence for it")
+        result = prune_records(control_root, args.phase)
+        store.event(state, "evidence_pruned", **result)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -773,6 +877,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(inspect_build(root, control_root), indent=2, sort_keys=True)); return 0
         if args.command == "audit":
             print(json.dumps(audit_events(control_root, args.after, args.limit), indent=2, sort_keys=True)); return 0
+        if args.command == "evidence":
+            return evidence_command(args, root, control_root)
         if args.command == "auth":
             if args.auth_command != "check":
                 raise ValueError("unknown auth command")

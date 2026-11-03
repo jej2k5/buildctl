@@ -303,6 +303,20 @@ tbody tr.row-link:focus-visible { outline-offset: -2px; }
 .finding dd { margin: 0; color: var(--ink-2); }
 .tag { font: 500 var(--t-xs)/1 var(--mono); color: var(--ink-2); border: 1px solid var(--rule-strong); padding: 2px 5px; white-space: nowrap; }
 
+.tag.observed { border-color: var(--ink-2); color: var(--ink); font-weight: 600; }
+
+/* What agents did */
+.strip { display: grid; grid-template-columns: max-content 1fr; gap: 4px var(--s4); margin: 0; font-size: var(--t-sm); padding-top: var(--s3); border-top: 1px solid var(--rule); }
+.strip dt { color: var(--ink-3); }
+.strip dd { margin: 0; overflow-wrap: anywhere; }
+.flags { list-style: none; margin: var(--s2) 0 0; padding: 0; display: grid; gap: var(--s2); font-size: var(--t-sm); }
+.flags li { display: flex; gap: var(--s2); align-items: flex-start; }
+.flags code { overflow-wrap: anywhere; }
+table.feed td.what { overflow-wrap: anywhere; width: 100%; }
+table.feed td:not(.what) { white-space: nowrap; }
+.feed-wrap { max-height: 560px; overflow-y: auto; }
+pre.record-row { max-height: 280px; border-bottom: 1px solid var(--rule-strong); }
+
 /* Tabs */
 .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--rule-strong); margin-bottom: 0; overflow-x: auto; }
 .tabs button { font: 500 var(--t-sm) var(--sans); background: none; border: 0; padding: 10px 14px; color: var(--ink-2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }

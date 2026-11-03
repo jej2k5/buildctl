@@ -95,6 +95,12 @@ The phase ran past `max_phase_minutes`.
 
 **Clear it:** `buildctl retry`. A retry starts a new attempt with a fresh deadline.
 
+#### AGENT_RECORD_INCOMPLETE {#AGENT_RECORD_INCOMPLETE signal=danger}
+
+Part of the phase went unrecorded, so buildctl will not commit it: a record could not be written (often a full disk), a stream ended with no final event, a supervisor crash left a record unclosed, or a record fails its internal chain. The agent is killed at once, which stops further spend. The flat amount reserved for the call stays booked, and the provider bills what it used. See [What agents did](#evidence).
+
+**Clear it:** fix the cause in the detail, then `buildctl retry`. A retry starts a fresh attempt in a fresh workspace, and the earlier record stays in the receipt, labelled incomplete. If the phase had already committed and only the seal failed, the retry seals it and carries on.
+
 #### DELTA_CHANGED_AFTER_REVIEW {#DELTA_CHANGED_AFTER_REVIEW signal=danger}
 
 What would be committed differs from what the reviewer attested. This should never happen. Nothing was committed.

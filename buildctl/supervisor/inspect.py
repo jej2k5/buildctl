@@ -17,6 +17,7 @@ from typing import Any, Callable
 from . import levers as lever_rules
 from .audit import AuditChain
 from .budget import BudgetLedger, LimitExceeded
+from .evidence import receipts_state, recording_enabled
 from .isolation import IsolationError, production_backend, require_fresh_conformance
 from .kernel import kernel_identity
 from .phases import ConfigurationError, load_config, merged_metadata
@@ -54,6 +55,8 @@ ESCALATIONS: dict[str, tuple[str, str]] = {
                                    "Investigate before retrying. This should never happen."),
     "STALE_DEBATE_RESULT": ("The debate result was written for a different phase or base.",
                             "Re-run the debate for the current request, then retry."),
+    "AGENT_RECORD_INCOMPLETE": ("Part of the phase went unrecorded, so buildctl will not commit it.",
+                                "Fix the cause in the detail, such as a full disk, then retry. A retry starts a fresh attempt."),
     "UNEXPECTED_FAILURE": ("The supervisor hit an error it does not classify.",
                            "Read the detail, fix the cause, then retry."),
 }
@@ -160,6 +163,13 @@ def _latest_review(control_root: Path, number: int) -> dict[str, Any] | None:
         return {"file": review.name, "verdict": value.get("verdict"), "attempt": value.get("attempt"),
                 "findings": value.get("findings", []), "coverage": value.get("coverage", [])}
     return None
+
+
+def _evidence_flags(control_root: Path, number: int) -> list[dict[str, Any]]:
+    try:
+        return json.loads((control_root / "artifacts" / f"phase-{number}" / "EVIDENCE_FLAGS.json").read_text())["flags"]
+    except (OSError, ValueError, KeyError):
+        return []
 
 
 def _gates(control_root: Path, number: int) -> list[dict[str, Any]]:
@@ -288,7 +298,7 @@ def inspect(repo: Path, control_root: Path, runner: Callable[..., Any] = subproc
         current = {"number": number, "step": state.phase_step, "deadline_at": state.deadline_at,
                    "branch": state.active_branch, "base_sha": state.base_sha,
                    "review": _latest_review(control_root, number), "gates": _gates(control_root, number),
-                   "artifacts": _artifacts(control_root, number),
+                   "artifacts": _artifacts(control_root, number), "evidence_flags": _evidence_flags(control_root, number),
                    "debate_request": str(debate_request) if debate_request.is_file() else None}
 
     outputs = {}
@@ -317,6 +327,8 @@ def inspect(repo: Path, control_root: Path, runner: Callable[..., Any] = subproc
         "config": {"source": config_source, "error": config_error,
                    "limits": (config or {}).get("limits"), "milestones": (config or {}).get("milestones"),
                    "checkpoints": (config or {}).get("checkpoints")},
+        "evidence": {"recording": recording_enabled(config or {}),
+                     "push": bool((config or {}).get("git", {}).get("push")), **receipts_state(repo, runner, (config or {}).get("git", {}).get("remote", "origin"))},
         "trust": trust, "isolation": isolation, "audit": audit, "budget": budget, "lock": lock,
         "bootstrapped": bootstrapped, "state_error": state_error,
         "state": {"status": state.status, "generation": state.generation, "current_phase": state.current_phase,

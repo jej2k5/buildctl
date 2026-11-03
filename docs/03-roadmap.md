@@ -23,13 +23,14 @@ A roadmap is `build.yaml` plus one prompt file per phase. `build.yaml` is JSON, 
     "implementer": {
       "network": true, "auth_mode": "host_cli", "credential_env": [],
       "command": ["codex", "exec", "--ignore-user-config", "--dangerously-bypass-approvals-and-sandbox",
-                  "--output-last-message", "{output}", "{prompt}"]
+                  "--json", "--output-last-message", "{output}", "{prompt}"]
     },
     "reviewer": {
       "vendor": "anthropic", "model_family": "claude", "prompt_lineage": "v1",
       "protocol_version": "buildctl-review-v2",
       "network": true, "auth_mode": "host_cli", "credential_env": [],
-      "command": ["claude", "-p", "{prompt}", "--no-session-persistence", "--tools", "Read,Grep,Glob"],
+      "command": ["claude", "-p", "{prompt}", "--no-session-persistence", "--tools", "Read,Grep,Glob",
+                  "--output-format", "stream-json", "--verbose"],
       "context_documents": ["docs/ARCHITECTURE.md"]
     },
     "arbiter": {

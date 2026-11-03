@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from .safety import (UnsafeCleanup, ensure_safe_relative, matches_secret_pattern, purge_ephemeral_artifacts,
                      secret_shaped)
+from .evidence import EVIDENCE_BRANCH, recording_enabled
 from .governance import governance_documents, is_governance_path
 
 
@@ -62,7 +63,10 @@ class GitManager:
         if destination.exists():
             raise GitSafetyError("phase clone already exists; reconcile it instead of recreating")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        completed = self.runner(["git", "clone", "--no-local", "--no-hardlinks", "--no-checkout",
+        # `ensure_safe` just proved the base is HEAD, so one branch is enough, and receipts stay out
+        # of the workspace. Defensive only: receipts are built to be shared.
+        narrow = ["--single-branch"] if recording_enabled(self.config) else []
+        completed = self.runner(["git", "clone", "--no-local", "--no-hardlinks", "--no-checkout", *narrow,
                                  str(self.root), str(destination)], text=True, capture_output=True,
                                 env={"PATH": os.environ.get("PATH", "")})
         if completed.returncode:
@@ -246,6 +250,10 @@ class GitManager:
         git = self.config["git"]
         if not git["push"]:
             return f"integrated:{self.integrate(f'build/phase-{phase.number}')}"
+        # Receipts first, so code never reaches the remote without its evidence.
+        if recording_enabled(self.config) and self._git("show-ref", "--verify", "--quiet",
+                                                        f"refs/heads/{EVIDENCE_BRANCH}", check=False).returncode == 0:
+            self._git("push", git["remote"], f"refs/heads/{EVIDENCE_BRANCH}:refs/heads/{EVIDENCE_BRANCH}")
         self._git("push", "-u", git["remote"], f"build/phase-{phase.number}")
         if not git["create_pr"]:
             return "pushed"

@@ -1,6 +1,8 @@
 # Spec: a live view and portable evidence of agent work
 
-Status: specified 2026-10-30 against `f8bb41d`. Not built. No agent CLI has been run with event flags yet, so the event claims below are from `--help` output (Codex 0.164.0, Claude Code 2.1.314) until step 1 proves them.
+Status: specified 2026-10-30 against `f8bb41d`. Built 2026-10-31 on `spec/agent-evidence`, except the terminal UI, which still has no feed. Tested with stand-in agents replaying real streams and with no sandbox. No real build has run on it yet.
+
+Spike 2026-10-31 (Codex 0.164.0, Claude Code 2.1.314, saved in `tests/fixtures/agent_streams/`): Codex reports each command with its exit code and each file change, and ends with `turn.completed`. Claude reports each tool call and ends with `result`, and refuses `stream-json` under `-p` without `--verbose`. Codex has no event for reading a file, so its reads show up only as commands. Codex ran with its own sandbox on for this spike, not with the bypass flag `build.yaml` uses: a safety check blocked launching it that way.
 
 Decided 2026-10-30, by JJ:
 
@@ -48,7 +50,7 @@ Version 1 checks one thing across that line: reported writes against the attribu
 | Role | Addition | Result comes from |
 |---|---|---|
 | Implementer (Codex) | `--json` | `--output-last-message`, unchanged |
-| Reviewer (Claude) | `--output-format stream-json`, plus `--verbose` if step 1 shows it is required | The final `result` event |
+| Reviewer (Claude) | `--output-format stream-json --verbose` | The final `result` event |
 | Arbiter, non-interactive | Whatever its CLI offers; otherwise raw lines only | Unchanged |
 
 The reviewer change has a trap. `agents.py:231` writes stdout to the result file when no file exists, which would turn the event stream into the review result. The reviewer's result must be extracted from the final event by a per-CLI adapter, and that fallback removed for streaming roles.
@@ -59,7 +61,9 @@ The reviewer change has a trap. `agents.py:231` writes stdout to the result file
 
 **The record.** One file per operation: `<control_root>/records/phase-<N>/<operation>.jsonl`, mode 0600. Each line holds a sequence number, a timestamp, the stream (`stdout` or `stderr`), the raw text and a hash link to the previous line, following `discover/buildctl_discover/record.py`. The first row holds the prompt, which the kernel built. Closing the record appends one `agent_record_closed` event to `AuditChain` with the file's sha256 and line count. Individual actions do not go in the chain, because `AuditChain.append` re-verifies the whole file on every call.
 
-**Secret scanning moves earlier.** `classify_secret_exposure` runs once over the finished output today. Once output is written to disk and shown live, each line must be scanned before it reaches the record or the console. A hit kills the process, writes a marker row naming the credential kind but not its value, and raises the existing `{ROLE}_SECRET_OUTPUT` stop.
+**Secret scanning moves earlier.** `classify_secret_exposure` runs once over the finished output today. Once output is written to disk and shown live, each line must be scanned before it reaches the record or the console. A credential buildctl was given kills the process, writes a marker row naming its kind but not its value, and raises the existing `{ROLE}_SECRET_OUTPUT` stop.
+
+A secret-shaped string only gets redacted. Event streams now carry command output and file contents, so an agent reading a source file holding `token = "abc123..."` would otherwise stop the build for leaking nothing of its own. The result file is still checked as strictly as before.
 
 A line-by-line scan alone would be weaker than today's. A multi-line secret such as a PEM key spans lines, and in JSONL a secret containing quotes, backslashes or newlines arrives escaped, so a raw match misses it. So each event's decoded strings are scanned as well as the raw line, and the whole record is scanned again at close. A hit at close still raises the stop, and the operation's result is not used, but by then the secret is in the local record, so that record must be treated as sensitive.
 
@@ -118,23 +122,22 @@ Expect noise from the first two, which is why they are separate. Measure the fal
       "actions": [
         {"seq": 18, "at": "...", "kind": "ran", "target": "pytest tests/billing",
          "exit_code": 0, "source": "agent_reported", "redacted": false}
-      ],
-      "flags": []
-    }],
-    "gates": [{"file": "GATE_RESULT-1.json", "sha256": "<sha256>", "passed": true, "source": "observed"}],
-    "review": {"file": "REVIEW_RESULT-1.json", "sha256": "<sha256>", "verdict": "..."}
+      ]
+    }]
   }],
+  "artifacts": [{"file": "GATE_RESULT-1.json", "kind": "gate", "sha256": "<sha256>", "source": "observed", "passed": true}],
+  "flags": [],
   "signatures": []
 }
 ```
 
-Every attempt is included, failed ones too. An approver should see that the code took three tries. A phase that never commits has no receipt, and its records remain local.
+Artifacts sit at the top level because gate and review files are named by round, not attempt. Flags cover the attempt that committed. Every attempt is included, failed ones too. An approver should see that the code took three tries. A phase that never commits has no receipt, and its records remain local.
 
 **Signing.** `signatures` stays empty for now. A later signature covers the canonical manifest with that field emptied, so adding one changes no schema and no earlier receipt. Outside timestamping would use the same hash.
 
 **Sealing.** The manifest is sealed right after `apply_and_commit` (`buildctl.py:419`), before the merge approval at `:422` and before `_finish_phase`. An `evidence_sealed` event carries the manifest hash into `AuditChain`. Writing a ref does not move `HEAD` or its tree, so pending approvals stay valid.
 
-The restart path at `buildctl.py:260` must handle a phase already committed. If there is no receipt and its records are intact, it seals one, idempotently. If the records are incomplete, it raises `AGENT_RECORD_INCOMPLETE`. Without this, a crash between commit and seal would publish code with no evidence.
+Unclosed records are checked before `apply_and_commit`, because a retry from there still gets a fresh workspace. The restart path at `buildctl.py:260` handles a phase already committed: it seals first, idempotently, then asks for any merge approval. Without this, a crash between commit and seal would publish code with no evidence.
 
 **Publishing.** With `git.push` on, the evidence ref is pushed before the phase branch in `publish`, so code never reaches the remote without its receipt. A failed push follows the existing `GitSafetyError` path. With `git.push` off, the console shows "receipts not pushed".
 
@@ -168,7 +171,7 @@ A read-only, token-protected route: `GET /api/activity?phase=&operation=&after=<
 - **Activity feed, on the phase detail.** One row per action with its source label. Selecting a row opens that part of the local record.
 - **At an approval, on the Stop view.** Flags sit beside the existing evidence and the approve lever.
 
-**Agent text is hostile input.** The console holds the levers and the session token. `app.js` already uses `innerHTML` and the terminal UI uses `Text.from_markup`. Every agent-authored string goes through `textContent` on the web and plain `Text` in the terminal, with control and ANSI characters stripped. A test feeds a hostile payload through both.
+**Agent text is hostile input.** The console holds the levers and the session token. `activity` strips control and ANSI characters on the server, and `app.js` renders every agent-authored string through `esc`, as it does all other untrusted text. The terminal UI must use plain `Text`, not `Text.from_markup`, when it gets a feed.
 
 ## When you can check before approving
 
@@ -203,7 +206,7 @@ With `off`, agents run through today's blocking launch and today's secret scan, 
 4. **Sealing.** The manifest, the evidence ref, the restart path, the `--single-branch` clone, the push order.
 5. **Commands.** `evidence show`, `verify`, `prune`.
 6. **Reviewer section.**
-7. **Console, then terminal UI.** With the `/impeccable` skill, under `DESIGN.md`.
+7. **Console, then terminal UI.** Under `DESIGN.md`. The console is done, using its existing components, without an `/impeccable` pass. The terminal UI is not done.
 8. **Docs and migration.** `discover/buildctl_discover/record.py` defaults, the roadmap example, the manual chapters on stops, console, reference and limits, and the `build.yaml` change for existing repos.
 
 ## Cost to operators

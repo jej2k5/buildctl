@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from buildctl.buildctl import control_root_for
+from buildctl.supervisor.evidence import EvidenceError, activity as evidence_activity, record_lines
 from buildctl.supervisor.inspect import audit_events, inspect
 
 
@@ -70,6 +71,17 @@ class Build:
         if root not in target.parents:
             raise Refused("only files under the build's artifacts directory can be read", 403)
         return target.read_text(errors="replace")[:limit]
+
+    def activity(self, phase: int, operation: str | None = None) -> dict[str, Any]:
+        """What agents reported doing in a phase, and what buildctl saw. Read-only."""
+        return evidence_activity(self.control_root, phase, operation)
+
+    def record(self, phase: int, record: str, seq: int) -> list[dict[str, Any]]:
+        """One row of a full record. The name selects a file; it is never treated as a path."""
+        try:
+            return record_lines(self.control_root, phase, record, seq)
+        except EvidenceError as exc:
+            raise Refused(str(exc), 404) from exc
 
     def trust_diff(self) -> dict[str, Any]:
         """What a trust init at HEAD would change, compared with the commit trusted now."""
