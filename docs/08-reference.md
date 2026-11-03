@@ -47,7 +47,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `git.create_pr` | Open a pull request for the pushed phase branch, with the `gh` CLI. |
 | `git.merge` | Request a squash auto-merge of that pull request, for phases whose `merge_policy` is `auto`. |
 | `git.integration_branch` | The branch fast-forwarded after each phase. Default `main`. Fast-forward only: if it has commits the phase lacks, buildctl stops instead of merging. |
-| `roles.*.command` | The argv for each agent. `{prompt}` and `{output}` are substituted. |
+| `roles.*.command` | The argv for each agent. `{prompt}` and `{output}` are substituted. While recording is on, `codex` needs `--json` and `claude` needs `--output-format stream-json --verbose`; see [Setting it up](#evidence). |
 | `roles.*.network` | Whether the agent has network access in the sandbox. |
 | `roles.*.auth_mode` | How the agent authenticates: `host_cli` (your CLI login; macOS only), `environment` (the named variables) or `none`. |
 | `roles.*.credential_env` | The `*_API_KEY` or `*_TOKEN` variables an `environment` agent receives. Must be empty otherwise. |
@@ -65,7 +65,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `phase_defaults.required_files` | Files that must exist after the implementer finishes. |
 | `phase_defaults.commands` | Acceptance commands, each an argv array run sandboxed with no network. |
 | `phase_defaults.invariants` | Named rules the reviewer checks every change against. |
-| `evidence.recording` | `"on"` (the default) or `"off"`. On records every agent call and seals a receipt for each commit, and needs the event flags in each role's command. Off turns all of that off. See [What agents did](#evidence). |
+| `evidence.recording` | `"on"` (the default) or `"off"`. On records every agent call and seals a receipt for each commit, and needs the event flags in each role's command (`--json` for `codex`; `--output-format stream-json --verbose` for `claude`). Off turns all of that off. See [What agents did](#evidence). |
 | `phase_defaults.claude_review_required` | Whether the phase must pass review. |
 | `phase_defaults.debate_on_architecture_disagreement` | Whether architectural findings go to a debate. |
 | `phase_defaults.max_remediation_attempts` | Remediation laps before [REMEDIATION_ATTEMPTS_EXHAUSTED](#REMEDIATION_ATTEMPTS_EXHAUSTED). |

@@ -40,6 +40,42 @@ Canonical state, the hash-chained audit log, the cost ledger, the trusted snapsh
 
 With `evidence.recording` on, which is the default, buildctl writes each line an agent emits to a record as it arrives. The console shows it live, and each commit gets a receipt you can share.
 
+**Setting it up.** Recording reads each agent's event stream, so each agent must be asked to emit one. Add these flags to each role's `command`:
+
+| Agent | Add | What it changes |
+|---|---|---|
+| `codex` | `--json` | Codex prints one JSON event per line instead of plain text. `--output-last-message` still writes the result file. |
+| `claude` | `--output-format stream-json --verbose` | Claude prints one JSON event per line. It refuses `stream-json` with `-p` unless `--verbose` is also set. |
+| Any other CLI | Nothing | Its output is recorded line by line as plain text, with no actions picked out of it. |
+
+```json
+"implementer": {
+  "command": ["codex", "exec", "--ignore-user-config", "--dangerously-bypass-approvals-and-sandbox",
+              "--json", "--output-last-message", "{output}", "{prompt}"]
+},
+"reviewer": {
+  "command": ["claude", "-p", "{prompt}", "--no-session-persistence", "--tools", "Read,Grep,Glob",
+              "--output-format", "stream-json", "--verbose"]
+}
+```
+
+An `interactive` arbiter needs nothing, since debates run outside buildctl. Without the flags, `validate`, `trust init` and every build command refuse before anything is spent:
+
+```
+role implementer command needs --json because recording is on; add them, or set evidence.recording to "off"
+```
+
+**Upgrading a build that predates recording.** Recording is on unless `build.yaml` says otherwise, so a build set up before it existed is refused until you choose. Either add the flags above or add `"evidence": {"recording": "off"}`. Then check it, commit it and re-trust, because `build.yaml` is a governed file and `trust init` refuses the old one too:
+
+```sh
+buildctl validate                  # prints "build.yaml: valid (...)" once the flags are in
+git commit -am "Record agent work"
+buildctl trust init --to "$(git rev-parse HEAD)" --confirm "$(git rev-parse HEAD)"
+buildctl isolation verify
+```
+
+The new kernel needs that re-trust anyway, so make the change in the same pass.
+
 Most of a record is the agent's own account. Every row says who vouches for it:
 
 | Label | Rows | Who vouches |

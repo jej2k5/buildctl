@@ -36,6 +36,15 @@ buildctl bootstrap
 buildctl start
 ```
 
+### Recording agent work
+
+buildctl records what each agent does, shows it live in the console and leaves a checkable receipt for each commit. It is on by default and needs each agent to emit events. Put these flags in the role commands in `build.yaml`:
+
+- implementer (`codex`): `--json`
+- reviewer (`claude`): `--output-format stream-json --verbose`
+
+Without them, buildctl refuses to validate, trust or run, with `role implementer command needs --json because recording is on`. To go without recording, add `"evidence": {"recording": "off"}` instead. Either way, `build.yaml` is governed, so commit it and run `trust init` again. A build set up before recording existed needs this once. See [What agents did](https://jej2k5.github.io/buildctl/#evidence) for the full setup, what is recorded and how to check a receipt.
+
 Writing `build.yaml` and phase prompts is covered in the manual's [Writing a roadmap](https://jej2k5.github.io/buildctl/#roadmap). When a build stops, `buildctl status` names the code; the manual's [When it stops](https://jej2k5.github.io/buildctl/#stops) says what clears it.
 
 ## The console
