@@ -7,10 +7,17 @@ const S = {
   tab: {}, open: {}, typed: {}, results: {}, stamps: {}, busy: {},
   audit: [], auditSeq: 0, ledger: { phase: "", event: "" },
   cells: {}, trustDiff: null, trustDiffKey: "", artifact: null, error: null,
-  activity: null, activityKey: "", recordRow: null,
+  activity: null, activityKey: "", recordRow: null, decision: { answer: "" },
 };
-const PRIMARY = ["start", "recover", "pause", "resume", "approve", "grant", "retry", "reconcile-accept", "reconcile-retry"];
-const STOP_LEVERS = ["approve", "grant", "retry", "reconcile-accept", "reconcile-retry", "recover"];
+const PRIMARY = ["start", "recover", "pause", "resume", "approve", "decide", "grant", "retry", "reconcile-accept", "reconcile-retry"];
+const STOP_LEVERS = ["approve", "decide", "grant", "retry", "reconcile-accept", "reconcile-retry", "recover"];
+// The decide lever carries the operator's ruling: one of these answers, and text for "own".
+const ANSWERS = [
+  { id: "finding-stands", label: "The finding stands", hint: "Codex makes the changes the findings require." },
+  { id: "code-stands", label: "The code stands", hint: "The findings close. The phase is reviewed once more, then commits." },
+  { id: "own", label: "My own ruling", hint: "Codex implements what you write below." },
+];
+const SIDES = { implementer: "Codex, for the code", reviewer: "Claude, for the findings" };
 const SETUP_LEVERS = ["trust", "isolation", "auth", "bootstrap"];
 const ASPECT_WORDS = { danger: "stopped", caution: "waiting for you", clear: "clear", unknown: "outcome unknown", occupied: "in progress", pending: "not started" };
 
@@ -211,7 +218,7 @@ function renderLevers(levers, { emptyText = "No levers apply here." } = {}) {
 }
 
 function buttonLabel(lever) {
-  return { approve: "Review and sign", grant: "Authorize…", "reconcile-accept": "Accept…", "reconcile-retry": "Authorize retry…", trust: "Pin this commit…" }[lever.action] || lever.label;
+  return { approve: "Review and sign", decide: "Decide…", grant: "Authorize…", "reconcile-accept": "Accept…", "reconcile-retry": "Authorize retry…", trust: "Pin this commit…" }[lever.action] || lever.label;
 }
 
 function renderLever(lever) {
@@ -219,8 +226,9 @@ function renderLever(lever) {
   const blocked = lever.conditions.filter((c) => c.held === false);
   const locked = !lever.enabled;
   const busy = S.busy[key];
-  const button = `<button class="btn ${lever.confirm ? "quiet" : ""} ${busy ? "busy" : ""}" data-lever="${esc(key)}"
-      ${locked ? `disabled aria-describedby="lock-${esc(key)}"` : ""} ${S.open[key] ? 'aria-expanded="true"' : lever.confirm ? 'aria-expanded="false"' : ""}>
+  const opens = lever.confirm || lever.action === "decide";
+  const button = `<button class="btn ${opens ? "quiet" : ""} ${busy ? "busy" : ""}" data-lever="${esc(key)}"
+      ${locked ? `disabled aria-describedby="lock-${esc(key)}"` : ""} ${S.open[key] ? 'aria-expanded="true"' : opens ? 'aria-expanded="false"' : ""}>
       ${busy ? "Running…" : esc(buttonLabel(lever))}</button>`;
   const conds = lever.conditions.length ? `<ul class="conds">${lever.conditions.map((c) => {
     const aspect = c.held === true ? "clear" : c.held === false ? "danger" : "unknown";
@@ -233,7 +241,7 @@ function renderLever(lever) {
     <div class="lever-plate"><b aria-label="Lever ${leverNumber(lever)}">${pad(leverNumber(lever))}</b>${locked ? ico("lock") : ""}</div>
     <div class="lever-body">
       <div class="lever-head"><div><h3>${esc(lever.label)} ${tags}</h3><p>${esc(lever.summary)}</p></div>${button}</div>
-      ${conds}${note}${S.open[key] && lever.enabled ? renderCeremony(lever, key) : ""}${renderResult(key)}
+      ${conds}${note}${S.open[key] && lever.enabled ? (lever.action === "decide" ? renderDecision(key) : renderCeremony(lever, key)) : ""}${renderResult(key)}
     </div></article>`;
 }
 
@@ -259,6 +267,41 @@ function renderCeremony(lever, key) {
     </div></div>`;
 }
 
+function decisionReady() {
+  const answer = S.decision.answer;
+  return Boolean(answer) && (answer !== "own" || (S.typed["decide-text"] || "").trim().length > 0);
+}
+
+function renderDecision(key) {
+  const text = S.typed["decide-text"] || "";
+  const own = S.decision.answer === "own";
+  return `<div class="ceremony" role="group" aria-label="Decide the debate">
+    <fieldset class="answers"><legend>Your ruling</legend>
+      ${ANSWERS.map((a) => `<label class="answer"><input type="radio" name="decide-answer" data-answer="${a.id}" ${S.decision.answer === a.id ? "checked" : ""}>
+        <span><b>${esc(a.label)}</b><span class="hint">${esc(a.hint)}</span></span></label>`).join("")}
+    </fieldset>
+    <div class="field"><label for="typed-decide-text">${own ? "Your ruling" : "A note for the record (optional)"}</label>
+      <textarea id="typed-decide-text" data-typed="decide-text" rows="4" spellcheck="true">${esc(text)}</textarea>
+      <span class="hint">It becomes an ADR marked "Decided by: operator". The console sends the nonce it showed you, so a decision against a build that has moved is refused.</span></div>
+    <div class="ceremony-row">
+      <button class="btn sign" data-sign="${esc(key)}" ${decisionReady() ? "" : "disabled"}>Record my decision</button>
+      <button class="btn quiet" data-cancel="${esc(key)}">Cancel</button>
+    </div></div>`;
+}
+
+function debatePanel(d) {
+  const proposal = (p) => p ? `<div class="proposal"><span class="muted">Proposes</span> ${esc(p.decision)}
+    <ul>${(p.finding_dispositions || []).map((f) => `<li><code>${esc(short(f.finding_id))}</code> ${esc(f.disposition)}</li>`).join("")}</ul></div>` : "";
+  const findings = d.findings.length ? `<h3>Debated findings</h3><ul class="debated">${d.findings.map((f) =>
+    `<li><b>${esc(f.severity)}</b> <code>${esc(f.path)}</code> ${esc(f.claim)}<br><span class="muted">Asks for:</span> ${esc(f.required_change)}</li>`).join("")}</ul>` : "";
+  const turns = d.turns.map((t) => `<li class="turn ${esc(t.side)}"><div class="turn-head"><b>Turn ${t.turn}</b> ${esc(SIDES[t.side] || t.side)}${t.accepted ? ` <span class="tag">accepted the proposal</span>` : ""}</div>
+    <p class="argument">${esc(t.argument)}</p>${proposal(t.proposal)}</li>`).join("");
+  const state = d.awaiting_decision ? "The agents did not agree. Your decision is waiting in the levers."
+    : d.answer ? `You decided: ${esc((ANSWERS.find((a) => a.id === d.answer) || {}).label || d.answer)}.` : "";
+  return `<div class="panel-pad">${state ? `<p>${state}</p>` : ""}${findings}<h3>Debate ${d.number}</h3><ol class="turns">${turns}</ol>
+    <p class="muted">Agent text, shown as written. Each turn is also in What agents did.</p></div>`;
+}
+
 function renderResult(key) {
   const stamp = S.stamps[key];
   const r = S.results[key];
@@ -275,18 +318,19 @@ async function pull(key) {
   try {
     const { status, body } = await api("/api/pull", {
       method: "POST",
-      body: JSON.stringify({ action: lever.action, generation: S.model.state.generation, confirm: S.typed[key] || "", operation: leverOperation(lever) }),
+      body: JSON.stringify({ action: lever.action, generation: S.model.state.generation, confirm: S.typed[key] || "", operation: leverOperation(lever),
+        ...(lever.action === "decide" ? { answer: S.decision.answer, text: S.typed["decide-text"] || "" } : {}) }),
     });
     const ok = status < 300;
     const text = body.detached ? `Started ${body.command} as pid ${body.pid}. It keeps running if you close the console.`
       : ok ? `${body.command} finished.` : `${body.command} exited ${body.returncode}.`;
     S.results[key] = { ok, text, output: body.output };
-    if (ok && lever.confirm) {
+    if (ok && (lever.confirm || lever.action === "decide")) {
       S.stamps[key] = `${lever.label.toLowerCase()} · ${new Date().toLocaleTimeString()}`;
       // The lever disappears once the kernel accepts it, so the receipt lives outside the lever.
       S.signed = { label: lever.label, summary: lever.summary, at: new Date().toLocaleTimeString(), command: body.command };
     }
-    if (ok) { S.open[key] = false; S.typed[key] = ""; }
+    if (ok) { S.open[key] = false; S.typed[key] = ""; if (lever.action === "decide") { S.decision = { answer: "" }; S.typed["decide-text"] = ""; } }
     announce(text);
   } catch (error) {
     S.results[key] = { ok: false, text: error.message };
@@ -542,7 +586,10 @@ function viewStop(m) {
   const p = n != null ? phaseByNumber(n) : null;
   const entries = [];
   if (m.state.pending_approval) entries.push({ id: "approval", label: "What you are signing", render: () => approvalPanel(m) + flagsNote(m) });
-  entries.push({ id: "findings", label: "Findings", count: (m.current?.review?.findings || m.findings.open).filter((f) => !["resolved", "superseded"].includes(f.status)).length, render: () => findingsPanel(m) });
+  const debate = m.current?.debate;
+  if (debate?.awaiting_decision) entries.push({ id: "debate-turns", label: "Debate", count: debate.turns.length, render: () => debatePanel(debate) });
+  entries.push({ id: "findings", label: "Findings", count: (m.current?.review?.findings || m.findings.open).filter((f) => !["resolved", "superseded", "operator_accepted"].includes(f.status)).length, render: () => findingsPanel(m) });
+  if (debate && !debate.awaiting_decision) entries.push({ id: "debate-turns", label: "Debate", count: debate.turns.length, render: () => debatePanel(debate) });
   entries.push({ id: "activity", label: "What agents did", count: m.current?.evidence_flags?.length || null, render: () => activityPanel(m, n, m.current?.evidence_flags) });
   entries.push({ id: "operations", label: "Agent calls", count: p?.operations.length || 0, render: () => operationsPanel(p?.operations) });
   entries.push({ id: "gates", label: "Gates", render: () => gatesPanel(m) });
@@ -746,7 +793,8 @@ document.addEventListener("click", async (event) => {
     const key = t.dataset.lever;
     const lever = S.model.levers.find((l) => leverKey(l) === key);
     if (!lever || !lever.enabled || S.busy[key]) return;
-    if (lever.confirm) { S.open[key] = !S.open[key]; render(); $(`[data-typed="${CSS.escape(key)}"]`)?.focus(); }
+    if (lever.action === "decide") { S.open[key] = !S.open[key]; render(); $(`[data-answer]`)?.focus(); }
+    else if (lever.confirm) { S.open[key] = !S.open[key]; render(); $(`[data-typed="${CSS.escape(key)}"]`)?.focus(); }
     else pull(key);
   } else if (t.dataset.sign) {
     pull(t.dataset.sign);
@@ -780,6 +828,11 @@ document.addEventListener("input", (event) => {
   const key = event.target.dataset?.typed;
   if (!key) return;
   S.typed[key] = event.target.value;
+  if (key === "decide-text") {
+    const button = $(`[data-sign="decide"]`);
+    if (button) button.disabled = !decisionReady();
+    return;
+  }
   const lever = S.model.levers.find((l) => leverKey(l) === key);
   const c = lever?.confirm;
   if (!c) return;
@@ -793,6 +846,7 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.dataset?.answer) { S.decision.answer = event.target.dataset.answer; render(); $(`[data-answer="${event.target.dataset.answer}"]`)?.focus(); return; }
   const f = event.target.dataset?.filter;
   if (f) { S.ledger[f] = event.target.value; render(); }
 });

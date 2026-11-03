@@ -24,13 +24,15 @@ COVERAGE_DISPOSITIONS = (CLEAN_COVERAGE_DISPOSITION, FINDING_COVERAGE_DISPOSITIO
 COVERAGE_RECORD_KEYS = ("path", "digest", "change_type", "disposition", "finding_refs", "unreviewed")
 
 # Statuses a reviewer may author. The supervisor-owned statuses below are deliberately
-# absent: neither can be claimed by a model report.
+# absent: none can be claimed by a model report.
 REVIEWER_FINDING_STATUSES = ("open", "resolved", "still_open", "unverified")
 SUPERSEDED_STATUS = "superseded"
 DEFERRED_STATUS = "deferred"
+# The operator ruled, after a debate, that the code stands against this claim.
+OPERATOR_ACCEPTED_STATUS = "operator_accepted"
 # Terminal. A finding here has been decided and never returns. `superseded` remains
 # recognised because registers written before deferral existed still carry it.
-CLOSED_FINDING_STATUSES = frozenset({"resolved", SUPERSEDED_STATUS})
+CLOSED_FINDING_STATUSES = frozenset({"resolved", SUPERSEDED_STATUS, OPERATOR_ACCEPTED_STATUS})
 # Not blocking *this* review. `deferred` is the reversible member: the finding stands, but
 # no report the validator would accept can cite it against the delta in front of it.
 NON_BLOCKING_FINDING_STATUSES = CLOSED_FINDING_STATUSES | {DEFERRED_STATUS}
@@ -185,6 +187,13 @@ def open_finding_obligations(register: dict[str, dict[str, Any]], claim_limit: i
     return sorted(obligations, key=lambda item: (item["path"] or "", item["claim_key"] or ""))
 
 
+def operator_rulings(register: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Claims the operator ruled on after a debate. Settled: a reviewer must not block on them again."""
+    rulings = {(entry.get("path"), entry.get("claim_key")) for entry in register.values()
+               if entry.get("status") == OPERATOR_ACCEPTED_STATUS}
+    return [{"path": path, "claim_key": claim_key} for path, claim_key in sorted(rulings, key=str)]
+
+
 def realign_findings_to_delta(register: dict[str, dict[str, Any]],
                               coverage_paths: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Park the findings this delta cannot adjudicate, and un-park the ones it can again.
@@ -258,6 +267,9 @@ def accumulate_findings(register: dict[str, dict[str, Any]], report: dict[str, A
         else:
             stored = dict(finding)
             stored["occurrences"] = 1 + max((int(item.get("occurrences", 1)) for item in related), default=0)
+            if any(item.get("status") == OPERATOR_ACCEPTED_STATUS for item in related):
+                # The operator has already ruled on this claim. A reviewer restating it cannot reopen it.
+                stored["status"] = OPERATOR_ACCEPTED_STATUS
             candidate[key] = stored
     register.clear()
     register.update(candidate)

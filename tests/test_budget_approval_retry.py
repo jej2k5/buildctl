@@ -47,8 +47,8 @@ class BudgetApprovalRetryTests(unittest.TestCase):
         self.assertNotEqual(requirement.checkpoint,"mvp_completion")
 
     def test_all_paid_operation_costs_use_canonical_keys(self):
-        config={"operation_cost_usd":{"implementation":1,"review":2,"remediation":3,"debate":4}}
-        self.assertEqual([configured_cost(config,item) for item in PaidOperation],[1,2,3,4])
+        config={"operation_cost_usd":{"implementation":1,"review":2,"remediation":3,"debate":4,"debate_turn":5}}
+        self.assertEqual([configured_cost(config,item) for item in PaidOperation],[1,2,3,4,5])
 
     def test_missing_or_unknown_cost_fails_closed(self):
         with self.assertRaises(LimitExceeded): configured_cost({},PaidOperation.REVIEW)

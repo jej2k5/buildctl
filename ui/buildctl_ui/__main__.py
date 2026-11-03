@@ -18,7 +18,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--port", type=int, default=0, help="web: port on 127.0.0.1 (default: any free port)")
     result.add_argument("--no-open", action="store_true", help="web: print the link instead of opening a browser")
     result.add_argument("--demo", nargs="?", const="blocked", metavar="SCENARIO",
-                        help="open a synthetic build instead: blocked, checkpoint, ceiling, unknown, running, fresh")
+                        help="open a synthetic build instead: blocked, checkpoint, ceiling, unknown, running, debate, fresh")
     return result
 
 

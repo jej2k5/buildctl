@@ -33,7 +33,7 @@ Canonical state, the hash-chained audit log, the cost ledger, the trusted snapsh
 | `costs.jsonl` | One line per paid agent call reserved against the budget. |
 | `trust.json` and `snapshot/` | The trust anchor and the read-only copy of the governed files. |
 | `isolation-conformance.json` | The last sandbox verification. |
-| `artifacts/phase-N/` | Agent results, review reports, gate results, debate requests and ADR proposals. |
+| `artifacts/phase-N/` | Agent results, review reports, gate results, debate turns, requests and decisions, and ADR proposals. |
 | `records/phase-N/` | The full record of each agent call, kept until you [prune it](#evidence). |
 
 ### What agents did {#evidence}
@@ -59,7 +59,7 @@ With `evidence.recording` on, which is the default, buildctl writes each line an
 }
 ```
 
-An `interactive` arbiter needs nothing, since debates run outside buildctl. Without the flags, `validate`, `trust init` and every build command refuse before anything is spent:
+An `interactive` arbiter needs nothing, since debates run outside buildctl, and neither does a `debate` arbiter, whose turns use the two commands above. Without the flags, `validate`, `trust init` and every build command refuse before anything is spent:
 
 ```
 role implementer command needs --json because recording is on; add them, or set evidence.recording to "off"
@@ -95,6 +95,27 @@ It does not prove that an agent's report is true or complete, that a receipt was
 
 **Secrets.** A credential buildctl was given kills the agent the moment it appears, and never reaches the record. A secret-shaped string, such as a token in a file the agent read, is redacted from the record without stopping the build. The result file is still checked as strictly as before. Receipts hold file paths and command lines, which get the same redaction plus patterns for command-line credentials. That lowers the risk but does not remove it, and on a public repo with `git.push` on, receipts are public too.
 
-**Interactive debates** run outside buildctl, so nothing inside them is captured. The receipt holds the request and result hashes, labelled `human_run`.
+**Interactive debates** run outside buildctl, so nothing inside them is captured. The receipt holds the request and result hashes, labelled `human_run`. A [debate buildctl runs](#debates) is captured like any other agent work.
 
 **Turning it off.** Set `evidence.recording` to `"off"`, commit and re-trust. An agent cannot do this for itself, because a phase that touches `build.yaml` fails. Agents then run as they did before recording existed: no feed, records, flags or receipts, and the console says "recording off". `verify` reports `no_receipt` for those phases, the same as for a missing receipt, so a missing receipt proves nothing either way.
+
+### Debates {#debates}
+
+When a review raises an architectural finding, or a `HIGH` finding that keeps coming back, the phase goes to a debate. With `roles.arbiter.mode` set to `debate`, buildctl runs it itself:
+
+```json
+"arbiter": {"mode": "debate"},
+"limits": {"max_debate_turns": 6},
+"operation_cost_usd": {"debate_turn": 2.0}
+```
+
+**Who argues what.** Codex argues for the code as built, and Claude for the findings. Each uses its own role: its command, login and pinned binary, so a debate needs no setup of its own. Codex speaks first. Both see the findings, the change and every earlier turn, and neither can edit anything: the workspace is read-only for both, and a turn that changes it stops the build.
+
+**How it ends.** Any turn may carry a proposal: a full decision that names every debated finding as upheld, changed or dropped. The debate closes when the other side accepts that exact proposal, by its hash, on the next turn. That decision becomes an ADR marked `Decided by: agents`, and Codex implements it, as after any agreement.
+
+If `max_debate_turns` pass without a close, the build stops at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION) and the decision is yours. The console's Stop view shows the findings and the debate turn by turn, with three answers: the finding stands, the code stands, or your own ruling. The same attempt resumes with it.
+
+**What it costs.** Each turn reserves `operation_cost_usd.debate_turn`, so a debate costs up to `max_debate_turns` times that: $12 at the values above. Each turn also spends the phase's wall-clock time.
+
+**What it records.** Every turn is a recorded agent call: it shows in the feed, and the commit's receipt lists it with its actions, cost and record hash. Arguments stay in the full records on your machine. Your ruling is in the receipt as `DEBATE_DECISION-<n>.json`, labelled `operator`. Each debate also writes one `debate_outcome` event to the audit chain: `findings_upheld`, `findings_changed`, `findings_dropped` or `operator_decided`. Those tell you, after a few debates, whether they change anything the reviewer asked for, and so whether they are worth their cost.
+

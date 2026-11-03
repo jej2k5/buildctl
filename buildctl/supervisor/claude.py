@@ -40,7 +40,10 @@ class ClaudeAdapter:
                     # Findings from earlier reviews of this phase that are still blocking.
                     # Supervisor-held records: the reviewer must adjudicate each one, and
                     # can only do so by re-stating its exact path and claim_key.
-                    "open_finding_obligations": evidence.get("open_findings", [])}, sort_keys=True)
+                    "open_finding_obligations": evidence.get("open_findings", []),
+                    # Claims the operator ruled on after a debate: the code stands. They are
+                    # closed, and a finding restating one cannot block this phase.
+                    "operator_rulings": evidence.get("operator_rulings", [])}, sort_keys=True)
         prompt += untrusted("supervisor_delta", evidence["diff"])
         prompt += untrusted("changed_files", json.dumps(evidence["changed_files"], indent=2))
         prompt += untrusted("gate_artifacts", json.dumps(evidence["gates"], indent=2))

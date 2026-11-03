@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from buildctl.buildctl import control_root_for
+from buildctl.supervisor.debate import OPERATOR_ANSWERS
 from buildctl.supervisor.evidence import EvidenceError, activity as evidence_activity, record_lines
 from buildctl.supervisor.inspect import audit_events, inspect
 
@@ -98,7 +99,8 @@ class Build:
             files.append({"path": path, "added": added, "removed": removed})
         return {"from": trusted, "to": head, "files": files}
 
-    def pull(self, action: str, *, generation: int, confirm: str = "", operation: str | None = None) -> Job:
+    def pull(self, action: str, *, generation: int, confirm: str = "", operation: str | None = None,
+             answer: str | None = None, text: str = "") -> Job:
         model = inspect(self.repo, self.control_root)
         candidates = [lever for lever in model["levers"] if lever["action"] == action
                       and (operation is None or operation in lever["argv"])]
@@ -116,9 +118,17 @@ class Build:
             want = value[:expected["length"]] if expected["length"] else value
             if confirm.strip().lower() != want.lower():
                 raise Refused("the confirmation does not match the evidence", 422)
+        argv = list(lever["argv"])
+        if action == "decide":
+            # The ruling is the operator's, so it travels with the pull rather than in the lever.
+            if answer not in OPERATOR_ANSWERS:
+                raise Refused("choose an answer: the finding stands, the code stands, or your own ruling", 422)
+            if answer == "own" and not text.strip():
+                raise Refused("write your ruling", 422)
+            argv += ["--answer", answer] + (["--text", text.strip()] if text.strip() else [])
         if self.demo and (lever["spends"] or lever["detached"] or action in {"trust", "isolation", "auth"}):
-            raise Refused("demo build: this would run `buildctl " + " ".join(_display(lever["argv"])) + "`", 403)
-        return self._run(lever["argv"], detached=lever["detached"])
+            raise Refused("demo build: this would run `buildctl " + " ".join(_display(argv)) + "`", 403)
+        return self._run(argv, detached=lever["detached"])
 
     def _command(self, argv: list[str]) -> list[str]:
         return [sys.executable, "-m", "buildctl", "--repo", str(self.repo), *argv]
@@ -170,7 +180,11 @@ def _display(argv: list[str]) -> list[str]:
     shown = []
     for index, item in enumerate(argv):
         previous = argv[index - 1] if index else ""
-        shown.append(item[:8] + "…" if previous == "--nonce" and item else item)
+        if previous == "--nonce" and item:
+            item = item[:8] + "…"
+        elif previous == "--text" and len(item) > 60:
+            item = item[:60] + "…"
+        shown.append(item)
     return shown
 
 

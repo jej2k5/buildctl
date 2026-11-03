@@ -8,6 +8,7 @@ class PaidOperation(str, Enum):
     REVIEW = "review"
     REMEDIATION = "remediation"
     DEBATE = "debate"
+    DEBATE_TURN = "debate_turn"
 
 
 PAID_OPERATION_IDS = {item.value for item in PaidOperation}

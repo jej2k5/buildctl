@@ -160,5 +160,47 @@ class CeremonyTests(Console):
         self.assertIn("demo build", str(caught.exception))
 
 
+class DebateDecisionTests(Console):
+    scenario = "debate"
+
+    def setUp(self):
+        super().setUp()
+        self.generation = self.model()["state"]["generation"]
+
+    def decide(self, **body):
+        return self.request("POST", "/api/pull", {"action": "decide", "generation": self.generation, **body})
+
+    def test_the_stop_shows_the_debate_turn_by_turn(self):
+        model = self.model()
+        debate = model["current"]["debate"]
+        self.assertTrue(debate["awaiting_decision"])
+        self.assertEqual([turn["side"] for turn in debate["turns"]],
+                         ["implementer", "reviewer", "implementer", "reviewer"])
+        self.assertEqual([item["id"] for item in debate["findings"]], ["f2"])
+        self.assertEqual(model["escalation"]["aspect"], "caution")
+
+    def test_a_decision_needs_an_answer(self):
+        status, body = self.decide()
+        self.assertEqual(status, 422)
+        self.assertIn("choose an answer", body["error"])
+
+    def test_your_own_ruling_needs_its_text(self):
+        status, body = self.decide(answer="own", text="  ")
+        self.assertEqual(status, 422)
+        self.assertIn("write your ruling", body["error"])
+
+    def test_a_decision_goes_through_the_kernel(self):
+        if not self.model()["trust"]["ok"]:
+            self.skipTest("this machine cannot pin both agent CLIs, so the demo build is untrusted")
+        status, body = self.decide(answer="own", text="Record an attempt from the replay sender.")
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["command"].startswith("buildctl debate decide --nonce "))
+        state = self.model()["state"]
+        self.assertEqual(state["status"], "idle")
+        self.assertEqual(state["pending_debate"]["answer"], "own")
+        events = [item["event_type"] for item in audit_events(self.build.control_root)]
+        self.assertEqual(events[-1], "debate_decided")
+
+
 if __name__ == "__main__":
     unittest.main()

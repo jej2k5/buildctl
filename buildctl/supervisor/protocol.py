@@ -12,7 +12,7 @@ PROTOCOL_ROOT = Path(__file__).resolve().parents[1] / "protocol"
 
 # Output contracts are not overridable: the validators that enforce them are kernel code, so
 # a repository-supplied copy could only drift from what will actually be accepted.
-CONTRACTS = {"PHASE_RESULT", "REVIEW_RESULT", "DEBATE_RESULT"}
+CONTRACTS = {"PHASE_RESULT", "REVIEW_RESULT", "DEBATE_RESULT", "DEBATE_TURN"}
 
 # Prompts a governed repository may override, as (role, config key, kernel default).
 PROMPT_OVERRIDES = {"review": ("reviewer", "review_prompt", "review.md"),

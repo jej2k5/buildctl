@@ -25,4 +25,7 @@
 - A role with network access reaches the whole network, on macOS and Linux alike. There is no per-host allowlist yet.
 - The implementer is assumed to be Codex and the reviewer Claude. `auth check`, credential staging and parts of config validation are written for those two CLIs.
 - Dependency provisioning for acceptance commands is Python-only (`pyproject.toml`, `{python}`).
-- With `arbiter.mode` set to anything but `interactive`, the arbiter command only receives `{prompt}` and `{output}`. A command that uses `{phase}`, `{review}` or `{rounds}` fails. Use interactive debates.
+- With `arbiter.mode` set to anything but `interactive` or `debate`, the arbiter command only receives `{prompt}` and `{output}`. A command that uses `{phase}`, `{review}` or `{rounds}` fails. Use `debate` or `interactive`.
+- A debate always has two sides, Codex and Claude, and cannot be steered while it runs. You decide only at the end, if they do not agree.
+- Deciding a debate is in the web console and the CLI. The terminal UI shows the stop and points to them.
+- After you rule that the code stands, a reviewer that raises the same claim again with a non-`PASS` verdict stops the phase at `REVIEW_BLOCKED`. The reviewer is told which claims you ruled on, so this should be rare.

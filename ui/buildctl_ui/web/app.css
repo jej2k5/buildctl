@@ -414,3 +414,20 @@ pre.file { margin: 0; padding: var(--s3) var(--s4); font: var(--t-xs)/1.55 var(-
 .receipt { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s4); align-items: center; padding: var(--s3) var(--s4); margin-bottom: var(--s4); border: 1px solid var(--stamp); background: var(--stamp-wash); font-size: var(--t-sm); }
 .receipt code { overflow-wrap: anywhere; }
 @media (max-width: 820px) { .receipt { grid-template-columns: minmax(0, 1fr); } }
+
+/* Debate: the turns, and the operator's ruling */
+.answers { border: 0; padding: 0; margin: 0; display: grid; gap: var(--s2); }
+.answers legend { font-size: var(--t-sm); font-weight: 600; margin-bottom: var(--s2); }
+.answer { display: flex; gap: var(--s2); align-items: flex-start; cursor: pointer; }
+.answer > span { display: flex; flex-direction: column; }
+.answer .hint { font-size: var(--t-xs); color: var(--ink-3); }
+.field textarea { font: inherit; padding: 8px 10px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); resize: vertical; }
+.field textarea:focus { border-color: var(--focus); outline: 1px solid var(--focus); outline-offset: 0; }
+.turns { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s3); }
+.turn { border-left: 3px solid var(--rule); padding-left: var(--s3); }
+.turn.reviewer { border-left-color: var(--stamp); }
+.turn-head { font-size: var(--t-sm); }
+.argument { white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--s2) 0; }
+.proposal { font-size: var(--t-sm); background: var(--stamp-wash); padding: var(--s2) var(--s3); overflow-wrap: anywhere; }
+.proposal ul, .debated { margin: var(--s2) 0 0; padding-left: 1.2em; }
+.debated li { margin-bottom: var(--s2); overflow-wrap: anywhere; }

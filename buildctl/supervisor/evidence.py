@@ -37,7 +37,8 @@ TARGET_LIMIT = 500
 FEED_LIMIT = 400
 NOT_PROVED = ("That an agent's report is true or complete. Only observed rows and flags go beyond its word.",
               "That this receipt was not rewritten before you received it. It is not signed.",
-              "Why an agent did anything, or what happened inside an interactive debate.")
+              "Why an agent did anything, or what happened inside an interactive debate. A debate "
+              "buildctl ran is listed turn by turn; its arguments stay in the full records.")
 NO_RECEIPT = ("No receipt for this commit. Recording may have been off for this phase, or the receipt "
               "may be missing; this check cannot tell which, so a missing receipt proves nothing.")
 # Agent text reaches a console holding approval levers. Control characters go, escape codes first.
@@ -83,8 +84,8 @@ def validate_evidence_config(config: dict[str, Any]) -> list[str]:
         return []
     problems = []
     for name, role in config.get("roles", {}).items():
-        if role.get("mode") == "interactive":
-            continue
+        if role.get("mode") in {"interactive", "debate"}:
+            continue  # No command of its own runs: a human debates, or the other two roles do.
         missing = stream_flags_missing(role.get("command", [""]))
         if missing:
             problems.append(f"role {name} command needs {' and '.join(missing)} because recording is on; "
@@ -578,10 +579,17 @@ def unclosed_records(control_root: Path, phase: int, attempt: int) -> list[str]:
             if record["problem"] or (record["footer"] is None and record["header"].get("attempt", attempt) == attempt)]
 
 
+def is_debate_turn(operation: Any) -> bool:
+    return isinstance(operation, str) and ":debate-" in operation and "-turn-" in operation
+
+
 def discrepancies(records: list[dict[str, Any]], changed: tuple[str, ...] | list[str],
                   exempt: tuple[str, ...] = ()) -> list[dict[str, Any]]:
     """Where the agent's account and the observed change disagree. Flags, never stops."""
-    implementers = [record for record in records if record["header"].get("role") == "implementer"]
+    # A debate turn runs as the implementer against a read-only workspace. It wrote nothing,
+    # so counting its account against the change would flag every debate.
+    implementers = [record for record in records if record["header"].get("role") == "implementer"
+                    and not is_debate_turn(record["header"].get("operation"))]
     actions = [action for record in implementers for action in actions_of(record)]
     written = {action["target"] for action in actions if action["kind"] == "edit"}
     commands = any(action["kind"] == "ran" for action in actions)
@@ -611,12 +619,15 @@ def _artifact_entries(control_root: Path, phase: int, interactive_debate: bool) 
     for path in sorted((control_root / "artifacts" / f"phase-{phase}").glob("*.json")):
         name = path.name
         kind = next((label for prefix, label in (("GATE_RESULT", "gate"), ("REVIEW_RESULT", "review"),
-                                                 ("DEBATE_", "debate"), ("PHASE_RESULT", "implementer_result"))
+                                                 ("DEBATE_DECISION", "operator_decision"),
+                                                 ("DEBATE_TURN", "debate_turn"), ("DEBATE_", "debate"),
+                                                 ("PHASE_RESULT", "implementer_result"))
                      if name.startswith(prefix)), None)
         if kind is None:
             continue
         entry = {"file": name, "kind": kind, "sha256": digest(path.read_bytes()),
-                 "source": {"gate": "observed", "debate": "human_run" if interactive_debate else "agent_reported"}
+                 "source": {"gate": "observed", "operator_decision": "operator",
+                            "debate": "human_run" if interactive_debate else "agent_reported"}
                  .get(kind, "agent_reported")}
         try:
             value = json.loads(path.read_text())

@@ -45,6 +45,10 @@ buildctl records what each agent does, shows it live in the console and leaves a
 
 Without them, buildctl refuses to validate, trust or run, with `role implementer command needs --json because recording is on`. To go without recording, add `"evidence": {"recording": "off"}` instead. Either way, `build.yaml` is governed, so commit it and run `trust init` again. A build set up before recording existed needs this once. See [What agents did](https://jej2k5.github.io/buildctl/#evidence) for the full setup, what is recorded and how to check a receipt.
 
+### Debates
+
+When the reviewer raises a design dispute, `"arbiter": {"mode": "debate"}` has Codex argue for the code and Claude for the findings, inside the build, recorded like any other agent work. If they don't agree within `limits.max_debate_turns`, the build waits at `DEBATE_AWAITING_DECISION` and you rule in the console or with `buildctl debate decide`. Each turn reserves `operation_cost_usd.debate_turn`. See [Debates](https://jej2k5.github.io/buildctl/#debates).
+
 Writing `build.yaml` and phase prompts is covered in the manual's [Writing a roadmap](https://jej2k5.github.io/buildctl/#roadmap). When a build stops, `buildctl status` names the code; the manual's [When it stops](https://jej2k5.github.io/buildctl/#stops) says what clears it.
 
 ## The console
