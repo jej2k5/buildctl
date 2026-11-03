@@ -113,7 +113,7 @@ When a review raises an architectural finding, or a `HIGH` finding that keeps co
 
 **How it ends.** Any turn may carry a proposal: a full decision that names every debated finding as upheld, changed or dropped. The debate closes when the other side accepts that exact proposal, by its hash, on the next turn. That decision becomes an ADR marked `Decided by: agents`, and Codex implements it, as after any agreement.
 
-If `max_debate_turns` pass without a close, the build stops at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION) and the decision is yours. The console's Stop view shows the findings and the debate turn by turn, with three answers: the finding stands, the code stands, or your own ruling. The same attempt resumes with it.
+A debate interrupted mid-way, by a crash you then reconcile, resumes at its next turn; turns already taken are not paid for again. If `max_debate_turns` pass without a close, the build stops at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION) and the decision is yours. The console's Stop view shows the findings and the debate turn by turn, with three answers: the finding stands, the code stands, or your own ruling. The same attempt resumes with it.
 
 **What it costs.** Each turn reserves `operation_cost_usd.debate_turn`, so a debate costs up to `max_debate_turns` times that: $12 at the values above. Each turn also spends the phase's wall-clock time.
 

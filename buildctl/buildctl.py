@@ -395,12 +395,14 @@ class Supervisor:
                 continue
             findings = list(state.findings.values())
             budget_available, approvals_valid = self._advance_preconditions(state, phase)
+            # A debate cut short (a turn reconciled after a crash) is resumed, not counted as spent.
+            unfinished = self._unfinished_debate(state, phase, paths)
             transition = reduce_review(report=review, findings=findings, mechanical_passed=True, coverage_valid=True,
                                        policy={"max_remediation_attempts": phase.max_remediation_attempts,
                                                "debate_enabled": phase.debate_on_architecture_disagreement,
                                                "max_debate_attempts": self.config["limits"]["max_debate_rounds"]},
                                        attempts={"remediation": remediation,
-                                                 "debate": state.debate_attempts.get(key, 0)},
+                                                 "debate": state.debate_attempts.get(key, 0) - bool(unfinished)},
                                        budget_available=budget_available, approvals_valid=approvals_valid)
             self.store.event(state, "review_reduced", rule=transition.rule_id, disposition=transition.disposition,
                              evidence_digest=evidence["digest"], delta_id=delta.digest,
@@ -417,7 +419,7 @@ class Supervisor:
                     lambda timeout, rp=remediation_path, rt=json.dumps(review): codex.implement(phase, rp, timeout, review=rt))
                 continue
             if transition.disposition == "DEBATE":
-                debate_attempt = state.debate_attempts.get(key, 0) + 1
+                debate_attempt = unfinished or state.debate_attempts.get(key, 0) + 1
                 state.debate_attempts[key] = debate_attempt
                 debate_path = paths["debate"].with_name(f"DEBATE_RESULT-{debate_attempt}.json")
                 # Only the findings that routed the phase here. Handing over the whole
@@ -809,6 +811,21 @@ class Supervisor:
         self._escalate(state, "DEBATE_AWAITING_DECISION", f"phase {phase.number}, debate {number}: {limit} turns "
                        "without an accepted proposal")
         raise AssertionError("unreachable")
+
+    def _unfinished_debate(self, state: BuildState, phase: Phase, paths: dict[str, Path]) -> int | None:
+        """The number of this attempt's debate if it took turns but neither closed nor reached the operator."""
+        number = state.debate_attempts.get(str(phase.number), 0)
+        if not number or not debate_mode(self.config):
+            return None
+        if any(paths["debate"].with_name(f"{name}-{number}.json").is_file()
+               for name in ("DEBATE_RESULT", "DEBATE_DECISION")):
+            return None  # Settled, by the agents or by the operator.
+        if state.pending_debate and state.pending_debate.debate == number and state.pending_debate.phase == phase.number:
+            return None
+        prefix = f"phase-{phase.number}:debate-{number}-turn-"
+        attempt = f":{state.phase_attempts[str(phase.number)]}"
+        started = any(key.startswith(prefix) and key.endswith(attempt) for key in state.operations)
+        return number if started else None
 
     def _consume_debate_decision(self, state: BuildState, phase: Phase, codex: CodexAdapter, workspace: Path,
                                  paths: dict[str, Path], phase_result: dict[str, Any]) -> dict[str, Any]:

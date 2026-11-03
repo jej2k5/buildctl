@@ -143,6 +143,20 @@ class TurnTakingTests(Harness):
             self.debate(state, again)
         self.assertEqual(again.calls, [], "completed turns come from their outputs")
 
+    def test_an_interrupted_debate_is_resumed_not_counted_as_spent(self):
+        state = self.state()
+        paths = self.supervisor._paths(PHASE)
+        self.assertIsNone(self.supervisor._unfinished_debate(state, PHASE, paths), "no turns yet")
+        state.operations["phase-3:debate-1-turn-1:1"] = SimpleNamespace(status="completed")
+        self.assertEqual(self.supervisor._unfinished_debate(state, PHASE, paths), 1)
+        paths["debate"].with_name("DEBATE_DECISION-1.json").write_text("{}")
+        self.assertIsNone(self.supervisor._unfinished_debate(state, PHASE, paths), "the operator settled it")
+
+    def test_a_debate_waiting_for_the_operator_is_not_resumed(self):
+        state = self.state()
+        self.stall(state)
+        self.assertIsNone(self.supervisor._unfinished_debate(state, PHASE, self.supervisor._paths(PHASE)))
+
     def test_codex_opens_and_the_sides_alternate(self):
         self.assertEqual([side_for_turn(n) for n in range(1, 5)],
                          ["implementer", "reviewer", "implementer", "reviewer"])

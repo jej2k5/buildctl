@@ -40,7 +40,7 @@ A new `roles.arbiter.mode`: `"debate"`. It retires the limitation in `09-limits.
 
 ## A turn
 
-Each turn is one `_agent_operation` with a stable id, `phase-N:debate-D-turn-T:A`, and its own output file `DEBATE_TURN-D-T.json`. A restart replays finished turns from cache like any other operation, so a stopped debate resumes at the turn it reached.
+Each turn is one `_agent_operation` with a stable id, `phase-N:debate-D-turn-T:A`, and its own output file `DEBATE_TURN-D-T.json`. Within one attempt, a restart (say, after reconciling a turn left unknown by a crash) replays finished turns from cache and resumes at the next one; the interrupted debate is not counted as spent. Like any same-attempt restart, it first runs a fresh review. A `retry` starts a new attempt, and with it a new debate.
 
 The prompt carries the strategic findings (`review.py:278`), the evidence digest, the transcript so far as untrusted data, and the pinned contract. A new contract, `DEBATE_TURN`, joins `protocol.py`:
 
