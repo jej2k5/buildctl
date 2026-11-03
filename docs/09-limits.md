@@ -19,6 +19,9 @@
 ### Current limitations {#limitations}
 
 - On Linux, the host must allow unprivileged user namespaces. Stock containers do not, so buildctl refuses to run in them. See [Running on Linux](#linux).
+- Receipts are not signed. `evidence verify` shows a receipt matches its commit, not that nobody with your machine rewrote it first.
+- "I ran the tests" stays agent-reported. buildctl does not trace processes inside the sandbox, so it can only check an agent's reported writes against what changed.
+- The feed of what agents did is not in the terminal UI yet.
 - A role with network access reaches the whole network, on macOS and Linux alike. There is no per-host allowlist yet.
 - The implementer is assumed to be Codex and the reviewer Claude. `auth check`, credential staging and parts of config validation are written for those two CLIs.
 - Dependency provisioning for acceptance commands is Python-only (`pyproject.toml`, `{python}`).

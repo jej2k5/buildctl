@@ -46,6 +46,10 @@ class ClaudeAdapter:
         prompt += untrusted("gate_artifacts", json.dumps(evidence["gates"], indent=2))
         prompt += untrusted("relevant_tests", evidence["tests"])
         prompt += untrusted("implementer_claims", json.dumps(phase_result, indent=2))
+        if "evidence_discrepancies" in evidence:
+            # buildctl's own comparison of what the implementer reported with what changed. File
+            # names are agent-controlled, so this is wrapped like every other input.
+            prompt += untrusted("evidence_discrepancies", json.dumps(evidence["evidence_discrepancies"], indent=2))
         return prompt + "\nPINNED OUTPUT CONTRACT\n" + contract("REVIEW_RESULT")
 
     def review(self, phase: Any, evidence: dict[str, Any], phase_result: dict[str, Any],

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .evidence import validate_evidence_config
 from .governance import is_governance_path
 from .safety import ensure_safe_relative
 from .operations import PAID_OPERATION_IDS
@@ -132,6 +133,9 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
             raise ConfigurationError("reviewer must be non-persistent and tool-restricted")
         if any(tool in command_text for tool in forbidden):
             raise ConfigurationError("reviewer command contains a mutation capability")
+    evidence_problems = validate_evidence_config(config)
+    if evidence_problems:
+        raise ConfigurationError("; ".join(evidence_problems))
     validate_governed_inputs(config, root)
     costs = config.get("operation_cost_usd")
     if not isinstance(costs, dict) or set(costs) != PAID_OPERATION_IDS:

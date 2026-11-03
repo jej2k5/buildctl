@@ -41,6 +41,7 @@
         "exec",
         "--ignore-user-config",
         "--dangerously-bypass-approvals-and-sandbox",
+        "--json",
         "--output-last-message",
         "{output}",
         "{prompt}"
@@ -61,7 +62,10 @@
         "{prompt}",
         "--no-session-persistence",
         "--tools",
-        "Read,Grep,Glob"
+        "Read,Grep,Glob",
+        "--output-format",
+        "stream-json",
+        "--verbose"
       ],
       "review_prompt": "prompts/reviews/claude-adversarial-review.md",
       "context_documents": [

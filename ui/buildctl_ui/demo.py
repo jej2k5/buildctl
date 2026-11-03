@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Iterator
 
 from buildctl.supervisor import state as state_module
+from buildctl.supervisor.evidence import AgentRecord
 from buildctl.supervisor.isolation import IsolationError, conformance_record, production_backend
 from buildctl.supervisor.levers import WAITING_CODES
 from buildctl.supervisor.state import ApprovalRequirement, BuildState, ExtraAttemptGrant, Operation, StateStore
@@ -169,6 +170,7 @@ def build(root: Path, scenario: str = "blocked") -> tuple[Path, Path]:
                 op_id = "phase-12:remediate-3:1"
                 clock.value = now - timedelta(minutes=14)
                 state.operations[op_id] = Operation(op_id, "remediate-3", 12, status="started", started_at=clock())
+                _running_record(control, op_id)
                 costs.append(_cost(clock, "remediation", 12, op_id))
                 store.event(state, "operation_started", operation=op_id, paid_operation="remediation",
                             role="implementer", network_allowed=True)
@@ -181,6 +183,24 @@ def build(root: Path, scenario: str = "blocked") -> tuple[Path, Path]:
 
     (control / "costs.jsonl").write_text("".join(json.dumps(item, sort_keys=True) + "\n" for item in costs))
     return repo, control
+
+
+def _running_record(control: Path, operation: str) -> None:
+    """An invented agent call still in flight, so the live view has something to show."""
+    record = AgentRecord(control / "records" / "phase-12" / f"{operation.replace(':', '_')}.1.jsonl",
+                         {"operation": operation, "phase": 12, "attempt": 1, "role": "implementer", "cli": "codex",
+                          "binary_sha256": "0" * 64, "prompt_sha256": "0" * 64, "command": ["codex", "exec", "--json"],
+                          "workspace": "/workspace", "started_at": datetime.now(timezone.utc).isoformat()})
+    items = [{"id": "1", "type": "agent_message", "text": "Reading the failing delivery test first."},
+             {"id": "2", "type": "command_execution", "command": "pytest tests/test_delivery.py", "exit_code": 1,
+              "aggregated_output": "FAILED tests/test_delivery.py::test_retry_backoff"},
+             {"id": "3", "type": "file_change", "status": "completed",
+              "changes": [{"path": "/workspace/src/relay/delivery.py", "kind": "update"}]},
+             {"id": "4", "type": "command_execution", "command": "pytest tests/test_delivery.py", "exit_code": 0,
+              "aggregated_output": "4 passed"}]
+    for item in items:
+        record.append("stdout", json.dumps({"type": "item.completed", "item": item}))
+    record.abandon()
 
 
 def _cost(clock: Clock, provider: str, phase: int, operation_id: str) -> dict:

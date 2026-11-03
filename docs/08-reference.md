@@ -24,6 +24,9 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `validate` | Check `build.yaml`. |
 | `inspect` | The full read model as one JSON document: state, phases, trust, isolation, budget, the stop and its meaning, and every action with the conditions that allow or lock it. Read-only. |
 | `audit --after <seq>` | Audit events after a sequence number, as JSON. `--limit` caps how many. |
+| `evidence show <commit>` | Print a commit's receipt: every attempt, each agent call and its actions. Works on any clone with the branch. |
+| `evidence verify <commit>` | Check a commit's receipt on any clone: no sandbox, trust or state needed. Reports `verified`, `verified_with_flags`, `verified_by_tree`, `no_receipt` or `failed`, and what it did not prove. `--records <dir>` also checks full records against their hashes. |
+| `evidence prune --phase <n> --confirm <n>` | Delete a phase's full records. Its receipt stays, but its hashes then show only that a record existed. Nothing prunes automatically. |
 
 ### Configuration {#config}
 
@@ -62,6 +65,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `phase_defaults.required_files` | Files that must exist after the implementer finishes. |
 | `phase_defaults.commands` | Acceptance commands, each an argv array run sandboxed with no network. |
 | `phase_defaults.invariants` | Named rules the reviewer checks every change against. |
+| `evidence.recording` | `"on"` (the default) or `"off"`. On records every agent call and seals a receipt for each commit, and needs the event flags in each role's command. Off turns all of that off. See [What agents did](#evidence). |
 | `phase_defaults.claude_review_required` | Whether the phase must pass review. |
 | `phase_defaults.debate_on_architecture_disagreement` | Whether architectural findings go to a debate. |
 | `phase_defaults.max_remediation_attempts` | Remediation laps before [REMEDIATION_ATTEMPTS_EXHAUSTED](#REMEDIATION_ATTEMPTS_EXHAUSTED). |

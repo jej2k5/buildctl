@@ -5,7 +5,9 @@ Run from the repository root with the UI on the path:
 """
 import http.client
 import json
+import os
 import shutil
+import signal
 import tempfile
 import threading
 import unittest
@@ -78,6 +80,45 @@ class AccessTests(Console):
     def test_artifacts_cannot_escape_their_directory(self):
         status, _ = self.request("GET", "/api/artifact?path=/etc/hosts")
         self.assertEqual(status, 403)
+
+
+class ActivityTests(Console):
+    scenario = "running"
+
+    def setUp(self):
+        super().setUp()
+        # The demo's stand-in for a run process would otherwise outlive the test by an hour.
+        pid = json.loads((self.build.control_root / "supervisor.lock").read_text())["pid"]
+        self.addCleanup(os.kill, pid, signal.SIGKILL)
+
+    def get(self, path):
+        status, body = self.request("GET", path)
+        return status, json.loads(body) if isinstance(body, (bytes, str)) else body
+
+    def test_the_feed_needs_the_token(self):
+        status, _ = self.request("GET", "/api/activity?phase=12", headers={"X-Buildctl-Token": "wrong"})
+        self.assertEqual(status, 401)
+
+    def test_the_feed_labels_who_vouches_for_each_row(self):
+        status, body = self.get("/api/activity?phase=12")
+        self.assertEqual(status, 200)
+        self.assertEqual({row["source"] for row in body["rows"]}, {"observed", "agent_reported"})
+        self.assertEqual(body["operations"][0]["state"], "open")
+        self.assertEqual(body["operations"][0]["files_reported"], 1)
+
+    def test_a_row_opens_its_part_of_the_full_record(self):
+        _, body = self.get("/api/activity?phase=12")
+        row = next(item for item in body["rows"] if item["kind"] == "ran")
+        status, lines = self.get(f"/api/record?phase=12&record={row['record']}&seq={row['seq']}")
+        self.assertEqual(status, 200)
+        self.assertIn("aggregated_output", lines[0]["text"])
+
+    def test_a_record_name_is_not_a_path(self):
+        status, _ = self.request("GET", "/api/record?phase=12&record=..%2F..%2Fstate&seq=0")
+        self.assertEqual(status, 404)
+
+    def test_the_model_says_recording_is_on(self):
+        self.assertTrue(self.model()["evidence"]["recording"])
 
 
 class CeremonyTests(Console):

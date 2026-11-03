@@ -11,13 +11,15 @@ buildctl-ui tui      # the same in the terminal
 
 | View | What it is for |
 |---|---|
-| Line | The phase line, the call in flight, spend by phase, and the levers you can pull now. |
-| Stop | Why the build stopped, the evidence (findings, agent calls, gates, artifacts), and only the levers the kernel will accept. |
-| Phases | Every phase with its attempts, reviews, fixes, debates and cost. |
+| Line | The phase line, the call in flight with what it has reported and how long it has been quiet, spend by phase, and the levers you can pull now. |
+| Stop | Why the build stopped, the evidence (what agents did, findings, agent calls, gates, artifacts), and only the levers the kernel will accept. |
+| Phases | Every phase with its attempts, reviews, fixes, debates and cost, and its feed of [what agents did](#evidence). Selecting a row opens that part of the full record. |
 | Ledger | The audit chain, newest first, filterable by phase and event. |
 | Setup | Readiness in the order buildctl checks it, and the trust levers. |
 
 Keys `1` to `5` switch views in both surfaces.
+
+The feed of what agents did is in the web console only for now. The terminal UI does not show it yet. The feed never claims an agent is stuck, because a long test run and a hang look the same: it says how long the agent has been quiet.
 
 ### Levers and their conditions {#levers}
 

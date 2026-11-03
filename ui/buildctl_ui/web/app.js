@@ -7,6 +7,7 @@ const S = {
   tab: {}, open: {}, typed: {}, results: {}, stamps: {}, busy: {},
   audit: [], auditSeq: 0, ledger: { phase: "", event: "" },
   cells: {}, trustDiff: null, trustDiffKey: "", artifact: null, error: null,
+  activity: null, activityKey: "", recordRow: null,
 };
 const PRIMARY = ["start", "recover", "pause", "resume", "approve", "grant", "retry", "reconcile-accept", "reconcile-retry"];
 const STOP_LEVERS = ["approve", "grant", "retry", "reconcile-accept", "reconcile-retry", "recover"];
@@ -352,7 +353,7 @@ function opCard(m) {
       <dt>Status</dt><dd>${esc(op.status)}${op.detail_code ? ` · <code>${esc(op.detail_code)}</code>` : ""}</dd>
       <dt>Started</dt><dd>${op.started_at ? `${esc(clock(op.started_at))} · <span data-since="${esc(op.started_at)}" ${op.completed_at ? `data-until="${esc(op.completed_at)}"` : ""}>${esc(span(op.started_at, op.completed_at))}</span>` : "not started"}</dd>
       ${op.output_digest ? `<dt>Output</dt><dd><code>${esc(short(op.output_digest, 16))}</code></dd>` : ""}
-    </dl>${deadlineBar || (deadline && !running ? `<p class="muted">Nothing is in flight. A retry starts a new attempt with a fresh ${limit}-minute deadline.</p>` : "")}</div>`;
+    </dl>${activityStrip(m, op)}${deadlineBar || (deadline && !running ? `<p class="muted">Nothing is in flight. A retry starts a new attempt with a fresh ${limit}-minute deadline.</p>` : "")}</div>`;
 }
 
 function costList(m) {
@@ -373,6 +374,80 @@ function jobsList(m) {
     ${m.jobs.slice().reverse().map((j) => `<li><code>${esc(j.command)}</code>
       <span class="st ${j.returncode ? "bad" : ""}">${j.detached ? `pid ${j.pid} · ` : ""}${j.returncode == null ? "running" : `exit ${j.returncode}`}</span></li>`).join("")}
   </ul></div></section>`;
+}
+
+// ---------- what agents did ----------
+const KIND_WORDS = { launched: "launched", exited: "exited", ran: "ran", edit: "edited", read: "read", search: "searched", tool: "tool", message: "said", reasoning: "thought" };
+const SOURCE_WORDS = { observed: "buildctl saw", agent_reported: "agent says" };
+const FLAG_WORDS = {
+  changed_unreported: "Changed, and the agent never mentioned it",
+  changed_possibly_by_command: "Changed with no file report. A command it ran may have written it",
+  reported_no_net_change: "The agent reported writing this, but it did not change",
+  reviewer_tool_outside_allowlist: "The reviewer used a tool outside its allowed list",
+  events_unparsed: "Some of the agent's events could not be read, so this comparison is weaker",
+};
+
+function activityPhase(m) {
+  if (S.route.view === "phases" && S.route.arg != null && S.route.arg !== "") return Number(S.route.arg);
+  return m.state.current_phase;
+}
+
+function currentRecord(m, op) {
+  if (!S.activity || !op || S.activity.phase !== op.phase) return null;
+  return S.activity.operations.filter((o) => o.operation === op.id).at(-1) || null;
+}
+
+function usageText(usage) {
+  if (!usage) return "";
+  const tokens = (usage.input_tokens || 0) + (usage.output_tokens || 0);
+  const parts = [];
+  if (tokens) parts.push(`${tokens.toLocaleString()} tokens`);
+  if (usage.reported_cost_usd != null) parts.push(money(usage.reported_cost_usd));
+  return parts.join(" · ");
+}
+
+function activityStrip(m, op) {
+  if (!m.evidence?.recording) return `<p class="muted">Recording off. No activity feed for this build.</p>`;
+  const record = currentRecord(m, op);
+  if (!record) return "";
+  const open = record.state === "open";
+  // Quiet is all it can honestly say: a long test run and a hang look the same from here.
+  const quiet = open && record.last_output_at ? `<dt>Last output</dt><dd><span data-since="${esc(record.last_output_at)}"></span> ago</dd>` : "";
+  const usage = usageText(record.reported_usage);
+  return `<dl class="strip">${quiet}
+    <dt>Agent</dt><dd>${esc(record.role)} (${esc(record.cli)})</dd>
+    <dt>Reported</dt><dd>${record.files_reported} ${record.files_reported === 1 ? "file" : "files"} changed · ${record.commands_reported} ${record.commands_reported === 1 ? "command" : "commands"} <span class="tag">agent says</span></dd>
+    ${usage ? `<dt>Usage</dt><dd>${esc(usage)} <span class="tag">agent says</span></dd>` : ""}
+    </dl>`;
+}
+
+function flagsList(flags) {
+  if (!flags?.length) return "";
+  return `<ul class="flags">${flags.map((f) => `<li>${sig("caution", "flag")}<span>${esc(FLAG_WORDS[f.flag] || f.flag)}${f.path || f.tool || f.operation ? `: <code>${esc(f.path || f.tool || f.operation)}</code>` : ""}</span></li>`).join("")}</ul>`;
+}
+
+function flagsNote(m) {
+  const flags = m.current?.evidence_flags;
+  return flags?.length ? `<div class="panel-pad"><p><b>The agent's account and the change disagree</b></p>${flagsList(flags)}</div>` : "";
+}
+
+function receiptsNote(m) {
+  const e = m.evidence;
+  if (!e?.count) return "";
+  return `<p class="muted panel-pad source">${e.count} ${e.count === 1 ? "receipt" : "receipts"} on the evidence branch${e.pushed ? ", pushed." : ". Receipts not pushed."}</p>`;
+}
+
+function activityPanel(m, number, flags) {
+  if (!m.evidence?.recording) return `<p class="empty">Recording is off for this build, so there is no feed and no receipts. Turning it on takes a change to <code>evidence.recording</code> in <code>build.yaml</code> and a re-trust.</p>`;
+  const rows = S.activity?.phase === number ? S.activity.rows : [];
+  const head = `${receiptsNote(m)}${flags?.length ? `<div class="panel-pad">${flagsList(flags)}</div>` : ""}`;
+  if (!rows.length) return `${head}<p class="empty">Nothing recorded for this phase. Its records may have been pruned, or no agent has started.</p>`;
+  const selected = S.recordRow;
+  return `${head}${S.activity.truncated ? `<p class="muted panel-pad source">Showing the most recent rows.</p>` : ""}${selected ? `<pre class="file record-row" aria-label="Full record for this row">${esc(selected.text)}</pre>` : `<p class="muted panel-pad source">Choose a row to read the full record for it.</p>`}<div class="table-wrap flush feed-wrap"><table class="feed"><thead><tr><th>Time</th><th>Agent</th><th>Did</th><th>What</th><th class="num">Exit</th><th>Source</th></tr></thead><tbody>
+    ${rows.slice().reverse().map((r) => `<tr class="row-link" tabindex="0" data-record="${esc(r.record)}" data-seq="${r.seq}" aria-selected="${selected?.record === r.record && selected?.seq === r.seq}">
+      <td class="mono">${esc(clock(r.at))}</td><td>${esc(r.role)}</td><td>${esc(KIND_WORDS[r.kind] || r.kind)}</td><td class="mono what">${esc(r.target)}</td>
+      <td class="num mono">${r.exit_code ?? ""}</td><td><span class="tag ${r.source === "observed" ? "observed" : ""}">${esc(SOURCE_WORDS[r.source] || r.source)}</span></td></tr>`).join("")}
+  </tbody></table></div>`;
 }
 
 function viewLine(m) {
@@ -466,8 +541,9 @@ function viewStop(m) {
   const n = m.state.current_phase;
   const p = n != null ? phaseByNumber(n) : null;
   const entries = [];
-  if (m.state.pending_approval) entries.push({ id: "approval", label: "What you are signing", render: () => approvalPanel(m) });
+  if (m.state.pending_approval) entries.push({ id: "approval", label: "What you are signing", render: () => approvalPanel(m) + flagsNote(m) });
   entries.push({ id: "findings", label: "Findings", count: (m.current?.review?.findings || m.findings.open).filter((f) => !["resolved", "superseded"].includes(f.status)).length, render: () => findingsPanel(m) });
+  entries.push({ id: "activity", label: "What agents did", count: m.current?.evidence_flags?.length || null, render: () => activityPanel(m, n, m.current?.evidence_flags) });
   entries.push({ id: "operations", label: "Agent calls", count: p?.operations.length || 0, render: () => operationsPanel(p?.operations) });
   entries.push({ id: "gates", label: "Gates", render: () => gatesPanel(m) });
   entries.push({ id: "artifacts", label: "Artifacts", count: m.current?.artifacts.length || 0, render: () => artifactsPanel(m, m.current?.artifacts) });
@@ -500,6 +576,7 @@ function viewPhases(m) {
         <dt>Remediation laps</dt><dd>${selected.remediations}</dd><dt>Debates</dt><dd>${selected.debates} of ${limits.max_debate_rounds ?? "?"}</dd>
         <dt>Merge</dt><dd>${esc(selected.merge_policy)}${selected.checkpoint ? " · needs approval before it starts" : ""}</dd></dl>
       <div class="section">${tabs("phase", [
+        { id: "activity", label: "What agents did", render: () => activityPanel(m, selected.number, isCurrent ? m.current?.evidence_flags : null) },
         { id: "operations", label: "Agent calls", count: selected.operations.length, render: () => operationsPanel(selected.operations) },
         ...(isCurrent ? [{ id: "findings", label: "Findings", render: () => findingsPanel(m) }, { id: "artifacts", label: "Artifacts", count: m.current?.artifacts.length || 0, render: () => artifactsPanel(m, m.current?.artifacts) }] : []),
       ])}</div></section>`;
@@ -610,7 +687,8 @@ async function refresh(force = false) {
     S.model = body; S.fingerprint = fp; S.error = null;
     if (S.route.view === "ledger" || S.audit.length === 0 || body.audit.sequence > S.auditSeq) await loadAudit(body.audit.sequence);
     if (S.route.view === "setup") await loadTrustDiff(body);
-    if (changed) render();
+    const activityChanged = await loadActivity(body);
+    if (changed || activityChanged) render();
   } catch (error) {
     if (error.status === 401) {
       $("#main").innerHTML = `<div class="panel"><div class="empty"><p>${sig("danger", "refused")} This tab has no console token.</p><p>Open the link <code>buildctl-ui</code> printed in your terminal. The token in it is what lets this page read the build.</p></div></div>`;
@@ -619,6 +697,20 @@ async function refresh(force = false) {
       $("#bar-aspect").innerHTML = `${sig("unknown", "unreachable", "lg")}<span><b>Console unreachable</b><br><span class="mono">${esc(error.message)}</span></span>`;
     }
   }
+}
+
+async function loadActivity(m) {
+  const number = m.evidence?.recording && S.route.view !== "ledger" && S.route.view !== "setup" ? activityPhase(m) : null;
+  if (number == null) {
+    const had = S.activity != null;
+    S.activity = null; S.activityKey = "";
+    return had;
+  }
+  const { body } = await api(`/api/activity?phase=${number}`);
+  const key = JSON.stringify(body);
+  if (key === S.activityKey) return false;
+  S.activity = body; S.activityKey = key;
+  return true;
 }
 
 async function loadAudit(head) {
@@ -648,7 +740,7 @@ function parseRoute() {
 // ---------- events ----------
 document.addEventListener("click", async (event) => {
   if (event.target.closest("[data-dismiss-receipt]")) { S.signed = null; render(); return; }
-  const t = event.target.closest("[data-lever],[data-sign],[data-cancel],[data-tab],[data-goto],[data-phase],[data-artifact]");
+  const t = event.target.closest("[data-lever],[data-sign],[data-cancel],[data-tab],[data-goto],[data-phase],[data-artifact],[data-record]");
   if (!t) return;
   if (t.dataset.lever) {
     const key = t.dataset.lever;
@@ -666,6 +758,13 @@ document.addEventListener("click", async (event) => {
     location.hash = t.dataset.goto;
   } else if (t.dataset.phase) {
     location.hash = `#/phases/${t.dataset.phase}`;
+  } else if (t.dataset.record) {
+    const seq = Number(t.dataset.seq), record = t.dataset.record, phase = S.activity?.phase;
+    try {
+      const { body } = await api(`/api/record?phase=${phase}&record=${encodeURIComponent(record)}&seq=${seq}`);
+      S.recordRow = { record, seq, text: body.map((row) => `${row.at}  ${row.stream}${row.redacted ? "  [redacted]" : ""}\n${row.text}`).join("\n\n") };
+    } catch (error) { S.recordRow = { record, seq, text: error.message }; }
+    render();
   } else if (t.dataset.artifact) {
     try {
       const { body } = await api(`/api/artifact?path=${encodeURIComponent(t.dataset.artifact)}`);
@@ -700,7 +799,7 @@ document.addEventListener("change", (event) => {
 
 document.addEventListener("keydown", (event) => {
   const t = event.target;
-  if ((event.key === "Enter" || event.key === " ") && (t.dataset?.goto || t.dataset?.phase || t.dataset?.artifact)) { event.preventDefault(); t.click(); return; }
+  if ((event.key === "Enter" || event.key === " ") && (t.dataset?.goto || t.dataset?.phase || t.dataset?.artifact || t.dataset?.record)) { event.preventDefault(); t.click(); return; }
   if (event.key === "Enter" && t.dataset?.typed) { const b = $(`[data-sign="${CSS.escape(t.dataset.typed)}"]`); if (b && !b.disabled) b.click(); return; }
   if (event.key === "Escape" && t.dataset?.typed) { $(`[data-cancel="${CSS.escape(t.dataset.typed)}"]`)?.click(); return; }
   if (t.getAttribute?.("role") === "tab" && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {

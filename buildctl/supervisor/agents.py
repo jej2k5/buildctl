@@ -11,6 +11,8 @@ from typing import Any, Callable
 from .isolation import IsolationBackend, IsolationContext, sanitized_environment
 from .safety import contains_secret, matches_secret_pattern, redact, suppress_ephemeral_artifacts
 from .auth import cleanup_staged_auth, stage_codex_auth
+from .evidence import (EvidenceStore, RecordIncomplete, adapter_for, digest_path, known_secret, read_record,
+                       stream_process)
 
 
 class AgentError(RuntimeError):
@@ -150,8 +152,10 @@ def workspace_digest(workspace: Path) -> str:
 
 class RoleRunner:
     def __init__(self, config: dict[str, Any], backend: IsolationBackend,
-                 context: IsolationContext, runner: Callable[..., Any] = subprocess.run):
+                 context: IsolationContext, runner: Callable[..., Any] = subprocess.run,
+                 evidence: EvidenceStore | None = None):
         self.config, self.backend, self.context, self.runner = config, backend, context, runner
+        self.evidence = evidence
 
     def run(self, role: str, prompt: str, output: Path, timeout: float,
             credentials: dict[str, str] | None = None) -> dict[str, Any]:
@@ -217,6 +221,9 @@ class RoleRunner:
                 env = suppress_ephemeral_artifacts(sanitized_environment(role, credentials, home=isolated_home))
                 if auth_mode == "host_cli":
                     env["CODEX_HOME"] = str(isolated_home.resolve() / ".codex")
+            if self.evidence is not None:
+                return self._run_recorded(role, configured, executable, prompt, command, env, timeout,
+                                          agent_output, labelled, secrets, before_digest)
             completed = self.runner(command, cwd=self.context.workspace, text=True, capture_output=True,
                                     timeout=max(0.01, timeout), env=env)
             combined = completed.stdout + completed.stderr
@@ -241,6 +248,38 @@ class RoleRunner:
         finally:
             if auth_mode == "host_cli" and role == "implementer":
                 cleanup_staged_auth(isolated_home)
+
+    def _run_recorded(self, role: str, configured: list[str], executable: str, prompt: str, command: list[str],
+                      env: dict[str, str], timeout: float, agent_output: Path, labelled: dict[str, str],
+                      secrets: list[str], before_digest: str | None) -> dict[str, Any]:
+        """The same contract as the blocking launch, with every line recorded as it arrives."""
+        adapter = adapter_for(configured)
+        record = self.evidence.open(role, configured, executable, prompt, self.context.workspace)
+        result = stream_process(command, cwd=self.context.workspace, env=env, timeout=max(0.01, timeout),
+                                record=record, adapter=adapter, labelled=labelled)
+        self.evidence.closed.append({"file": record.path.name, "sha256": digest_path(record.path),
+                                     "lines": record.sequence + 1, "operation": self.evidence.operation[0]})
+        if result.timed_out:
+            raise subprocess.TimeoutExpired(command, timeout)
+        # The last look: a multi-line secret passes every line's check and lands whole only here.
+        exposed = result.exposed or known_secret("\n".join(row["text"] for row in read_record(record.path)["rows"]
+                                                           if row["stream"] in {"stdout", "stderr"}), labelled)
+        if exposed:
+            raise AgentError(f"{role.upper()}_SECRET_OUTPUT:source=stdout_stderr credential_kind={exposed}")
+        if result.returncode or adapter.failed:
+            detail = adapter.error_text or result.stderr_tail.strip() or result.stdout_tail.strip()
+            raise AgentError(f"{role.upper()}_PROCESS_FAILED:{redact(detail, secrets, PROCESS_DIAGNOSTIC_LIMIT)}")
+        if adapter.has_final_event and not adapter.final_seen:
+            raise RecordIncomplete(f"{role} exited cleanly but its stream never reached a final event")
+        if not agent_output.exists() and (adapter.result_text or "").strip():
+            agent_output.write_text(adapter.result_text.strip() + "\n")
+        if agent_output.exists():
+            exposed = classify_secret_exposure(agent_output.read_text(), labelled)
+            if exposed:
+                raise AgentError(f"{role.upper()}_SECRET_OUTPUT:source=result_file credential_kind={exposed}")
+        if role == "reviewer" and workspace_digest(self.context.workspace) != before_digest:
+            raise AgentError("REVIEWER_MUTATED_WORKSPACE")
+        return load_structured(agent_output, role.upper())
 
 
 TRUSTED_PREAMBLE = """TRUSTED SUPERVISOR INSTRUCTIONS
