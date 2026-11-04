@@ -408,3 +408,32 @@ class NewAttemptBaselineTests(unittest.TestCase):
                                              phase_attempts={"1": 1}))
             supervisor_for(root).reopen(1)
             self.assertFalse((root / "phase-1-baseline.json").exists())
+
+
+class AttemptGovernanceTests(unittest.TestCase):
+    """Centra's checkpoints named the bootstrap commit 770c433 long after trust moved on."""
+
+    def test_a_new_attempt_binds_the_current_trust_anchor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            state = BuildState(governance_sha="bootstrap-sha", snapshot_digest="old", phase_attempts={"1": 1})
+            StateStore(root).save(state)
+            supervisor = supervisor_for(root)
+            supervisor.anchor = {"governance_sha": "current-sha", "snapshot_digest": "new"}
+            with self.assertRaises(StopPhase):
+                supervisor._run_phase(state, PHASE)
+            self.assertEqual((state.governance_sha, state.snapshot_digest), ("current-sha", "new"))
+
+    def test_re_entering_an_attempt_keeps_its_governance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            workspace = root / "ws"; workspace.mkdir()
+            state = BuildState(governance_sha="attempt-sha", current_phase=1, phase_attempts={"1": 2},
+                               workspace=str(workspace),
+                               deadline_at=(datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat())
+            StateStore(root).save(state)
+            supervisor = supervisor_for(root)
+            supervisor.anchor = {"governance_sha": "newer-sha", "snapshot_digest": "new"}
+            with self.assertRaises(StopPhase):
+                supervisor._run_phase(state, PHASE)
+            self.assertEqual(state.governance_sha, "attempt-sha")

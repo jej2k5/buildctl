@@ -314,6 +314,14 @@ class Supervisor:
             state.current_phase, state.phase_step = phase.number, "pending"
             state.phase_attempts[key] = state.phase_attempts.get(key, 0) + 1
             state.base_sha = self.git.current_sha()
+            # Bind the attempt to the trust anchor it actually runs under. Set only at bootstrap,
+            # these named the setup-time commit on every later checkpoint, review and receipt
+            # after `trust init` moved the anchor. Refreshed only here, so one attempt never
+            # mixes two governance revisions.
+            anchor = getattr(self, "anchor", None)
+            if anchor:
+                state.governance_sha = anchor["governance_sha"]
+                state.snapshot_digest = anchor["snapshot_digest"]
             state.deadline_at = self._phase_deadline()
             # Remediation laps measure one attempt's code; a new attempt rebuilds from the base,
             # so it gets its own. Carried over, the count left a retried phase at its ceiling
