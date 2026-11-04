@@ -30,7 +30,7 @@ class Harness(unittest.TestCase):
     def finish_phase(self, number: int, content: str) -> str:
         """Drive a phase through the real clone -> delta -> commit path."""
         base = self.manager.current_sha()
-        clone = self.clones / f"clone-{number}"
+        clone = self.clones / f"clone-{number}-{len(list(self.clones.iterdir()))}"
         self.manager.create_isolated_clone(base, clone)
         before = self.manager.manifest(clone)
         (clone / "src").mkdir(exist_ok=True); (clone / f"src/phase{number}.py").write_text(content)
@@ -146,3 +146,23 @@ class ConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReopenedPhaseBranchTests(Harness):
+    """Centra's Phase 1, reopened after its first commit was integrated, was approved by review
+    and then refused at commit: "existing phase branch is not pinned to expected base"."""
+
+    def test_an_integrated_branch_restarts_from_the_new_base(self):
+        self.finish_phase(1, "ONE = 1\n"); self.manager.integrate("build/phase-1")
+        (self.root / "governance.md").write_text("changed\n")
+        git(self.root, "add", "governance.md"); git(self.root, "commit", "-qm", "governance")
+        branch = self.finish_phase(1, "ONE = 2\n")
+        self.assertEqual(git(self.root, "rev-parse", f"{branch}~1"), git(self.root, "rev-parse", "main"))
+
+    def test_a_branch_with_unmerged_commits_still_refuses(self):
+        self.finish_phase(1, "ONE = 1\n")                 # committed, never integrated
+        git(self.root, "switch", "-q", "main")
+        (self.root / "other.md").write_text("x\n")
+        git(self.root, "add", "other.md"); git(self.root, "commit", "-qm", "other")
+        with self.assertRaisesRegex(GitSafetyError, "not pinned"):
+            self.finish_phase(1, "ONE = 2\n")
