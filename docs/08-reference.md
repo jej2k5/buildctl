@@ -17,6 +17,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `debate decide --nonce <n> --answer <answer>` | Settle a debate the agents could not, at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION). The answer is `finding-stands`, `code-stands` or `own`; `--text` carries your ruling (required for `own`) or a note. The nonce comes from `status`. The same attempt resumes. |
 | `retry` | Try again after an ordinary failure. Starts a fresh attempt. `--authorize-extra-attempt --nonce <n>` buys exactly one more pass past an exhausted ceiling. |
 | `reconcile --operation <id> --action <action>` | Settle an agent call whose outcome is unknown. The action is `accept-output` (keep what it left) or `authorize-retry` (discard it and pay for a new call). |
+| `reopen --phase <n> --confirm <n>` | Take a completed phase back so a fresh attempt redoes it, for a phase recorded as done that was not. Nothing is reverted: the next attempt starts from the integration branch. Refused while later phases are complete or the build is not idle. |
 | `trust init --to <sha> --confirm <sha>` | Pin the governed files at that commit, this buildctl, and both agent executables. |
 | `trust show` | Show what is pinned. |
 | `isolation verify` | Probe the sandbox and record that it passed. Runs refuse to start once that record is over 24 hours old. |

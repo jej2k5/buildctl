@@ -30,6 +30,12 @@ from .trust import TrustError, TrustStore
 ESCALATIONS: dict[str, tuple[str, str]] = {
     "CHECKPOINT_REQUIRED": ("A checkpoint, a human-merge phase or the MVP milestone needs you.",
                             "Review the evidence, then approve."),
+    "PHASE_BLOCKED": ("The implementer reported the phase blocked: a prerequisite is missing. Nothing was "
+                      "reviewed or committed.",
+                      "Supply the prerequisite or change the phase prompt in a reviewed governance commit, "
+                      "then retry."),
+    "PHASE_FAILED": ("The implementer reported the attempt failed. Nothing was reviewed or committed.",
+                     "Read the phase result, then retry."),
     "REVIEW_BLOCKED": ("The reviewer could not clear the phase.",
                        "Read the findings, adjust the phase prompt or decide, then retry."),
     "UNREVIEWABLE_DELTA": ("The change has binary or oversized files the reviewer cannot read.",

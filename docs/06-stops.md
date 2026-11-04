@@ -36,6 +36,14 @@ The same attempt resumes, with a fresh phase deadline, and nothing is re-trusted
 
 This stop is a wait, not a failure: it does not count toward `max_consecutive_failures`.
 
+#### PHASE_BLOCKED {#PHASE_BLOCKED signal=caution}
+
+The implementer returned `status: blocked`: the phase prompt's prerequisite is missing, and it said so instead of claiming the work. Nothing is reviewed, committed or counted complete. The status detail leads with the unblock action from the result's `risks` and `architecture_questions`; the full result is in `artifacts/phase-N/`.
+
+**Clear it:** supply the prerequisite, or change the phase prompt in a reviewed governance commit and re-run `trust init`, then `buildctl retry`.
+
+This stop is a wait, not a failure: it does not count toward `max_consecutive_failures`.
+
 ### Stopped {#stops-stopped}
 
 #### REVIEW_BLOCKED {#REVIEW_BLOCKED signal=danger}
@@ -127,6 +135,12 @@ What would be committed differs from what the reviewer attested. This should nev
 The last run died between agent calls.
 
 **Clear it:** `buildctl retry`.
+
+#### PHASE_FAILED {#PHASE_FAILED signal=danger}
+
+The implementer returned `status: failed`: it reports the attempt went wrong. Nothing is reviewed or committed.
+
+**Clear it:** read the result in `artifacts/phase-N/`, then `buildctl retry`.
 
 #### UNEXPECTED_FAILURE {#UNEXPECTED_FAILURE signal=danger}
 
