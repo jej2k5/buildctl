@@ -18,7 +18,9 @@ from .supervisor.auth import AuthPreflight, AuthenticationRequired, HostAuthUnsu
 from .supervisor.budget import BudgetLedger, LimitExceeded, configured_cost
 from .supervisor.claude import ClaudeAdapter
 from .supervisor.codex import CodexAdapter
-from .supervisor.debate import DebateAdapter, DebateRequiresHuman, validate_debate_result, write_adr
+from .supervisor.debate import (DebateAdapter, DebateRequiresHuman, debate_mode, max_turns, operator_result,
+                                outcome as debate_outcome, side_for_turn, transcript_entry, turn_prompt,
+                                validate_debate_result, validate_turn, write_adr)
 from .supervisor.evidence import (EvidenceBranch, EvidenceError, EvidenceStore, NO_RECEIPT, RecordIncomplete,
                                   build_manifest, discrepancies, phase_records, prune_records, recording_enabled,
                                   show as evidence_show, unclosed_records, verify as evidence_verify)
@@ -29,14 +31,14 @@ from .supervisor.isolation import (FakeIsolationBackend, IsolationBackend, Isola
                                    IsolationError, conformance_record, production_backend,
                                    require_fresh_conformance, verify_backend)
 from .supervisor.phases import ConfigurationError, Phase, load_config, phases_from, resolve_until
-from .supervisor.review import (ReviewValidationError, accumulate_findings, open_finding_obligations,
-                                realign_findings_to_delta, reduce_review, strategic_findings,
-                                validate_review)
+from .supervisor.review import (OPERATOR_ACCEPTED_STATUS, ReviewValidationError, accumulate_findings,
+                                open_finding_obligations, operator_rulings, realign_findings_to_delta,
+                                reduce_review, strategic_findings, validate_review)
 from .supervisor import levers
 from .supervisor.operations import PaidOperation
 from .supervisor.safety import digest_file, redact
-from .supervisor.state import (ApprovalRequirement, BuildState, ExtraAttemptGrant, Operation, StateConflict,
-                               StateStore, SupervisorLocked, now)
+from .supervisor.state import (ApprovalRequirement, BuildState, DebateDecision, ExtraAttemptGrant, Operation,
+                               StateConflict, StateStore, SupervisorLocked, now)
 from .supervisor.trust import TrustError, TrustStore
 
 
@@ -108,6 +110,7 @@ class Supervisor:
                 "escalation_detail": state.escalation_detail,
                 "pending_approval": vars(state.pending_approval) if state.pending_approval else None,
                 "extra_attempt_grant": vars(state.extra_attempt_grant) if state.extra_attempt_grant else None,
+                "pending_debate": vars(state.pending_debate) if state.pending_debate else None,
                 "unknown_operations": [key for key, value in state.operations.items() if value.status == "unknown"],
                 "daily_cost_usd": self.budget.spent_today()}
 
@@ -169,6 +172,8 @@ class Supervisor:
             else:
                 state.current_phase, state.phase_step, state.workspace = None, "pending", None
                 state.deadline_at = None
+                # A fresh attempt rebuilds the code, so a debate about the old code is moot.
+                state.pending_debate = None
                 self._release_phase_baseline(retried_phase)
             self.store.event(state, "retry_authorized", extra_attempt=authorize_extra_attempt,
                              phase=retried_phase)
@@ -214,6 +219,26 @@ class Supervisor:
             state.status = "idle"
             state.escalation_code = state.escalation_detail = None
             self.store.event(state, "checkpoint_approved", scope=vars(requirement))
+
+    def decide_debate(self, answer: str, text: str, nonce: str) -> None:
+        """The operator settles a debate the agents could not. The same attempt resumes with it."""
+        with self.store.lock():
+            state = self.store.load()
+            pending = state.pending_debate
+            if not levers.is_awaiting_decision(state):
+                raise RuntimeError("no debate is waiting for your decision")
+            if not secrets.compare_digest(pending.nonce, nonce):
+                raise RuntimeError("decision nonce does not match the waiting debate")
+            if not levers.decision_is_current(state):
+                raise RuntimeError("decision is stale for the current state generation")
+            text = redact(text, limit=4000)
+            operator_result(answer, text, [])  # refuses an unknown answer, or "own" with no text
+            pending.answer, pending.text = answer, text
+            state.status = "idle"
+            state.escalation_code = state.escalation_detail = None
+            # The wait was yours, not the phase's: the attempt resumes with its full time.
+            state.deadline_at = self._phase_deadline()
+            self.store.event(state, "debate_decided", phase=pending.phase, debate=pending.debate, answer=answer)
 
     def run(self, until: int | None = None, only: int | None = None) -> None:
         if self.dry_run:
@@ -291,6 +316,7 @@ class Supervisor:
                                              lambda timeout: codex.implement(phase, paths["result"], timeout))
         phase_result = self._consume_interactive_debate_if_ready(
             state, phase, codex, workspace, paths, phase_result)
+        phase_result = self._consume_debate_decision(state, phase, codex, workspace, paths, phase_result)
         gate_runner = MechanicalGates(workspace, self.control_root, self.root, self.backend, self.runner)
         while True:
             remediation = state.remediation_attempts.get(key, 0)
@@ -331,7 +357,8 @@ class Supervisor:
                                           "execution_boundary": self.backend.name},
                              # The reviewer cannot retire a finding it has never been shown,
                              # and cannot guess a prior claim_key. Hand it the register.
-                             "open_findings": open_finding_obligations(state.findings)})
+                             "open_findings": open_finding_obligations(state.findings),
+                             "operator_rulings": operator_rulings(state.findings)})
             if self.evidence is not None:
                 evidence["evidence_discrepancies"] = self._discrepancies(state, phase, delta, paths)
             if evidence["unreviewable"] and phase.claude_review_required:
@@ -368,12 +395,14 @@ class Supervisor:
                 continue
             findings = list(state.findings.values())
             budget_available, approvals_valid = self._advance_preconditions(state, phase)
+            # A debate cut short (a turn reconciled after a crash) is resumed, not counted as spent.
+            unfinished = self._unfinished_debate(state, phase, paths)
             transition = reduce_review(report=review, findings=findings, mechanical_passed=True, coverage_valid=True,
                                        policy={"max_remediation_attempts": phase.max_remediation_attempts,
                                                "debate_enabled": phase.debate_on_architecture_disagreement,
                                                "max_debate_attempts": self.config["limits"]["max_debate_rounds"]},
                                        attempts={"remediation": remediation,
-                                                 "debate": state.debate_attempts.get(key, 0)},
+                                                 "debate": state.debate_attempts.get(key, 0) - bool(unfinished)},
                                        budget_available=budget_available, approvals_valid=approvals_valid)
             self.store.event(state, "review_reduced", rule=transition.rule_id, disposition=transition.disposition,
                              evidence_digest=evidence["digest"], delta_id=delta.digest,
@@ -390,15 +419,18 @@ class Supervisor:
                     lambda timeout, rp=remediation_path, rt=json.dumps(review): codex.implement(phase, rp, timeout, review=rt))
                 continue
             if transition.disposition == "DEBATE":
-                debate_attempt = state.debate_attempts.get(key, 0) + 1
+                debate_attempt = unfinished or state.debate_attempts.get(key, 0) + 1
                 state.debate_attempts[key] = debate_attempt
                 debate_path = paths["debate"].with_name(f"DEBATE_RESULT-{debate_attempt}.json")
                 # Only the findings that routed the phase here. Handing over the whole
                 # register buries the question among resolved and superseded entries, and
                 # would make the resulting ADR claim to decide findings it never considered.
                 strategic = strategic_findings(findings)
-                result = self._agent_operation(state, phase, f"debate-{debate_attempt}", PaidOperation.DEBATE, debate_path,
-                                               lambda timeout, dp=debate_path: debate.run(phase, strategic, evidence, dp, timeout))
+                if debate_mode(self.config):
+                    result = self._run_debate(state, phase, role_runner, strategic, evidence, debate_attempt, debate_path)
+                else:
+                    result = self._agent_operation(state, phase, f"debate-{debate_attempt}", PaidOperation.DEBATE, debate_path,
+                                                   lambda timeout, dp=debate_path: debate.run(phase, strategic, evidence, dp, timeout))
                 validate_debate_result(result)
                 if result["status"] != "agreement":
                     self._escalate(state, "DEBATE_UNRESOLVED", result["status"])
@@ -498,15 +530,16 @@ class Supervisor:
 
     def _agent_operation(self, state: BuildState, phase: Phase, kind: str, paid_operation: PaidOperation,
                          output: Path, function: Any,
-                         format_retry: bool = False) -> dict[str, Any]:
+                         format_retry: bool = False, role: str | None = None) -> dict[str, Any]:
         operation_id = f"phase-{phase.number}:{kind}:{state.phase_attempts[str(phase.number)]}"
         operation = state.operations.get(operation_id)
         if operation and operation.status == "completed":
             return json.loads(Path(operation.output_path or output).read_text())
         if operation and operation.status in {"started", "unknown"}:
             self._escalate(state, "UNKNOWN_EXTERNAL_OPERATION", operation_id)
-        role_name = {PaidOperation.IMPLEMENTATION: "implementer", PaidOperation.REMEDIATION: "implementer",
-                     PaidOperation.REVIEW: "reviewer", PaidOperation.DEBATE: "arbiter"}[paid_operation]
+        # A debate turn names its speaker: either side may take a turn.
+        role_name = role or {PaidOperation.IMPLEMENTATION: "implementer", PaidOperation.REMEDIATION: "implementer",
+                             PaidOperation.REVIEW: "reviewer", PaidOperation.DEBATE: "arbiter"}[paid_operation]
         try:
             self._require_authentication(role_name)
         except (AuthenticationRequired, HostAuthUnsupported) as exc:
@@ -738,6 +771,103 @@ class Supervisor:
         os.chmod(path, 0o600)
         return record
 
+    def _run_debate(self, state: BuildState, phase: Phase, role_runner: RoleRunner, findings: list[dict[str, Any]],
+                    evidence: dict[str, Any], number: int, result_path: Path) -> dict[str, Any]:
+        """Turns until one side accepts the other's proposal, or the turns run out and the operator decides.
+
+        Every turn is its own operation, so a restart replays the turns already taken from their
+        outputs and resumes at the next one.
+        """
+        limit = max_turns(self.config)
+        transcript: list[dict[str, Any]] = []
+        previous: dict[str, Any] | None = None
+        for turn in range(1, limit + 1):
+            side = side_for_turn(turn)
+            output = result_path.with_name(f"DEBATE_TURN-{number}-{turn}.json")
+            prompt = turn_prompt(side, findings, evidence, transcript, turn, limit)
+
+            def speak(timeout: float, side: str = side, prompt: str = prompt, output: Path = output,
+                      previous: dict[str, Any] | None = previous) -> dict[str, Any]:
+                value = role_runner.run(side, prompt, output, timeout, debate=True)
+                validate_turn(value, findings, previous)
+                return value
+
+            value = self._agent_operation(state, phase, f"debate-{number}-turn-{turn}", PaidOperation.DEBATE_TURN,
+                                          output, speak, role=side)
+            transcript.append(transcript_entry(turn, side, value))
+            if value["accept"] is not None and previous is not None:
+                result = previous["proposal"]
+                result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+                self.store.event(state, "debate_outcome", phase=phase.number, debate=number, turns=turn,
+                                 decided_by="agents", outcome=debate_outcome(result, "agents"))
+                return result
+            previous = value
+        if not state.pending_debate or state.pending_debate.debate != number:
+            state.pending_debate = DebateDecision(
+                phase.number, state.phase_attempts[str(phase.number)], number, [item["id"] for item in findings],
+                evidence["digest"], state.base_sha or "", state.governance_sha or "", state.generation,
+                secrets.token_hex(16))
+        state.pending_debate.state_generation = state.generation
+        self._escalate(state, "DEBATE_AWAITING_DECISION", f"phase {phase.number}, debate {number}: {limit} turns "
+                       "without an accepted proposal")
+        raise AssertionError("unreachable")
+
+    def _unfinished_debate(self, state: BuildState, phase: Phase, paths: dict[str, Path]) -> int | None:
+        """The number of this attempt's debate if it took turns but neither closed nor reached the operator."""
+        number = state.debate_attempts.get(str(phase.number), 0)
+        if not number or not debate_mode(self.config):
+            return None
+        if any(paths["debate"].with_name(f"{name}-{number}.json").is_file()
+               for name in ("DEBATE_RESULT", "DEBATE_DECISION")):
+            return None  # Settled, by the agents or by the operator.
+        if state.pending_debate and state.pending_debate.debate == number and state.pending_debate.phase == phase.number:
+            return None
+        prefix = f"phase-{phase.number}:debate-{number}-turn-"
+        attempt = f":{state.phase_attempts[str(phase.number)]}"
+        started = any(key.startswith(prefix) and key.endswith(attempt) for key in state.operations)
+        return number if started else None
+
+    def _consume_debate_decision(self, state: BuildState, phase: Phase, codex: CodexAdapter, workspace: Path,
+                                 paths: dict[str, Path], phase_result: dict[str, Any]) -> dict[str, Any]:
+        """Act on the operator's ruling once, in the attempt the debate belonged to."""
+        pending = state.pending_debate
+        if (not pending or pending.answer is None or pending.phase != phase.number
+                or pending.phase_attempt != state.phase_attempts[str(phase.number)]):
+            return phase_result
+        findings = [entry for entry in state.findings.values() if entry.get("id") in pending.finding_ids]
+        result = operator_result(pending.answer, pending.text, strategic_findings(findings) or findings)
+        decision_path = paths["debate"].with_name(f"DEBATE_DECISION-{pending.debate}.json")
+        decision_path.write_text(json.dumps({"answer": pending.answer, "text": pending.text, "result": result},
+                                            indent=2, sort_keys=True) + "\n")
+        if pending.answer == "code-stands":
+            for entry in findings:
+                entry["status"] = OPERATOR_ACCEPTED_STATUS
+            state.pending_debate = None
+            self.store.event(state, "debate_outcome", phase=phase.number, debate=pending.debate,
+                             decided_by="operator", outcome=debate_outcome(result, "operator"), answer=pending.answer,
+                             findings_closed=len(findings))
+            return phase_result
+        write_adr(paths["adr_proposal"], {"title": f"Phase {phase.number} decision", "debate_id": f"phase-{phase.number}",
+                                          "governance_sha": state.governance_sha, "base_sha": state.base_sha,
+                                          "evidence_digest": pending.evidence_digest, "finding_ids": pending.finding_ids,
+                                          "decided_by": "operator"}, result)
+        target = workspace / "decisions" / f"ADR-phase-{phase.number}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(paths["adr_proposal"].read_bytes())
+        key = str(phase.number)
+        remediation = state.remediation_attempts.get(key, 0)
+        if remediation >= phase.max_remediation_attempts:
+            self._ceiling_reached(state, phase, "REMEDIATION_ATTEMPTS_EXHAUSTED", "ADR implementation ceiling")
+        state.remediation_attempts[key] = remediation + 1
+        output = paths["result"].with_name(f"PHASE_RESULT-adr-decided-{pending.debate}.json")
+        phase_result = self._agent_operation(state, phase, f"adr-decided-{pending.debate}", PaidOperation.REMEDIATION,
+                                             output, lambda timeout: codex.implement(
+                                                 phase, output, timeout, adr=paths["adr_proposal"].read_text()))
+        state.pending_debate = None
+        self.store.event(state, "debate_outcome", phase=phase.number, debate=pending.debate, decided_by="operator",
+                         outcome=debate_outcome(result, "operator"), answer=pending.answer)
+        return phase_result
+
     def _consume_interactive_debate_if_ready(self, state: BuildState, phase: Phase, codex: CodexAdapter,
                                              workspace: Path, paths: dict[str, Path],
                                              phase_result: dict[str, Any]) -> dict[str, Any]:
@@ -804,6 +934,11 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("inspect", help="the full read model as JSON: state, phases, trust, levers")
     audit = commands.add_parser("audit", help="audit events after a sequence number, as JSON")
     audit.add_argument("--after", type=int, default=0); audit.add_argument("--limit", type=int, default=500)
+    debate = commands.add_parser("debate", help="answer a debate the agents could not settle")
+    debate_sub = debate.add_subparsers(dest="debate_command", required=True)
+    decide = debate_sub.add_parser("decide"); decide.add_argument("--nonce", required=True)
+    decide.add_argument("--answer", choices=("finding-stands", "code-stands", "own"), required=True)
+    decide.add_argument("--text", default="", help="your decision (required for --answer own) or a note")
     evidence = commands.add_parser("evidence", help="receipts of what agents did: show, verify, prune")
     evidence_sub = evidence.add_subparsers(dest="evidence_command", required=True)
     evidence_show = evidence_sub.add_parser("show"); evidence_show.add_argument("commit")
@@ -902,6 +1037,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "resume": supervisor.resume()
         elif args.command == "retry": supervisor.retry(args.authorize_extra_attempt, args.nonce)
         elif args.command == "approve": supervisor.approve(args.nonce)
+        elif args.command == "debate": supervisor.decide_debate(args.answer, args.text, args.nonce)
         elif args.command == "reconcile": supervisor.reconcile(args.operation, args.action)
         return 0
     except (ConfigurationError, AgentError, GitSafetyError, LimitExceeded, HumanEscalation,

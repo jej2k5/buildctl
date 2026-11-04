@@ -59,6 +59,22 @@ class ExtraAttemptGrant:
 
 
 @dataclass
+class DebateDecision:
+    """A debate the agents could not settle, waiting for the operator, bound like an approval."""
+    phase: int
+    phase_attempt: int
+    debate: int
+    finding_ids: list[str]
+    evidence_digest: str
+    base_sha: str
+    governance_sha: str
+    state_generation: int
+    nonce: str
+    answer: str | None = None
+    text: str = ""
+
+
+@dataclass
 class BuildState:
     schema_version: int = 2
     generation: int = 0
@@ -85,6 +101,7 @@ class BuildState:
     workspace: str | None = None
     deadline_at: str | None = None
     extra_attempt_grant: ExtraAttemptGrant | None = None
+    pending_debate: DebateDecision | None = None
     operations: dict[str, Operation] = field(default_factory=dict)
     findings: dict[str, dict[str, Any]] = field(default_factory=dict)
     started_at: str | None = None
@@ -104,6 +121,9 @@ class BuildState:
         grant = values.get("extra_attempt_grant")
         if grant:
             values["extra_attempt_grant"] = ExtraAttemptGrant(**grant)
+        debate = values.get("pending_debate")
+        if debate:
+            values["pending_debate"] = DebateDecision(**debate)
         return cls(**values)
 
 

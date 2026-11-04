@@ -158,7 +158,8 @@ class RoleRunner:
         self.evidence = evidence
 
     def run(self, role: str, prompt: str, output: Path, timeout: float,
-            credentials: dict[str, str] | None = None) -> dict[str, Any]:
+            credentials: dict[str, str] | None = None, debate: bool = False) -> dict[str, Any]:
+        """Launch one agent call. A debate turn runs either role against a read-only workspace."""
         role_config = self.config["roles"][role]
         if credentials is None:
             credentials = {key: os.environ[key] for key in role_config.get("credential_env", []) if key in os.environ}
@@ -193,7 +194,8 @@ class RoleRunner:
         argv = [executable, *configured[1:]]
         argv = [part.format(prompt=prompt, output=str(agent_output)) for part in argv]
         context = IsolationContext(role, self.context.workspace, self.context.control_root,
-                                   self.context.authoritative_repo, read_only_workspace=role == "reviewer",
+                                   self.context.authoritative_repo,
+                                   read_only_workspace=role == "reviewer" or debate,
                                    output_dir=runtime_root, home_dir=isolated_home,
                                    network_allowed=bool(role_config.get("network", False)),
                                    host_home=Path.home())
@@ -201,7 +203,8 @@ class RoleRunner:
         labelled = {name: value for name, value in (credentials or {}).items() if value}
         labelled.update(staged_secrets)
         secrets = list(labelled.values())
-        before_digest = workspace_digest(self.context.workspace) if role == "reviewer" else None
+        read_only = role == "reviewer" or debate
+        before_digest = workspace_digest(self.context.workspace) if read_only else None
         try:
             if host_authenticated_reviewer:
                 # OS-sandboxed under the host-session profile: the operator's HOME stays
@@ -242,8 +245,8 @@ class RoleRunner:
                 if exposed:
                     raise AgentError(f"{role.upper()}_SECRET_OUTPUT:"
                                      f"source=result_file credential_kind={exposed}")
-            if role == "reviewer" and workspace_digest(self.context.workspace) != before_digest:
-                raise AgentError("REVIEWER_MUTATED_WORKSPACE")
+            if before_digest is not None and workspace_digest(self.context.workspace) != before_digest:
+                raise AgentError(f"{role.upper()}_MUTATED_WORKSPACE")
             return load_structured(agent_output, role.upper())
         finally:
             if auth_mode == "host_cli" and role == "implementer":
@@ -277,8 +280,8 @@ class RoleRunner:
             exposed = classify_secret_exposure(agent_output.read_text(), labelled)
             if exposed:
                 raise AgentError(f"{role.upper()}_SECRET_OUTPUT:source=result_file credential_kind={exposed}")
-        if role == "reviewer" and workspace_digest(self.context.workspace) != before_digest:
-            raise AgentError("REVIEWER_MUTATED_WORKSPACE")
+        if before_digest is not None and workspace_digest(self.context.workspace) != before_digest:
+            raise AgentError(f"{role.upper()}_MUTATED_WORKSPACE")
         return load_structured(agent_output, role.upper())
 
 

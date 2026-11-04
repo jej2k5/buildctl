@@ -186,8 +186,8 @@ class SupervisorOwnedStatusesTests(unittest.TestCase):
         self.assertNotIn(DEFERRED_STATUS, CLOSED_FINDING_STATUSES)
         self.assertIn(DEFERRED_STATUS, NON_BLOCKING_FINDING_STATUSES)
 
-    def test_both_closed_statuses_stop_blocking(self):
-        self.assertEqual(CLOSED_FINDING_STATUSES, {"resolved", SUPERSEDED_STATUS})
+    def test_every_closed_status_stops_blocking(self):
+        self.assertEqual(CLOSED_FINDING_STATUSES, {"resolved", SUPERSEDED_STATUS, "operator_accepted"})
         for status in CLOSED_FINDING_STATUSES:
             register = register_with(finding(severity="HIGH"))
             list(register.values())[0]["status"] = status

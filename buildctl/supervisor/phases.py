@@ -10,7 +10,7 @@ from typing import Any
 from .evidence import validate_evidence_config
 from .governance import is_governance_path
 from .safety import ensure_safe_relative
-from .operations import PAID_OPERATION_IDS
+from .operations import PAID_OPERATION_IDS, PaidOperation
 from .review import REVIEW_PROTOCOL_VERSION
 
 
@@ -104,7 +104,13 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
     roles = config.get("roles", {})
     if set(roles) != {"implementer", "reviewer", "arbiter"}:
         raise ConfigurationError("roles must declare implementer, reviewer, and arbiter")
+    debate = roles["arbiter"].get("mode") == "debate"
+    if "max_debate_turns" in limits and (not isinstance(limits["max_debate_turns"], int)
+                                          or limits["max_debate_turns"] < 2):
+        raise ConfigurationError("limits.max_debate_turns must be a whole number of at least 2")
     for name, role in roles.items():
+        if name == "arbiter" and debate:
+            continue  # The debate's turns run as the implementer and the reviewer.
         command = role.get("command")
         if not isinstance(command, list) or not command:
             raise ConfigurationError(f"role {name} requires an argv command")
@@ -138,7 +144,9 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
         raise ConfigurationError("; ".join(evidence_problems))
     validate_governed_inputs(config, root)
     costs = config.get("operation_cost_usd")
-    if not isinstance(costs, dict) or set(costs) != PAID_OPERATION_IDS:
+    # Only a build whose arbiter runs debates pays per turn, so only it must price one.
+    required = PAID_OPERATION_IDS if debate else PAID_OPERATION_IDS - {PaidOperation.DEBATE_TURN.value}
+    if not isinstance(costs, dict) or not required <= set(costs) <= PAID_OPERATION_IDS:
         raise ConfigurationError("operation_cost_usd must define exactly every paid operation")
     if any(not isinstance(value, (int, float)) or value < 0 for value in costs.values()):
         raise ConfigurationError("operation costs must be explicit non-negative numbers")

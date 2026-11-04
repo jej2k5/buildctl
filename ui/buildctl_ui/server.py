@@ -107,7 +107,8 @@ def handler_for(build: Build, token: str, port_ref: list[int]) -> type[BaseHTTPR
                 length = min(int(self.headers.get("Content-Length", "0")), 10_000)
                 body = json.loads(self.rfile.read(length) or b"{}")
                 job = build.pull(str(body["action"]), generation=int(body["generation"]),
-                                 confirm=str(body.get("confirm", "")), operation=body.get("operation"))
+                                 confirm=str(body.get("confirm", "")), operation=body.get("operation"),
+                                 answer=body.get("answer"), text=str(body.get("text", "")))
             except Refused as exc:
                 return self._error(exc.status, str(exc))
             except (KeyError, ValueError, TypeError) as exc:

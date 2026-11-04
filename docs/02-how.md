@@ -17,7 +17,7 @@ Every phase runs the same seven steps. Each step is recorded before and after it
 | Finding | What happens |
 |---|---|
 | A fixable `HIGH` | It goes back to the implementer for remediation, then the gate and review run again. |
-| An architectural or recurring `HIGH` | It goes to a debate. An agreement becomes an ADR in `decisions/` and is implemented. |
+| An architectural or recurring `HIGH` | It goes to a [debate](#debates). An agreement becomes an ADR in `decisions/` and is implemented. With `arbiter.mode: debate`, Codex and Claude argue it out and you decide only what they cannot settle. |
 | A `CRITICAL` | The build stops for a human. |
 | Nothing open above `MEDIUM` | The phase advances. `MEDIUM` and `LOW` findings are recorded, not blocking. |
 

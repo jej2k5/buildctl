@@ -1,0 +1,12 @@
+{
+  "argument": "Your case this turn, answering the other side's last argument",
+  "proposal": {
+    "status": "agreement",
+    "decision": "The decision both sides would accept",
+    "finding_dispositions": [{"finding_id": "<id of a debated finding>", "disposition": "upheld | changed | dropped"}],
+    "required_changes": [],
+    "human_decisions": [],
+    "revisit_when": []
+  },
+  "accept": null
+}

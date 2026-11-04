@@ -22,6 +22,20 @@ With `roles.arbiter.mode: interactive`, the review routed the phase to a debate,
 
 This stop is a wait, not a failure: it does not count toward `max_consecutive_failures`. The debate call is still charged its configured `operation_cost_usd.debate` in the budget ledger. The Ledger lists the call as failed until the result is consumed.
 
+#### DEBATE_AWAITING_DECISION {#DEBATE_AWAITING_DECISION signal=caution}
+
+With `roles.arbiter.mode: debate`, Codex and Claude [debated](#debates) the findings for `limits.max_debate_turns` turns and neither accepted the other's proposal. The decision is yours.
+
+**Clear it:** read the debate in the console's Stop view, then answer. In the console, the Decide lever offers three answers. On the command line, `buildctl debate decide --nonce <n> --answer <answer>`, with the nonce from `status`:
+
+- `finding-stands`: the findings stand, and Codex makes the changes they require.
+- `code-stands`: the code stands. The findings close as `operator_accepted`, and the phase is reviewed once more before it commits.
+- `own`, with `--text "<your ruling>"`: Codex implements your ruling.
+
+The same attempt resumes, with a fresh phase deadline, and nothing is re-trusted. A ruling becomes an ADR marked `Decided by: operator`, never presented as an agent agreement. `retry` instead discards the debate along with the attempt.
+
+This stop is a wait, not a failure: it does not count toward `max_consecutive_failures`.
+
 ### Stopped {#stops-stopped}
 
 #### REVIEW_BLOCKED {#REVIEW_BLOCKED signal=danger}
@@ -38,7 +52,7 @@ The change has binary or oversized files the reviewer cannot read.
 
 #### DEBATE_UNRESOLVED {#DEBATE_UNRESOLVED signal=danger}
 
-The debate ended without agreement.
+The debate ended without agreement. With `roles.arbiter.mode: debate`, this never happens: an unsettled debate waits at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION) instead.
 
 **Clear it:** decide the question, adjust the phase prompt, then `buildctl retry`.
 
@@ -80,7 +94,8 @@ An agent call failed. The status detail starts with a detail code, then a redact
 | `<ROLE>_AUTH_MODE_INVALID` | `roles.<role>.auth_mode` is not `environment`, `host_cli` or `none`. | Fix `build.yaml`, commit, trust the commit, then retry. |
 | `<ROLE>_PROCESS_FAILED` | The agent CLI exited with an error. Its own message follows the colon. | Read that message: a rate limit, an expired login or a model error. Fix it, then retry. |
 | `<ROLE>_SECRET_OUTPUT` | A credential appeared in the agent's output or result file, so nothing was stored. The detail names the source and the credential kind, never the value. | Rotate that credential. Find why the agent printed it, then retry. |
-| `REVIEWER_MUTATED_WORKSPACE` | The reviewer changed files during a read-only review. | Check the reviewer command still limits it to `--tools Read,Grep,Glob`, then retry. |
+| `<ROLE>_MUTATED_WORKSPACE` | The workspace changed during a read-only call: a review, or either side's [debate](#debates) turn. | For the reviewer, check its command still limits it to `--tools Read,Grep,Glob`. For a Codex turn, the sandbox's read-only workspace failed: run `isolation verify`. Then retry. |
+| `DEBATE_TURN_INVALID` | A debate turn broke the turn contract: no argument, a proposal that does not dispose of exactly the debated findings, or an acceptance of a proposal the other side never made. | Retry. If it repeats, look at the turn in What agents did. |
 | `IMPLEMENTER_OUTPUT_SCHEMA_INVALID` | The implementer's `PHASE_RESULT` did not have the contract's fields. | Retry. If it repeats, check the phase prompt does not ask for another format. |
 | `<KIND>_OUTPUT_MISSING` | The agent finished without writing a result. | Retry. If it repeats, check the agent command writes to `{output}` or prints its result. |
 | `<KIND>_OUTPUT_EMPTY` | The result file was empty. | Retry. |

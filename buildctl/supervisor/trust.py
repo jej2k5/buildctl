@@ -84,7 +84,7 @@ class TrustStore:
 
             executables: dict[str, dict[str, str]] = {}
             for role, role_config in config["roles"].items():
-                if role_config.get("mode") == "interactive":
+                if role_config.get("mode") in {"interactive", "debate"}:
                     continue
 
                 requested = role_config["command"][0]

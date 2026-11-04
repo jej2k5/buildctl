@@ -17,7 +17,8 @@ from typing import Any, Callable
 from . import levers as lever_rules
 from .audit import AuditChain
 from .budget import BudgetLedger, LimitExceeded
-from .evidence import receipts_state, recording_enabled
+from .debate import side_for_turn
+from .evidence import _printable, receipts_state, recording_enabled
 from .isolation import IsolationError, production_backend, require_fresh_conformance
 from .kernel import kernel_identity
 from .phases import ConfigurationError, load_config, merged_metadata
@@ -37,6 +38,9 @@ ESCALATIONS: dict[str, tuple[str, str]] = {
                               "Run the debate, write the result where the request says, then retry."),
     "DEBATE_UNRESOLVED": ("The debate ended without agreement.",
                           "Decide the question, adjust the phase prompt, then retry."),
+    "DEBATE_AWAITING_DECISION": ("The agents debated the findings and did not agree. The decision is yours.",
+                                 "Read the debate, then decide: the finding stands, the code stands, or your own "
+                                 "ruling. Decide in the web console or with `buildctl debate decide`."),
     "UNKNOWN_EXTERNAL_OPERATION": ("An agent call may or may not have finished.",
                                    "Reconcile: accept its output, or authorize a retry."),
     "OPERATION_TIMEOUT_UNKNOWN": ("An agent call timed out and its outcome is unknown.",
@@ -149,6 +153,39 @@ def _artifacts(control_root: Path, number: int) -> list[dict[str, Any]]:
         return []
     return [{"name": item.name, "path": str(item), "bytes": item.stat().st_size}
             for item in sorted(directory.iterdir()) if item.is_file()]
+
+
+def _debate(control_root: Path, number: int, state: BuildState) -> dict[str, Any] | None:
+    """The latest debate buildctl ran in this phase: the turns so far, and what waits on the operator."""
+    directory = control_root / "artifacts" / f"phase-{number}"
+    turns: dict[int, list[tuple[int, Path]]] = {}
+    for path in directory.glob("DEBATE_TURN-*-*.json"):
+        parts = path.stem.split("-")
+        if len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
+            turns.setdefault(int(parts[1]), []).append((int(parts[2]), path))
+    if not turns:
+        return None
+    debate = max(turns)
+    entries = []
+    for turn, path in sorted(turns[debate]):
+        try:
+            value = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        # Agent text, shown in a console that holds levers: printable characters only.
+        entries.append({"turn": turn, "side": side_for_turn(turn),
+                        "argument": _printable(value.get("argument"), 20_000),
+                        "proposal": value.get("proposal"), "accepted": value.get("accept") is not None})
+    pending = state.pending_debate
+    waiting = bool(pending and pending.phase == number and pending.debate == debate)
+    findings = [{"id": item.get("id"), "path": item.get("path"), "severity": item.get("severity"),
+                 "claim": _printable(item.get("claim"), 2000),
+                 "required_change": _printable(item.get("required_change"), 2000)}
+                for item in state.findings.values()
+                if waiting and item.get("id") in pending.finding_ids]
+    return {"number": debate, "turns": entries, "findings": findings,
+            "awaiting_decision": waiting and pending.answer is None,
+            "answer": pending.answer if waiting else None}
 
 
 def _latest_review(control_root: Path, number: int) -> dict[str, Any] | None:
@@ -299,7 +336,8 @@ def inspect(repo: Path, control_root: Path, runner: Callable[..., Any] = subproc
                    "branch": state.active_branch, "base_sha": state.base_sha,
                    "review": _latest_review(control_root, number), "gates": _gates(control_root, number),
                    "artifacts": _artifacts(control_root, number), "evidence_flags": _evidence_flags(control_root, number),
-                   "debate_request": str(debate_request) if debate_request.is_file() else None}
+                   "debate_request": str(debate_request) if debate_request.is_file() else None,
+                   "debate": _debate(control_root, number, state)}
 
     outputs = {}
     for key, op in state.operations.items():
@@ -336,7 +374,9 @@ def inspect(repo: Path, control_root: Path, runner: Callable[..., Any] = subproc
                   "consecutive_failures": state.consecutive_failures, "started_at": state.started_at,
                   "updated_at": state.updated_at,
                   "pending_approval": asdict(state.pending_approval) if state.pending_approval else None,
-                  "extra_attempt_grant": asdict(state.extra_attempt_grant) if state.extra_attempt_grant else None},
+                  "extra_attempt_grant": asdict(state.extra_attempt_grant) if state.extra_attempt_grant else None,
+                  "pending_debate": ({key: value for key, value in asdict(state.pending_debate).items()
+                                      if key != "nonce"} if state.pending_debate else None)},
         "escalation": dict(explain(state.escalation_code,
                                    state.pending_approval.checkpoint if state.pending_approval else None),
                            detail=state.escalation_detail)

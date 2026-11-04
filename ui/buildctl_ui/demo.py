@@ -21,10 +21,11 @@ from buildctl.supervisor import state as state_module
 from buildctl.supervisor.evidence import AgentRecord
 from buildctl.supervisor.isolation import IsolationError, conformance_record, production_backend
 from buildctl.supervisor.levers import WAITING_CODES
-from buildctl.supervisor.state import ApprovalRequirement, BuildState, ExtraAttemptGrant, Operation, StateStore
+from buildctl.supervisor.state import (ApprovalRequirement, BuildState, DebateDecision, ExtraAttemptGrant, Operation,
+                                       StateStore)
 from buildctl.supervisor.trust import TrustError, TrustStore
 
-SCENARIOS = ("blocked", "checkpoint", "ceiling", "unknown", "running", "fresh")
+SCENARIOS = ("blocked", "checkpoint", "ceiling", "unknown", "running", "debate", "fresh")
 FIXTURE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "target"
 COST = {"implement": 2.0, "remediate": 2.0, "review": 2.0, "debate": 5.0}
 
@@ -166,6 +167,8 @@ def build(root: Path, scenario: str = "blocked") -> tuple[Path, Path]:
                 costs.append(_cost(clock, "remediation", 12, op_id))
                 clock.advance(181)
                 _escalate(store, state, "OPERATION_TIMEOUT_UNKNOWN", op_id)
+            elif scenario == "debate":
+                _debate(store, state, clock, costs, control)
             elif scenario == "running":
                 op_id = "phase-12:remediate-3:1"
                 clock.value = now - timedelta(minutes=14)
@@ -249,6 +252,42 @@ def _phase(store: StateStore, state: BuildState, clock: Clock, costs: list, numb
     store.event(state, "phase_completed", phase=number, branch=f"build/phase-{number}",
                 publication={"integration_branch": "main", "fast_forwarded": True})
     clock.advance(2)
+
+
+DEBATE_TURNS = [
+    "Replays are operator-initiated and bounded to one endpoint. Routing them through the worker queues them "
+    "behind live traffic, which defeats the point of a manual replay. The direct send is deliberate.",
+    "The delivery path is where retries, attempt records and dead-lettering live. A replay that fails today "
+    "leaves no record at all, so the operator cannot tell whether it reached the endpoint.",
+    "Then record attempts from the replay sender too. That keeps replays immediate and still auditable, without "
+    "pushing them through the queue.",
+    "A second place that writes attempt records is a second place to keep correct. The invariant is one "
+    "delivery path. Queue priority solves the latency concern without a bypass.",
+]
+
+
+def _debate(store: StateStore, state: BuildState, clock: Clock, costs: list, control: Path) -> None:
+    """Four turns about the architecture finding, no accepted proposal: the operator decides."""
+    directory = control / "artifacts" / "phase-12"
+    offer = {"status": "agreement", "decision": "Keep direct replay sends and record an attempt for each one.",
+             "finding_dispositions": [{"finding_id": "f2", "disposition": "changed"}],
+             "required_changes": ["Write a delivery attempt record from the replay sender."],
+             "human_decisions": [], "revisit_when": ["Replays need retries"]}
+    for turn, argument in enumerate(DEBATE_TURNS, 1):
+        op_id = f"phase-12:debate-1-turn-{turn}:1"
+        kind = f"debate-1-turn-{turn}"
+        state.operations[op_id] = Operation(op_id, kind, 12, status="completed", started_at=clock())
+        costs.append(dict(_cost(clock, "debate_turn", 12, op_id), cost_usd=2.0))
+        clock.advance(3)
+        (directory / f"DEBATE_TURN-1-{turn}.json").write_text(json.dumps({
+            "argument": argument, "proposal": offer if turn == 3 else None, "accept": None}, indent=2) + "\n")
+        store.event(state, "operation_completed", operation=op_id)
+    state.debate_attempts["12"] = 1
+    state.pending_debate = DebateDecision(12, 1, 1, ["f2"], "demo-evidence", state.base_sha or "",
+                                          state.governance_sha or "", state.generation,
+                                          "c31d7a0e94b25f86d1e3a7c09b4f2e58")
+    _escalate(store, state, "DEBATE_AWAITING_DECISION",
+              "phase 12, debate 1: 4 turns without an accepted proposal")
 
 
 def _escalate(store: StateStore, state: BuildState, code: str, detail: str) -> None:

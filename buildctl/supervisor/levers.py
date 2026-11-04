@@ -19,12 +19,12 @@ from .state import BuildState
 # Start and its stale-run form share a lever; so do the two forms of retry.
 LEVER_NUMBERS = {"start": 1, "recover": 1, "pause": 2, "resume": 3, "approve": 4, "retry": 5, "grant": 5,
                  "reconcile-accept": 6, "reconcile-retry": 7, "trust": 8, "isolation": 9, "auth": 10,
-                 "bootstrap": 11}
+                 "bootstrap": 11, "decide": 12}
 
 STOPPED_STATUSES = frozenset({"human_escalation", "failed"})
 # Stops that wait for a human by design. They are not failures: they show at caution, not
 # danger, and never count toward `max_consecutive_failures`.
-WAITING_CODES = frozenset({"CHECKPOINT_REQUIRED", "DEBATE_REQUIRES_HUMAN"})
+WAITING_CODES = frozenset({"CHECKPOINT_REQUIRED", "DEBATE_REQUIRES_HUMAN", "DEBATE_AWAITING_DECISION"})
 UNRUNNABLE_STATUSES = frozenset({"paused", "human_escalation", "failed", "running"})
 
 
@@ -62,6 +62,20 @@ def grant_matches(state: BuildState) -> bool:
 def approval_is_current(state: BuildState) -> bool:
     requirement = state.pending_approval
     return bool(requirement) and requirement.state_generation == state.generation - 1
+
+
+def is_awaiting_decision(state: BuildState) -> bool:
+    pending = state.pending_debate
+    return bool(pending) and pending.answer is None and state.escalation_code == "DEBATE_AWAITING_DECISION"
+
+
+def decision_is_current(state: BuildState) -> bool:
+    """The decision answers the debate as it stopped: same generation, phase attempt, base and governance."""
+    pending = state.pending_debate
+    return bool(pending) and (pending.state_generation == state.generation - 1
+                              and pending.phase_attempt == state.phase_attempts.get(str(pending.phase))
+                              and pending.base_sha == (state.base_sha or "")
+                              and pending.governance_sha == (state.governance_sha or ""))
 
 
 def approval_scope_holds(state: BuildState, tree_hash: str | None) -> bool:
@@ -146,6 +160,18 @@ def levers(state: BuildState, facts: dict[str, Any]) -> list[dict[str, Any]]:
         ], confirm={"kind": "tree_hash", "value": requirement.tree_hash, "length": 7,
                     "prompt": "Type the first 7 characters of the tree hash you reviewed"},
             summary=f"Sign {requirement.checkpoint} for phase {requirement.phase}, attempt {requirement.phase_attempt}."))
+
+    debate = state.pending_debate
+    if debate and is_awaiting_decision(state):
+        # The answer is part of the lever: the front end adds --answer and --text from its form.
+        result.append(_lever("decide", "Decide the debate", ["debate", "decide", "--nonce", debate.nonce], [
+            lock_condition,
+            _condition("waiting", "A debate is waiting for your decision", True,
+                       f"phase {debate.phase}, debate {debate.debate}"),
+            _condition("current", "Decision matches the debate as it stopped", decision_is_current(state),
+                       f"stopped at generation {debate.state_generation + 1}, now {state.generation}"),
+        ], summary=f"The agents did not agree on {len(debate.finding_ids)} finding(s) in phase {debate.phase}. "
+                   "Rule on them; the same attempt resumes with your answer."))
 
     stopped = is_stopped(state) and not requirement
     if is_ceiling(state):

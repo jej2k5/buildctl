@@ -14,6 +14,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `pause` | Stop starting new work. |
 | `resume` | Allow it again. |
 | `approve --nonce <n>` | Approve the pending checkpoint. The nonce comes from `status`. |
+| `debate decide --nonce <n> --answer <answer>` | Settle a debate the agents could not, at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION). The answer is `finding-stands`, `code-stands` or `own`; `--text` carries your ruling (required for `own`) or a note. The nonce comes from `status`. The same attempt resumes. |
 | `retry` | Try again after an ordinary failure. Starts a fresh attempt. `--authorize-extra-attempt --nonce <n>` buys exactly one more pass past an exhausted ceiling. |
 | `reconcile --operation <id> --action <action>` | Settle an agent call whose outcome is unknown. The action is `accept-output` (keep what it left) or `authorize-retry` (discard it and pay for a new call). |
 | `trust init --to <sha> --confirm <sha>` | Pin the governed files at that commit, this buildctl, and both agent executables. |
@@ -37,10 +38,11 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `limits.max_review_format_attempts` | Malformed review reports tolerated before [REVIEW_FORMAT_ATTEMPTS_EXHAUSTED](#REVIEW_FORMAT_ATTEMPTS_EXHAUSTED). |
 | `limits.max_semantic_review_attempts` | Reviews of one phase before [SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED](#SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED). |
 | `limits.max_debate_rounds` | Debates one phase may hold. |
+| `limits.max_debate_turns` | Turns in one debate when `roles.arbiter.mode` is `debate`, both sides together. Optional; default 6, at least 2. |
 | `limits.max_phase_minutes` | Wall-clock limit for one attempt, before [PHASE_DEADLINE_EXCEEDED](#PHASE_DEADLINE_EXCEEDED). |
 | `limits.max_daily_cost_usd` | The daily budget, in UTC days. |
 | `limits.max_consecutive_failures` | Stops in a row before [MAX_CONSECUTIVE_FAILURES_EXHAUSTED](#MAX_CONSECUTIVE_FAILURES_EXHAUSTED). |
-| `operation_cost_usd` | Estimated cost of each paid call (`implementation`, `review`, `remediation`, `debate`), reserved before the call runs. |
+| `operation_cost_usd` | Estimated cost of each paid call (`implementation`, `review`, `remediation`, `debate`, and `debate_turn` when the arbiter's mode is `debate`), reserved before the call runs. |
 | `governance_documents` | Files beyond the fixed governed set that `trust init` pins and agents may not modify. Required; may be `[]`. |
 | `git.remote` | The remote phase branches are pushed to when `push` is on. |
 | `git.push` | Push the phase branch instead of fast-forwarding the integration branch locally. |
@@ -58,7 +60,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `roles.reviewer.context_documents` | Governed files the reviewer gets as architecture context. Required; may be `[]`. |
 | `roles.reviewer.review_prompt` | Optional. Your own governed review prompt, replacing the built-in one. |
 | `roles.implementer.remediation_prompt` | Optional. Your own governed remediation prompt. |
-| `roles.arbiter.mode` | `interactive`: debates stop for a human. See [DEBATE_REQUIRES_HUMAN](#DEBATE_REQUIRES_HUMAN). |
+| `roles.arbiter.mode` | `debate`: Codex and Claude debate the findings inside the build, and you decide only what they cannot settle. See [Debates](#debates). `interactive`: debates stop for a human. See [DEBATE_REQUIRES_HUMAN](#DEBATE_REQUIRES_HUMAN). Any other value: the arbiter's own command rules on the findings in one call. |
 | `milestones` | Names for `run --until`. |
 | `checkpoints.before_phases` | Phases that need your approval before they start. |
 | `checkpoints.mvp_completion` | The phase after which the build stops for your sign-off. |
