@@ -34,11 +34,11 @@ from .supervisor.phases import ConfigurationError, Phase, load_config, phases_fr
 from .supervisor.review import (OPERATOR_ACCEPTED_STATUS, ReviewValidationError, accumulate_findings,
                                 open_finding_obligations, operator_rulings, realign_findings_to_delta,
                                 reduce_review, strategic_findings, validate_review)
-from .supervisor import levers
+from .supervisor import levers, requests
 from .supervisor.operations import PaidOperation
 from .supervisor.safety import digest_file, redact
 from .supervisor.state import (ApprovalRequirement, BuildState, DebateDecision, ExtraAttemptGrant, Operation,
-                               StateConflict, StateStore, SupervisorLocked, now)
+                               StateConflict, StateStore, SupervisorLocked, now, request_scope)
 from .supervisor.trust import TrustError, TrustStore
 
 
@@ -178,6 +178,35 @@ class Supervisor:
             self.store.event(state, "retry_authorized", extra_attempt=authorize_extra_attempt,
                              phase=retried_phase)
 
+    def reopen(self, number: int) -> None:
+        """Take a phase back out of `completed_phases`, so a fresh attempt can redo it.
+
+        For a phase recorded as complete that was not: before buildctl acted on the
+        implementer's reported status, a `blocked` result was reviewed, merged and counted as
+        done. Nothing is reverted: the earlier commit stays in history, and the next attempt
+        starts from the current integration branch. Attempt numbers keep counting, because
+        operation ids embed them; the per-attempt remediation, review and debate counters
+        reset, since they measured work on the scope being reopened.
+        """
+        with self.store.lock():
+            state = self.store.load()
+            if state.status not in {"idle", "complete"} or state.current_phase is not None:
+                raise RuntimeError(f"reopen requires an idle build, not {state.status}")
+            if number not in state.completed_phases:
+                raise RuntimeError(f"phase {number} is not complete")
+            later = sorted(n for n in state.completed_phases if n > number)
+            if later:
+                raise RuntimeError(f"phase {number} has later complete phases {later}; reopen those first")
+            key = str(number)
+            state.completed_phases.remove(number)
+            for counters in (state.remediation_attempts, state.semantic_review_attempts,
+                             state.review_format_attempts, state.debate_attempts):
+                counters.pop(key, None)
+            state.status = "idle"
+            state.escalation_code = state.escalation_detail = None
+            self.store.event(state, "phase_reopened", phase=number,
+                             note="nothing reverted; the next attempt starts from the integration branch")
+
     def reconcile(self, operation_id: str, action: str) -> None:
         with self.store.lock():
             state = self.store.load()
@@ -285,6 +314,15 @@ class Supervisor:
             state.phase_attempts[key] = state.phase_attempts.get(key, 0) + 1
             state.base_sha = self.git.current_sha()
             state.deadline_at = self._phase_deadline()
+            # Remediation laps measure one attempt's code; a new attempt rebuilds from the base,
+            # so it gets its own. Carried over, the count left a retried phase at its ceiling
+            # before its first review, and the first REMEDIATE stopped it again. Attempts stay
+            # bounded by max_phase_attempts, and every retry past a ceiling still needs a grant.
+            state.remediation_attempts.pop(key, None)
+            grant = state.extra_attempt_grant
+            if (grant and grant.phase == phase.number and grant.ceiling_code == "REMEDIATION_ATTEMPTS_EXHAUSTED"
+                    and grant.authorized and not grant.consumed):
+                grant.consumed = True  # the fresh count is the pass it bought
             self.store.event(state, "phase_started", phase=phase.number, attempt=state.phase_attempts[key])
         if state.phase_attempts[key] > self.config["limits"]["max_phase_attempts"]:
             self._ceiling_reached(state, phase, "PHASE_ATTEMPTS_EXHAUSTED", "phase attempt ceiling")
@@ -312,11 +350,13 @@ class Supervisor:
         codex, claude = CodexAdapter(role_runner, self.snapshot), ClaudeAdapter(role_runner, self.snapshot)
         debate = DebateAdapter(role_runner, self.snapshot, self.config)
         paths = self._paths(phase)
-        phase_result = self._agent_operation(state, phase, "implement", PaidOperation.IMPLEMENTATION, paths["result"],
-                                             lambda timeout: codex.implement(phase, paths["result"], timeout))
-        phase_result = self._consume_interactive_debate_if_ready(
-            state, phase, codex, workspace, paths, phase_result)
-        phase_result = self._consume_debate_decision(state, phase, codex, workspace, paths, phase_result)
+        phase_result = self._implementer_result(state, self._agent_operation(
+            state, phase, "implement", PaidOperation.IMPLEMENTATION, paths["result"],
+            lambda timeout: codex.implement(phase, paths["result"], timeout)))
+        phase_result = self._implementer_result(state, self._consume_interactive_debate_if_ready(
+            state, phase, codex, workspace, paths, phase_result))
+        phase_result = self._implementer_result(state, self._consume_debate_decision(
+            state, phase, codex, workspace, paths, phase_result))
         gate_runner = MechanicalGates(workspace, self.control_root, self.root, self.backend, self.runner)
         while True:
             remediation = state.remediation_attempts.get(key, 0)
@@ -329,9 +369,9 @@ class Supervisor:
                 state.remediation_attempts[key] = remediation + 1
                 review_text = json.dumps({"mechanical_gate_failures": gate["details"]}, indent=2)
                 remediation_path = paths["result"].with_name(f"PHASE_RESULT-remediation-{remediation + 1}.json")
-                phase_result = self._agent_operation(
+                phase_result = self._implementer_result(state, self._agent_operation(
                     state, phase, f"remediate-{remediation + 1}", PaidOperation.REMEDIATION, remediation_path,
-                    lambda timeout, rp=remediation_path, rt=review_text: codex.implement(phase, rp, timeout, review=rt))
+                    lambda timeout, rp=remediation_path, rt=review_text: codex.implement(phase, rp, timeout, review=rt)))
                 continue
             delta = self.git.attributed_delta(workspace, baseline, self._allowed_paths(phase, workspace, paths))
             evidence = self.git.review_evidence(workspace, delta, gate)
@@ -414,9 +454,9 @@ class Supervisor:
                     self._ceiling_reached(state, phase, "REMEDIATION_ATTEMPTS_EXHAUSTED", transition.rationale)
                 state.remediation_attempts[key] = remediation + 1
                 remediation_path = paths["result"].with_name(f"PHASE_RESULT-remediation-{remediation + 1}.json")
-                phase_result = self._agent_operation(
+                phase_result = self._implementer_result(state, self._agent_operation(
                     state, phase, f"remediate-{remediation + 1}", PaidOperation.REMEDIATION, remediation_path,
-                    lambda timeout, rp=remediation_path, rt=json.dumps(review): codex.implement(phase, rp, timeout, review=rt))
+                    lambda timeout, rp=remediation_path, rt=json.dumps(review): codex.implement(phase, rp, timeout, review=rt)))
                 continue
             if transition.disposition == "DEBATE":
                 debate_attempt = unfinished or state.debate_attempts.get(key, 0) + 1
@@ -444,9 +484,9 @@ class Supervisor:
                     self._ceiling_reached(state, phase, "REMEDIATION_ATTEMPTS_EXHAUSTED", "ADR implementation ceiling")
                 state.remediation_attempts[key] = remediation + 1
                 remediation_path = paths["result"].with_name(f"PHASE_RESULT-adr-{debate_attempt}.json")
-                phase_result = self._agent_operation(
+                phase_result = self._implementer_result(state, self._agent_operation(
                     state, phase, f"adr-implement-{debate_attempt}", PaidOperation.REMEDIATION, remediation_path,
-                    lambda timeout, rp=remediation_path: codex.implement(phase, rp, timeout, adr=paths["adr_proposal"].read_text()))
+                    lambda timeout, rp=remediation_path: codex.implement(phase, rp, timeout, adr=paths["adr_proposal"].read_text())))
                 continue
             if transition.rule_id == "R7_FAIL_CLOSED":
                 unmet = [name for name, held in (("budget", budget_available), ("approvals", approvals_valid))
@@ -465,6 +505,32 @@ class Supervisor:
         if phase.merge_policy == "human":
             self._require_approval(state, phase, f"merge-phase-{phase.number}")
         self._finish_phase(state, phase, branch)
+
+    def _implementer_result(self, state: BuildState, result: dict[str, Any]) -> dict[str, Any]:
+        """Act on the status the implementer reported, before anything reviews or merges it.
+
+        The pinned contract admits `complete`, `blocked` and `failed`, and buildctl used to
+        validate the field and then ignore it: a `blocked` result went on to review, merge and
+        `phase_completed`, so a phase that said it could not be done was recorded as done, and
+        every later phase inherited the contradiction. Only `complete` continues now.
+
+        `blocked` is a decision point, not a machinery failure, so it waits for a human without
+        counting toward the consecutive-failure ceiling: resolve the prerequisite, then `retry`.
+        `failed` is the implementer saying the attempt went wrong, and counts like any failure.
+        """
+        status = result.get("status")
+        if status == "complete":
+            return result
+        risks = [str(item) for item in result.get("risks") or []]
+        questions = [str(item) for item in result.get("architecture_questions") or []]
+        # escalation_detail is bounded at 500 characters: the unblock action comes first so
+        # truncation never drops it; the full result stays in the phase artifacts.
+        unblock = "; ".join(risks[-1:] + questions[:1] + risks[:-1] + questions[1:])
+        detail = " | ".join(part for part in (unblock, str(result.get("summary") or "")) if part)
+        code = "PHASE_BLOCKED" if status == "blocked" else "PHASE_FAILED"
+        self.store.event(state, "phase_result_refused", phase=state.current_phase, status=status, code=code)
+        self._escalate(state, code, detail or f"implementer reported {status}")
+        raise AssertionError("unreachable")
 
     def _attempt_records(self, state: BuildState, phase: Phase) -> list[dict[str, Any]]:
         attempt = state.phase_attempts[str(phase.number)]
@@ -912,6 +978,8 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="buildctl")
     result.add_argument("--dry-run", action="store_true")
     result.add_argument("--repo", help="governed repository (default: Git toplevel of the current directory)")
+    result.add_argument("--request-id", help="caller request identity for a command that changes state: "
+                                             "recorded before it acts, never run twice")
     commands = result.add_subparsers(dest="command", required=True)
     bootstrap = commands.add_parser("bootstrap")
     commands.add_parser("start")
@@ -922,6 +990,9 @@ def parser() -> argparse.ArgumentParser:
     phase = commands.add_parser("phase"); phase.add_argument("number", type=int)
     approve = commands.add_parser("approve"); approve.add_argument("--nonce", required=True)
     reconcile = commands.add_parser("reconcile"); reconcile.add_argument("--operation", required=True)
+    reopen = commands.add_parser("reopen", help="take a completed phase back for a fresh attempt")
+    reopen.add_argument("--phase", type=int, required=True)
+    reopen.add_argument("--confirm", type=int, required=True, help="type the phase number again")
     reconcile.add_argument("--action", choices=("accept-output", "authorize-retry"), required=True)
     trust = commands.add_parser("trust"); trust_sub = trust.add_subparsers(dest="trust_command", required=True)
     init = trust_sub.add_parser("init"); init.add_argument("--to", required=True); init.add_argument("--confirm", required=True)
@@ -934,6 +1005,10 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("inspect", help="the full read model as JSON: state, phases, trust, levers")
     audit = commands.add_parser("audit", help="audit events after a sequence number, as JSON")
     audit.add_argument("--after", type=int, default=0); audit.add_argument("--limit", type=int, default=500)
+    audit.add_argument("--request", help="only the events a --request-id request caused")
+    request = commands.add_parser("request", help="what became of a --request-id request")
+    request_sub = request.add_subparsers(dest="request_command", required=True)
+    request_sub.add_parser("show").add_argument("id")
     debate = commands.add_parser("debate", help="answer a debate the agents could not settle")
     debate_sub = debate.add_subparsers(dest="debate_command", required=True)
     decide = debate_sub.add_parser("decide"); decide.add_argument("--nonce", required=True)
@@ -990,64 +1065,121 @@ def evidence_command(args: argparse.Namespace, root: Path, control_root: Path) -
     return 0
 
 
+def request_command(args: argparse.Namespace, control_root: Path) -> int:
+    """Read-only, needs no trust: a caller recovering after a crash must be able to ask."""
+    store = StateStore(control_root)
+    record = requests.lookup(store.load(), args.id) if store.path.exists() else None
+    if record is None:
+        print(json.dumps({"request_id": args.id, "status": "not_accepted",
+                          "contract_version": requests.CONTRACT_VERSION}, indent=2, sort_keys=True))
+        return 1
+    print(json.dumps(record, indent=2, sort_keys=True))
+    return 0
+
+
+ERRORS = (ConfigurationError, AgentError, GitSafetyError, LimitExceeded, HumanEscalation, IsolationError,
+          ReviewValidationError, RuntimeError, StateConflict, SupervisorLocked, TrustError, ValueError)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    request: tuple[StateStore, str] | None = None
+
+    def settle(outcome: str, code: str | None, detail: str | None) -> None:
+        if request is None:
+            return
+        try:
+            requests.finish(request[0], request[1], outcome, code, detail)
+        except Exception as exc:  # The command's own result still stands; the request stays accepted.
+            print(f"buildctl: request {request[1]} outcome not recorded: {redact(str(exc), limit=200)}",
+                  file=sys.stderr)
+
     try:
         root = resolve_repository(args.repo)
         control_root = control_root_for(root)
-        if args.command == "trust":
-            trust = TrustStore(root, control_root)
-            if args.trust_command == "init": print(json.dumps(trust.initialize(args.to, args.confirm), indent=2))
-            else: print(json.dumps(trust.load(), indent=2))
-            return 0
-        if args.command == "validate":
-            trust = TrustStore(root, control_root)
-            if trust.anchor_path.is_file():
-                config = trust.config(); source = "trusted snapshot"
-            else:
-                config = load_config(root / "build.yaml"); source = "untrusted worktree (trust not initialized)"
-            print(f"build.yaml: valid ({len(config['phases'])} phases; {source})")
-            return 0
-        if args.command == "inspect":
-            print(json.dumps(inspect_build(root, control_root), indent=2, sort_keys=True)); return 0
-        if args.command == "audit":
-            print(json.dumps(audit_events(control_root, args.after, args.limit), indent=2, sort_keys=True)); return 0
-        if args.command == "evidence":
-            return evidence_command(args, root, control_root)
-        if args.command == "auth":
-            if args.auth_command != "check":
-                raise ValueError("unknown auth command")
-            try:
-                auth_config = load_config(root / "build.yaml")
-                print(json.dumps(AuthPreflight(config=auth_config).check(), indent=2, sort_keys=True))
-                return 0
-            except AuthenticationRequired as exc:
-                print(json.dumps({"status": "AUTHENTICATION_REQUIRED", "provider": exc.provider,
-                                  "remediation": exc.command}, indent=2, sort_keys=True))
-                return 2
-        supervisor = Supervisor(root, dry_run=args.dry_run)
-        if args.command == "isolation":
-            print(json.dumps(supervisor.verify_isolation(), indent=2, sort_keys=True)); return 0
-        if args.command == "bootstrap": supervisor.bootstrap()
-        elif args.command in {"start", "run"}:
-            supervisor.bootstrap(); supervisor.run(until=resolve_until(supervisor.config, getattr(args, "until", None)))
-        elif args.command == "phase": supervisor.bootstrap(); supervisor.run(only=args.number)
-        elif args.command == "status": print(json.dumps(supervisor.status(), indent=2, sort_keys=True))
-        elif args.command == "pause": supervisor.pause()
-        elif args.command == "resume": supervisor.resume()
-        elif args.command == "retry": supervisor.retry(args.authorize_extra_attempt, args.nonce)
-        elif args.command == "approve": supervisor.approve(args.nonce)
-        elif args.command == "debate": supervisor.decide_debate(args.answer, args.text, args.nonce)
-        elif args.command == "reconcile": supervisor.reconcile(args.operation, args.action)
-        return 0
-    except (ConfigurationError, AgentError, GitSafetyError, LimitExceeded, HumanEscalation,
-            IsolationError, ReviewValidationError, RuntimeError, StateConflict, SupervisorLocked,
-            TrustError, ValueError) as exc:
+        if args.request_id is not None:
+            requests.validate_request_id(args.request_id)
+            if not requests.is_mutating(args):
+                raise ValueError("--request-id applies only to commands that change build state")
+            if args.dry_run:
+                raise ValueError("--request-id cannot be combined with --dry-run")
+            store = StateStore(control_root)
+            prior = requests.accept(store, args.request_id, args.command, requests.arguments(args))
+            if prior is not None:
+                print(json.dumps({"duplicate": True, "request": prior}, indent=2, sort_keys=True))
+                return requests.exit_code(prior)
+            request = (store, args.request_id)
+        with request_scope(request[1] if request else None):
+            code = dispatch(args, root, control_root)
+        settle("ok" if code == 0 else "error", None if code == 0 else f"EXIT_{code}", None)
+        return code
+    except HumanEscalation as exc:
+        settle("escalated", str(exc), None)
+        print(f"buildctl: {redact(str(exc), limit=500)}", file=sys.stderr)
+        return 2
+    except ERRORS as exc:
+        settle("error", type(exc).__name__, str(exc))
         print(f"buildctl: {redact(str(exc), limit=500)}", file=sys.stderr)
         return 2
     except Exception as exc:
+        settle("error", "UNEXPECTED_FAILURE", str(exc))
         print(f"buildctl: UNEXPECTED_FAILURE: {redact(str(exc), limit=500)}", file=sys.stderr)
         return 2
+
+
+def dispatch(args: argparse.Namespace, root: Path, control_root: Path) -> int:
+    if args.command == "trust":
+        trust = TrustStore(root, control_root)
+        if args.trust_command == "init": print(json.dumps(trust.initialize(args.to, args.confirm), indent=2))
+        else: print(json.dumps(trust.load(), indent=2))
+        return 0
+    if args.command == "validate":
+        trust = TrustStore(root, control_root)
+        if trust.anchor_path.is_file():
+            config = trust.config(); source = "trusted snapshot"
+        else:
+            config = load_config(root / "build.yaml"); source = "untrusted worktree (trust not initialized)"
+        print(f"build.yaml: valid ({len(config['phases'])} phases; {source})")
+        return 0
+    if args.command == "inspect":
+        print(json.dumps(inspect_build(root, control_root), indent=2, sort_keys=True)); return 0
+    if args.command == "audit":
+        print(json.dumps(audit_events(control_root, args.after, args.limit, request=args.request),
+                         indent=2, sort_keys=True)); return 0
+    if args.command == "request":
+        return request_command(args, control_root)
+    if args.command == "evidence":
+        return evidence_command(args, root, control_root)
+    if args.command == "auth":
+        if args.auth_command != "check":
+            raise ValueError("unknown auth command")
+        try:
+            auth_config = load_config(root / "build.yaml")
+            print(json.dumps(AuthPreflight(config=auth_config).check(), indent=2, sort_keys=True))
+            return 0
+        except AuthenticationRequired as exc:
+            print(json.dumps({"status": "AUTHENTICATION_REQUIRED", "provider": exc.provider,
+                              "remediation": exc.command}, indent=2, sort_keys=True))
+            return 2
+    supervisor = Supervisor(root, dry_run=args.dry_run)
+    if args.command == "isolation":
+        print(json.dumps(supervisor.verify_isolation(), indent=2, sort_keys=True)); return 0
+    if args.command == "bootstrap": supervisor.bootstrap()
+    elif args.command in {"start", "run"}:
+        supervisor.bootstrap(); supervisor.run(until=resolve_until(supervisor.config, getattr(args, "until", None)))
+    elif args.command == "phase": supervisor.bootstrap(); supervisor.run(only=args.number)
+    elif args.command == "status": print(json.dumps(supervisor.status(), indent=2, sort_keys=True))
+    elif args.command == "pause": supervisor.pause()
+    elif args.command == "resume": supervisor.resume()
+    elif args.command == "retry": supervisor.retry(args.authorize_extra_attempt, args.nonce)
+    elif args.command == "approve": supervisor.approve(args.nonce)
+    elif args.command == "debate": supervisor.decide_debate(args.answer, args.text, args.nonce)
+    elif args.command == "reconcile": supervisor.reconcile(args.operation, args.action)
+    elif args.command == "reopen":
+        if args.phase != args.confirm:
+            raise ValueError("--confirm must repeat the phase number")
+        supervisor.reopen(args.phase)
+    return 0
 
 
 if __name__ == "__main__":

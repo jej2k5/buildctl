@@ -24,7 +24,8 @@ LEVER_NUMBERS = {"start": 1, "recover": 1, "pause": 2, "resume": 3, "approve": 4
 STOPPED_STATUSES = frozenset({"human_escalation", "failed"})
 # Stops that wait for a human by design. They are not failures: they show at caution, not
 # danger, and never count toward `max_consecutive_failures`.
-WAITING_CODES = frozenset({"CHECKPOINT_REQUIRED", "DEBATE_REQUIRES_HUMAN", "DEBATE_AWAITING_DECISION"})
+WAITING_CODES = frozenset({"CHECKPOINT_REQUIRED", "DEBATE_REQUIRES_HUMAN", "DEBATE_AWAITING_DECISION",
+                           "PHASE_BLOCKED"})
 UNRUNNABLE_STATUSES = frozenset({"paused", "human_escalation", "failed", "running"})
 
 

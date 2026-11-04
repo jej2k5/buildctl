@@ -6,12 +6,27 @@ import os
 import socket
 import tempfile
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
 from .audit import AuditChain
+
+
+# The caller request this process is serving (`--request-id`), stamped on every audit event
+# it writes. Unset, events are exactly as before.
+_REQUEST_ID: ContextVar[str | None] = ContextVar("buildctl_request_id", default=None)
+
+
+@contextmanager
+def request_scope(request_id: str | None) -> Iterator[None]:
+    token = _REQUEST_ID.set(request_id)
+    try:
+        yield
+    finally:
+        _REQUEST_ID.reset(token)
 
 
 def now() -> str:
@@ -107,6 +122,7 @@ class BuildState:
     started_at: str | None = None
     updated_at: str = field(default_factory=now)
     history: list[dict[str, Any]] = field(default_factory=list)
+    requests: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BuildState":
@@ -195,6 +211,9 @@ class StateStore:
         state.updated_at = now()
         payload = _audit_payload or {"generation": state.generation, "status": state.status,
                                      "current_phase": state.current_phase, "phase_step": state.phase_step}
+        request_id = _REQUEST_ID.get()
+        if request_id is not None:
+            payload = {**payload, "request_id": request_id}
         state.audit_sequence, state.audit_head_hash = self.audit.append(state.updated_at, _audit_event, payload)
         self._write_state(state)
 

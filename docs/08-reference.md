@@ -2,7 +2,7 @@
 
 ### Commands {#commands}
 
-Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
+Global flags: `--repo <path>` (must be the repository toplevel), `--dry-run`, and `--request-id <id>` for a caller that needs to know what its command did. See [Request identity](#request-identity).
 
 {.wide .anchors prefix=cmd-}
 | Command | What it does |
@@ -17,6 +17,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `debate decide --nonce <n> --answer <answer>` | Settle a debate the agents could not, at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION). The answer is `finding-stands`, `code-stands` or `own`; `--text` carries your ruling (required for `own`) or a note. The nonce comes from `status`. The same attempt resumes. |
 | `retry` | Try again after an ordinary failure. Starts a fresh attempt. `--authorize-extra-attempt --nonce <n>` buys exactly one more pass past an exhausted ceiling. |
 | `reconcile --operation <id> --action <action>` | Settle an agent call whose outcome is unknown. The action is `accept-output` (keep what it left) or `authorize-retry` (discard it and pay for a new call). |
+| `reopen --phase <n> --confirm <n>` | Take a completed phase back so a fresh attempt redoes it, for a phase recorded as done that was not. Nothing is reverted: the next attempt starts from the integration branch. Refused while later phases are complete or the build is not idle. |
 | `trust init --to <sha> --confirm <sha>` | Pin the governed files at that commit, this buildctl, and both agent executables. |
 | `trust show` | Show what is pinned. |
 | `isolation verify` | Probe the sandbox and record that it passed. Runs refuse to start once that record is over 24 hours old. |
@@ -24,10 +25,24 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `bootstrap` | Create the build state. Requires fresh isolation conformance. |
 | `validate` | Check `build.yaml`. |
 | `inspect` | The full read model as one JSON document: state, phases, trust, isolation, budget, the stop and its meaning, and every action with the conditions that allow or lock it. Read-only. |
-| `audit --after <seq>` | Audit events after a sequence number, as JSON. `--limit` caps how many. |
+| `audit --after <seq>` | Audit events after a sequence number, as JSON. `--limit` caps how many. `--request <id>` keeps only the events that request caused. |
+| `request show <id>` | What became of a `--request-id` request: `accepted`, or `terminal` with its outcome. Exits 1 with `not_accepted` if it never landed. Read-only; needs no trust. |
 | `evidence show <commit>` | Print a commit's receipt: every attempt, each agent call and its actions. Works on any clone with the branch. |
 | `evidence verify <commit>` | Check a commit's receipt on any clone: no sandbox, trust or state needed. Reports `verified`, `verified_with_flags`, `verified_by_tree`, `no_receipt` or `failed`, and what it did not prove. `--records <dir>` also checks full records against their hashes. |
 | `evidence prune --phase <n> --confirm <n>` | Delete a phase's full records. Its receipt stays, but its hashes then show only that a record existed. Nothing prunes automatically. |
+
+### Request identity {#request-identity}
+
+An orchestrator that runs buildctl for you needs to know what its command did, even if its own process dies mid-call. Pass `--request-id <id>` (1 to 128 letters, digits, `.`, `_`, `:` or `-`) to any command that changes build state: `start`, `run`, `phase`, `pause`, `resume`, `retry`, `approve`, `debate decide`, `reconcile`, `reopen` and `evidence prune`. Other commands refuse the flag rather than ignore it, and the build must be bootstrapped first.
+
+1. `request_accepted` is written under the state lock before the command does anything. No record means it never took effect, and resending the same id is safe.
+2. Every audit event the command causes carries `request_id`.
+3. `request_terminal` records the outcome when the command returns: `ok`, `escalated` (with the stop code) or `error`.
+4. The same id with the same arguments never runs twice. buildctl prints `{"duplicate": true, "request": ...}` and exits 0 if it finished ok, 2 if it finished otherwise, or 3 if it is still accepted with no outcome. The same id with different arguments is refused.
+
+The request record is authoritative; the exit code is the command's own. If buildctl cannot take the lock to record the outcome within 30 seconds, the command's result stands, the request stays `accepted`, and stderr says the outcome was not recorded.
+
+Accepted with no terminal record means the command is still running, or was interrupted with an unknown outcome. Read `audit --request <id>` and reconcile; never replay it under a new id on that evidence alone. `inspect` reports the contract as `identity_contract.version` (currently 1), so a caller can refuse a buildctl without it.
 
 ### Configuration {#config}
 
@@ -70,7 +85,7 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `evidence.recording` | `"on"` (the default) or `"off"`. On records every agent call and seals a receipt for each commit, and needs the event flags in each role's command (`--json` for `codex`; `--output-format stream-json --verbose` for `claude`). Off turns all of that off. See [What agents did](#evidence). |
 | `phase_defaults.claude_review_required` | Whether the phase must pass review. |
 | `phase_defaults.debate_on_architecture_disagreement` | Whether architectural findings go to a debate. |
-| `phase_defaults.max_remediation_attempts` | Remediation laps before [REMEDIATION_ATTEMPTS_EXHAUSTED](#REMEDIATION_ATTEMPTS_EXHAUSTED). |
+| `phase_defaults.max_remediation_attempts` | Remediation laps per attempt before [REMEDIATION_ATTEMPTS_EXHAUSTED](#REMEDIATION_ATTEMPTS_EXHAUSTED). |
 | `phase_defaults.merge_policy` | `auto`, or `human` to wait for approval before integrating. |
 | `phase_defaults.allowed_paths` | The only paths a phase may change. |
 | `phases` | The ordered list of phases, each with `number`, `name` and `prompt`. |
