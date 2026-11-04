@@ -20,6 +20,7 @@ from buildctl.buildctl import HumanEscalation, main
 from buildctl.supervisor import requests
 from buildctl.supervisor.inspect import audit_events
 from buildctl.supervisor.state import BuildState, StateStore
+from buildctl.supervisor import state as state_module  # noqa: F401
 
 from .helpers import repository
 
@@ -229,3 +230,58 @@ class BoundaryTests(Harness):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DecisionCurrencyTests(Harness):
+    """Reported on a governed repository: `--request-id ... phase 1` stopped at
+    CHECKPOINT_REQUIRED, request_terminal moved the generation, and the approval was
+    refused as stale ("issued at generation 190, now 191"), with no retry path out."""
+
+    def checkpoint(self) -> BuildState:
+        from buildctl.supervisor.state import ApprovalRequirement
+        self.bootstrap()
+        state = self.store.load()
+        state.pending_approval = ApprovalRequirement("phase-1", 1, 2, "tree", "gov", state.generation, "nonce-1")
+        state.status, state.escalation_code = "human_escalation", "CHECKPOINT_REQUIRED"
+        state.phase_attempts = {"1": 2}
+        self.store.event(state, "human_escalation", code="CHECKPOINT_REQUIRED")
+        return state
+
+    def test_request_bookkeeping_does_not_make_an_approval_stale(self):
+        from buildctl.supervisor import levers
+        self.checkpoint()
+        requests.accept(self.store, "run-1", "phase", {})
+        requests.finish(self.store, "run-1", "escalated", "CHECKPOINT_REQUIRED", None)
+        self.assertTrue(levers.approval_is_current(self.store.load()))
+        requests.accept(self.store, "approve-1", "approve", {})        # the approve's own acceptance
+        self.assertTrue(levers.approval_is_current(self.store.load()))
+
+    def test_approve_under_a_request_id_succeeds_end_to_end(self):
+        self.checkpoint()
+        requests.accept(self.store, "run-1", "phase", {})
+        requests.finish(self.store, "run-1", "escalated", "CHECKPOINT_REQUIRED", None)
+        supervisor = cli.Supervisor.__new__(cli.Supervisor)
+        supervisor.store = self.store
+        supervisor.git = mock.Mock(tree_hash=lambda: "tree")
+        requests.accept(self.store, "approve-1", "approve", {})
+        with cli.request_scope("approve-1"):
+            supervisor.approve("nonce-1")
+        self.assertIsNone(self.store.load().pending_approval)
+
+    def test_a_real_state_change_still_makes_an_approval_stale(self):
+        from buildctl.supervisor import levers
+        self.checkpoint()
+        requests.accept(self.store, "run-1", "phase", {})
+        state = self.store.load(); self.store.event(state, "evidence_pruned")
+        self.assertFalse(levers.approval_is_current(self.store.load()))
+
+    def test_state_written_before_the_counter_recovers_it_from_history(self):
+        from buildctl.supervisor import levers
+        self.checkpoint()
+        requests.accept(self.store, "run-1", "phase", {})
+        requests.finish(self.store, "run-1", "escalated", "CHECKPOINT_REQUIRED", None)
+        value = json.loads(self.store.path.read_text()); value.pop("trailing_request_saves")
+        self.store.path.write_text(json.dumps(value))
+        state = self.store.load()
+        self.assertEqual(state.trailing_request_saves, 2)
+        self.assertTrue(levers.approval_is_current(state))
