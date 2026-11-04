@@ -152,9 +152,16 @@ class GitManager:
         branch = f"build/phase-{phase.number}"
         if self._git("show-ref", "--verify", f"refs/heads/{branch}", check=False).returncode == 0:
             existing_base = self._git("merge-base", branch, base_sha).stdout.strip()
-            if existing_base != base_sha:
+            integrated = self._git("merge-base", "--is-ancestor", branch, base_sha, check=False).returncode == 0
+            if existing_base == base_sha:
+                self._git("switch", branch)
+            elif integrated:
+                # A reopened phase finds the branch its first attempt committed, already merged
+                # into this base. Every commit on it is in the base, so nothing is lost by
+                # starting it again from the base. A branch with unmerged commits still refuses.
+                self._git("switch", "-C", branch, base_sha)
+            else:
                 raise GitSafetyError("existing phase branch is not pinned to expected base")
-            self._git("switch", branch)
         else:
             self._git("switch", "-c", branch, base_sha)
         staged: list[str] = []
