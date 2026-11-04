@@ -53,16 +53,21 @@ def is_ceiling(state: BuildState) -> bool:
     return bool(state.escalation_code and state.escalation_code.endswith("_EXHAUSTED"))
 
 
+def decision_generation(state: BuildState) -> int:
+    """The generation a human decision is checked against: request bookkeeping excluded."""
+    return state.generation - state.trailing_request_saves
+
+
 def grant_matches(state: BuildState) -> bool:
     """The grant in state names this phase, this ceiling and the attempt that hit it."""
     grant = state.extra_attempt_grant
     return bool(grant and grant.phase == state.current_phase and grant.ceiling_code == state.escalation_code
-                and grant.attempt_generation == state.generation - 1)
+                and grant.attempt_generation == decision_generation(state) - 1)
 
 
 def approval_is_current(state: BuildState) -> bool:
     requirement = state.pending_approval
-    return bool(requirement) and requirement.state_generation == state.generation - 1
+    return bool(requirement) and requirement.state_generation == decision_generation(state) - 1
 
 
 def is_awaiting_decision(state: BuildState) -> bool:
@@ -73,7 +78,7 @@ def is_awaiting_decision(state: BuildState) -> bool:
 def decision_is_current(state: BuildState) -> bool:
     """The decision answers the debate as it stopped: same generation, phase attempt, base and governance."""
     pending = state.pending_debate
-    return bool(pending) and (pending.state_generation == state.generation - 1
+    return bool(pending) and (pending.state_generation == decision_generation(state) - 1
                               and pending.phase_attempt == state.phase_attempts.get(str(pending.phase))
                               and pending.base_sha == (state.base_sha or "")
                               and pending.governance_sha == (state.governance_sha or ""))
@@ -155,7 +160,7 @@ def levers(state: BuildState, facts: dict[str, Any]) -> list[dict[str, Any]]:
             lock_condition,
             _condition("pending", "A checkpoint is waiting", True, requirement.checkpoint),
             _condition("current", "Approval matches the current state generation", approval_is_current(state),
-                       f"issued at generation {requirement.state_generation + 1}, now {state.generation}"),
+                       f"issued at generation {requirement.state_generation + 1}, now {decision_generation(state)}"),
             _condition("tree", "Repository tree is the one under review", approval_scope_holds(state, tree),
                        f"expected {requirement.tree_hash[:12]}, found {(tree or 'unknown')[:12]}"),
         ], confirm={"kind": "tree_hash", "value": requirement.tree_hash, "length": 7,
@@ -170,7 +175,7 @@ def levers(state: BuildState, facts: dict[str, Any]) -> list[dict[str, Any]]:
             _condition("waiting", "A debate is waiting for your decision", True,
                        f"phase {debate.phase}, debate {debate.debate}"),
             _condition("current", "Decision matches the debate as it stopped", decision_is_current(state),
-                       f"stopped at generation {debate.state_generation + 1}, now {state.generation}"),
+                       f"stopped at generation {debate.state_generation + 1}, now {decision_generation(state)}"),
         ], summary=f"The agents did not agree on {len(debate.finding_ids)} finding(s) in phase {debate.phase}. "
                    "Rule on them; the same attempt resumes with your answer."))
 

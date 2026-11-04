@@ -37,6 +37,9 @@ def now() -> str:
 # any other unknown field is still an error.
 RETIRED_OPERATION_FIELDS = frozenset({"attempt", "input_digest"})
 
+# Saves that record a caller request but change nothing about the build itself.
+REQUEST_BOOKKEEPING_EVENTS = frozenset({"request_accepted", "request_terminal"})
+
 
 @dataclass
 class Operation:
@@ -123,11 +126,23 @@ class BuildState:
     updated_at: str = field(default_factory=now)
     history: list[dict[str, Any]] = field(default_factory=list)
     requests: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Request bookkeeping saves since the last save that changed the build. Approvals, grants
+    # and debate decisions are bound to the generation they were issued at; bookkeeping must
+    # not make them stale, or a checkpoint reached under --request-id could never be signed.
+    trailing_request_saves: int = 0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BuildState":
         known = cls.__dataclass_fields__
         values = {key: value for key, value in data.items() if key in known}
+        if "trailing_request_saves" not in values:
+            # Written before the counter existed: recover it from the event history.
+            trailing = 0
+            for entry in reversed(values.get("history") or []):
+                if entry.get("event") not in REQUEST_BOOKKEEPING_EVENTS:
+                    break
+                trailing += 1
+            values["trailing_request_saves"] = trailing
         values["operations"] = {key: Operation(**{field: item for field, item in value.items()
                                                   if field not in RETIRED_OPERATION_FIELDS})
                                 for key, value in values.get("operations", {}).items()}
@@ -208,6 +223,8 @@ class StateStore:
         if expected_generation is not None and current != expected_generation:
             raise StateConflict(f"state generation changed: expected {expected_generation}, found {current}")
         state.generation = current + 1
+        state.trailing_request_saves = (state.trailing_request_saves + 1
+                                        if _audit_event in REQUEST_BOOKKEEPING_EVENTS else 0)
         state.updated_at = now()
         payload = _audit_payload or {"generation": state.generation, "status": state.status,
                                      "current_phase": state.current_phase, "phase_step": state.phase_step}
