@@ -382,3 +382,29 @@ class RemediationPerAttemptTests(unittest.TestCase):
                 supervisor_for(root)._run_phase(state, PHASE)
             self.assertTrue(state.extra_attempt_grant.consumed)
             self.assertNotIn("1", state.remediation_attempts)
+
+
+class NewAttemptBaselineTests(unittest.TestCase):
+    """A phase reopened on a newer base kept its first attempt's baseline, so the governance
+    edit between the two bases was attributed to the agent ("phase changed unattributed path")."""
+
+    def test_a_new_attempt_never_reuses_an_earlier_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            stale = root / "phase-1-baseline.json"
+            stale.write_text(json.dumps({"from": "attempt 1"}))
+            state = BuildState(governance_sha="gov-sha", phase_attempts={"1": 1})
+            StateStore(root).save(state)
+            supervisor = supervisor_for(root)
+            with self.assertRaises(StopPhase):
+                supervisor._run_phase(state, PHASE)
+            self.assertFalse(stale.exists(), "the new attempt must build its own baseline")
+
+    def test_reopen_releases_the_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "phase-1-baseline.json").write_text("{}")
+            StateStore(root).save(BuildState(governance_sha="gov-sha", completed_phases=[0, 1],
+                                             phase_attempts={"1": 1}))
+            supervisor_for(root).reopen(1)
+            self.assertFalse((root / "phase-1-baseline.json").exists())

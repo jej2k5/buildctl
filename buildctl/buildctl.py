@@ -204,6 +204,7 @@ class Supervisor:
                 counters.pop(key, None)
             state.status = "idle"
             state.escalation_code = state.escalation_detail = None
+            self._release_phase_baseline(number)
             self.store.event(state, "phase_reopened", phase=number,
                              note="nothing reverted; the next attempt starts from the integration branch")
 
@@ -319,6 +320,11 @@ class Supervisor:
             # before its first review, and the first REMEDIATE stopped it again. Attempts stay
             # bounded by max_phase_attempts, and every retry past a ceiling still needs a grant.
             state.remediation_attempts.pop(key, None)
+            # A new attempt clones afresh, so it needs a fresh baseline. `retry` released it, but
+            # `reopen` did not: Phase 1 reopened on a newer base compared its delta against the
+            # first attempt's tree, and a governance edit to CI showed up as an agent change.
+            # Releasing here covers every path into a new attempt.
+            self._release_phase_baseline(phase.number)
             grant = state.extra_attempt_grant
             if (grant and grant.phase == phase.number and grant.ceiling_code == "REMEDIATION_ATTEMPTS_EXHAUSTED"
                     and grant.authorized and not grant.consumed):
