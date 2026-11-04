@@ -2,7 +2,7 @@
 
 ### Commands {#commands}
 
-Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
+Global flags: `--repo <path>` (must be the repository toplevel), `--dry-run`, and `--request-id <id>` for a caller that needs to know what its command did. See [Request identity](#request-identity).
 
 {.wide .anchors prefix=cmd-}
 | Command | What it does |
@@ -25,10 +25,24 @@ Global flags: `--repo <path>` (must be the repository toplevel) and `--dry-run`.
 | `bootstrap` | Create the build state. Requires fresh isolation conformance. |
 | `validate` | Check `build.yaml`. |
 | `inspect` | The full read model as one JSON document: state, phases, trust, isolation, budget, the stop and its meaning, and every action with the conditions that allow or lock it. Read-only. |
-| `audit --after <seq>` | Audit events after a sequence number, as JSON. `--limit` caps how many. |
+| `audit --after <seq>` | Audit events after a sequence number, as JSON. `--limit` caps how many. `--request <id>` keeps only the events that request caused. |
+| `request show <id>` | What became of a `--request-id` request: `accepted`, or `terminal` with its outcome. Exits 1 with `not_accepted` if it never landed. Read-only; needs no trust. |
 | `evidence show <commit>` | Print a commit's receipt: every attempt, each agent call and its actions. Works on any clone with the branch. |
 | `evidence verify <commit>` | Check a commit's receipt on any clone: no sandbox, trust or state needed. Reports `verified`, `verified_with_flags`, `verified_by_tree`, `no_receipt` or `failed`, and what it did not prove. `--records <dir>` also checks full records against their hashes. |
 | `evidence prune --phase <n> --confirm <n>` | Delete a phase's full records. Its receipt stays, but its hashes then show only that a record existed. Nothing prunes automatically. |
+
+### Request identity {#request-identity}
+
+An orchestrator that runs buildctl for you needs to know what its command did, even if its own process dies mid-call. Pass `--request-id <id>` (1 to 128 letters, digits, `.`, `_`, `:` or `-`) to any command that changes build state: `start`, `run`, `phase`, `pause`, `resume`, `retry`, `approve`, `debate decide`, `reconcile`, `reopen` and `evidence prune`. Other commands refuse the flag rather than ignore it, and the build must be bootstrapped first.
+
+1. `request_accepted` is written under the state lock before the command does anything. No record means it never took effect, and resending the same id is safe.
+2. Every audit event the command causes carries `request_id`.
+3. `request_terminal` records the outcome when the command returns: `ok`, `escalated` (with the stop code) or `error`.
+4. The same id with the same arguments never runs twice. buildctl prints `{"duplicate": true, "request": ...}` and exits 0 if it finished ok, 2 if it finished otherwise, or 3 if it is still accepted with no outcome. The same id with different arguments is refused.
+
+The request record is authoritative; the exit code is the command's own. If buildctl cannot take the lock to record the outcome within 30 seconds, the command's result stands, the request stays `accepted`, and stderr says the outcome was not recorded.
+
+Accepted with no terminal record means the command is still running, or was interrupted with an unknown outcome. Read `audit --request <id>` and reconcile; never replay it under a new id on that evidence alone. `inspect` reports the contract as `identity_contract.version` (currently 1), so a caller can refuse a buildctl without it.
 
 ### Configuration {#config}
 

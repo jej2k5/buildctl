@@ -34,11 +34,11 @@ from .supervisor.phases import ConfigurationError, Phase, load_config, phases_fr
 from .supervisor.review import (OPERATOR_ACCEPTED_STATUS, ReviewValidationError, accumulate_findings,
                                 open_finding_obligations, operator_rulings, realign_findings_to_delta,
                                 reduce_review, strategic_findings, validate_review)
-from .supervisor import levers
+from .supervisor import levers, requests
 from .supervisor.operations import PaidOperation
 from .supervisor.safety import digest_file, redact
 from .supervisor.state import (ApprovalRequirement, BuildState, DebateDecision, ExtraAttemptGrant, Operation,
-                               StateConflict, StateStore, SupervisorLocked, now)
+                               StateConflict, StateStore, SupervisorLocked, now, request_scope)
 from .supervisor.trust import TrustError, TrustStore
 
 
@@ -969,6 +969,8 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="buildctl")
     result.add_argument("--dry-run", action="store_true")
     result.add_argument("--repo", help="governed repository (default: Git toplevel of the current directory)")
+    result.add_argument("--request-id", help="caller request identity for a command that changes state: "
+                                             "recorded before it acts, never run twice")
     commands = result.add_subparsers(dest="command", required=True)
     bootstrap = commands.add_parser("bootstrap")
     commands.add_parser("start")
@@ -994,6 +996,10 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("inspect", help="the full read model as JSON: state, phases, trust, levers")
     audit = commands.add_parser("audit", help="audit events after a sequence number, as JSON")
     audit.add_argument("--after", type=int, default=0); audit.add_argument("--limit", type=int, default=500)
+    audit.add_argument("--request", help="only the events a --request-id request caused")
+    request = commands.add_parser("request", help="what became of a --request-id request")
+    request_sub = request.add_subparsers(dest="request_command", required=True)
+    request_sub.add_parser("show").add_argument("id")
     debate = commands.add_parser("debate", help="answer a debate the agents could not settle")
     debate_sub = debate.add_subparsers(dest="debate_command", required=True)
     decide = debate_sub.add_parser("decide"); decide.add_argument("--nonce", required=True)
@@ -1050,68 +1056,121 @@ def evidence_command(args: argparse.Namespace, root: Path, control_root: Path) -
     return 0
 
 
+def request_command(args: argparse.Namespace, control_root: Path) -> int:
+    """Read-only, needs no trust: a caller recovering after a crash must be able to ask."""
+    store = StateStore(control_root)
+    record = requests.lookup(store.load(), args.id) if store.path.exists() else None
+    if record is None:
+        print(json.dumps({"request_id": args.id, "status": "not_accepted",
+                          "contract_version": requests.CONTRACT_VERSION}, indent=2, sort_keys=True))
+        return 1
+    print(json.dumps(record, indent=2, sort_keys=True))
+    return 0
+
+
+ERRORS = (ConfigurationError, AgentError, GitSafetyError, LimitExceeded, HumanEscalation, IsolationError,
+          ReviewValidationError, RuntimeError, StateConflict, SupervisorLocked, TrustError, ValueError)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    request: tuple[StateStore, str] | None = None
+
+    def settle(outcome: str, code: str | None, detail: str | None) -> None:
+        if request is None:
+            return
+        try:
+            requests.finish(request[0], request[1], outcome, code, detail)
+        except Exception as exc:  # The command's own result still stands; the request stays accepted.
+            print(f"buildctl: request {request[1]} outcome not recorded: {redact(str(exc), limit=200)}",
+                  file=sys.stderr)
+
     try:
         root = resolve_repository(args.repo)
         control_root = control_root_for(root)
-        if args.command == "trust":
-            trust = TrustStore(root, control_root)
-            if args.trust_command == "init": print(json.dumps(trust.initialize(args.to, args.confirm), indent=2))
-            else: print(json.dumps(trust.load(), indent=2))
-            return 0
-        if args.command == "validate":
-            trust = TrustStore(root, control_root)
-            if trust.anchor_path.is_file():
-                config = trust.config(); source = "trusted snapshot"
-            else:
-                config = load_config(root / "build.yaml"); source = "untrusted worktree (trust not initialized)"
-            print(f"build.yaml: valid ({len(config['phases'])} phases; {source})")
-            return 0
-        if args.command == "inspect":
-            print(json.dumps(inspect_build(root, control_root), indent=2, sort_keys=True)); return 0
-        if args.command == "audit":
-            print(json.dumps(audit_events(control_root, args.after, args.limit), indent=2, sort_keys=True)); return 0
-        if args.command == "evidence":
-            return evidence_command(args, root, control_root)
-        if args.command == "auth":
-            if args.auth_command != "check":
-                raise ValueError("unknown auth command")
-            try:
-                auth_config = load_config(root / "build.yaml")
-                print(json.dumps(AuthPreflight(config=auth_config).check(), indent=2, sort_keys=True))
-                return 0
-            except AuthenticationRequired as exc:
-                print(json.dumps({"status": "AUTHENTICATION_REQUIRED", "provider": exc.provider,
-                                  "remediation": exc.command}, indent=2, sort_keys=True))
-                return 2
-        supervisor = Supervisor(root, dry_run=args.dry_run)
-        if args.command == "isolation":
-            print(json.dumps(supervisor.verify_isolation(), indent=2, sort_keys=True)); return 0
-        if args.command == "bootstrap": supervisor.bootstrap()
-        elif args.command in {"start", "run"}:
-            supervisor.bootstrap(); supervisor.run(until=resolve_until(supervisor.config, getattr(args, "until", None)))
-        elif args.command == "phase": supervisor.bootstrap(); supervisor.run(only=args.number)
-        elif args.command == "status": print(json.dumps(supervisor.status(), indent=2, sort_keys=True))
-        elif args.command == "pause": supervisor.pause()
-        elif args.command == "resume": supervisor.resume()
-        elif args.command == "retry": supervisor.retry(args.authorize_extra_attempt, args.nonce)
-        elif args.command == "approve": supervisor.approve(args.nonce)
-        elif args.command == "debate": supervisor.decide_debate(args.answer, args.text, args.nonce)
-        elif args.command == "reconcile": supervisor.reconcile(args.operation, args.action)
-        elif args.command == "reopen":
-            if args.phase != args.confirm:
-                raise ValueError("--confirm must repeat the phase number")
-            supervisor.reopen(args.phase)
-        return 0
-    except (ConfigurationError, AgentError, GitSafetyError, LimitExceeded, HumanEscalation,
-            IsolationError, ReviewValidationError, RuntimeError, StateConflict, SupervisorLocked,
-            TrustError, ValueError) as exc:
+        if args.request_id is not None:
+            requests.validate_request_id(args.request_id)
+            if not requests.is_mutating(args):
+                raise ValueError("--request-id applies only to commands that change build state")
+            if args.dry_run:
+                raise ValueError("--request-id cannot be combined with --dry-run")
+            store = StateStore(control_root)
+            prior = requests.accept(store, args.request_id, args.command, requests.arguments(args))
+            if prior is not None:
+                print(json.dumps({"duplicate": True, "request": prior}, indent=2, sort_keys=True))
+                return requests.exit_code(prior)
+            request = (store, args.request_id)
+        with request_scope(request[1] if request else None):
+            code = dispatch(args, root, control_root)
+        settle("ok" if code == 0 else "error", None if code == 0 else f"EXIT_{code}", None)
+        return code
+    except HumanEscalation as exc:
+        settle("escalated", str(exc), None)
+        print(f"buildctl: {redact(str(exc), limit=500)}", file=sys.stderr)
+        return 2
+    except ERRORS as exc:
+        settle("error", type(exc).__name__, str(exc))
         print(f"buildctl: {redact(str(exc), limit=500)}", file=sys.stderr)
         return 2
     except Exception as exc:
+        settle("error", "UNEXPECTED_FAILURE", str(exc))
         print(f"buildctl: UNEXPECTED_FAILURE: {redact(str(exc), limit=500)}", file=sys.stderr)
         return 2
+
+
+def dispatch(args: argparse.Namespace, root: Path, control_root: Path) -> int:
+    if args.command == "trust":
+        trust = TrustStore(root, control_root)
+        if args.trust_command == "init": print(json.dumps(trust.initialize(args.to, args.confirm), indent=2))
+        else: print(json.dumps(trust.load(), indent=2))
+        return 0
+    if args.command == "validate":
+        trust = TrustStore(root, control_root)
+        if trust.anchor_path.is_file():
+            config = trust.config(); source = "trusted snapshot"
+        else:
+            config = load_config(root / "build.yaml"); source = "untrusted worktree (trust not initialized)"
+        print(f"build.yaml: valid ({len(config['phases'])} phases; {source})")
+        return 0
+    if args.command == "inspect":
+        print(json.dumps(inspect_build(root, control_root), indent=2, sort_keys=True)); return 0
+    if args.command == "audit":
+        print(json.dumps(audit_events(control_root, args.after, args.limit, request=args.request),
+                         indent=2, sort_keys=True)); return 0
+    if args.command == "request":
+        return request_command(args, control_root)
+    if args.command == "evidence":
+        return evidence_command(args, root, control_root)
+    if args.command == "auth":
+        if args.auth_command != "check":
+            raise ValueError("unknown auth command")
+        try:
+            auth_config = load_config(root / "build.yaml")
+            print(json.dumps(AuthPreflight(config=auth_config).check(), indent=2, sort_keys=True))
+            return 0
+        except AuthenticationRequired as exc:
+            print(json.dumps({"status": "AUTHENTICATION_REQUIRED", "provider": exc.provider,
+                              "remediation": exc.command}, indent=2, sort_keys=True))
+            return 2
+    supervisor = Supervisor(root, dry_run=args.dry_run)
+    if args.command == "isolation":
+        print(json.dumps(supervisor.verify_isolation(), indent=2, sort_keys=True)); return 0
+    if args.command == "bootstrap": supervisor.bootstrap()
+    elif args.command in {"start", "run"}:
+        supervisor.bootstrap(); supervisor.run(until=resolve_until(supervisor.config, getattr(args, "until", None)))
+    elif args.command == "phase": supervisor.bootstrap(); supervisor.run(only=args.number)
+    elif args.command == "status": print(json.dumps(supervisor.status(), indent=2, sort_keys=True))
+    elif args.command == "pause": supervisor.pause()
+    elif args.command == "resume": supervisor.resume()
+    elif args.command == "retry": supervisor.retry(args.authorize_extra_attempt, args.nonce)
+    elif args.command == "approve": supervisor.approve(args.nonce)
+    elif args.command == "debate": supervisor.decide_debate(args.answer, args.text, args.nonce)
+    elif args.command == "reconcile": supervisor.reconcile(args.operation, args.action)
+    elif args.command == "reopen":
+        if args.phase != args.confirm:
+            raise ValueError("--confirm must repeat the phase number")
+        supervisor.reopen(args.phase)
+    return 0
 
 
 if __name__ == "__main__":

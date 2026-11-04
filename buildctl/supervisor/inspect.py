@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from .requests import contract as request_contract
 from . import levers as lever_rules
 from .audit import AuditChain
 from .budget import BudgetLedger, LimitExceeded
@@ -136,7 +137,8 @@ def _lock(control_root: Path, status: str) -> dict[str, Any]:
             "held": alive and status == "running"}
 
 
-def audit_events(control_root: Path, after: int = 0, limit: int = 500) -> list[dict[str, Any]]:
+def audit_events(control_root: Path, after: int = 0, limit: int = 500,
+                 request: str | None = None) -> list[dict[str, Any]]:
     path = control_root / "audit.jsonl"
     if not path.exists():
         return []
@@ -146,6 +148,8 @@ def audit_events(control_root: Path, after: int = 0, limit: int = 500) -> list[d
             entry = json.loads(line)
         except ValueError:
             break
+        if request is not None and entry.get("payload", {}).get("request_id") != request:
+            continue
         if entry.get("sequence", 0) > after:
             result.append(entry)
             if len(result) >= limit:
@@ -363,6 +367,7 @@ def inspect(repo: Path, control_root: Path, runner: Callable[..., Any] = subproc
 
     return {
         "schema": 1,
+        "identity_contract": request_contract(),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repo": {"path": str(repo), "branch": _git(repo, "rev-parse", "--abbrev-ref", "HEAD", runner=runner),
                  "head_sha": head_sha, "tree_hash": tree_hash,
