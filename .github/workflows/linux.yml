@@ -43,6 +43,8 @@ jobs:
         run: |
           git config --global user.email ci@invalid && git config --global user.name ci
           python -m unittest discover -s tests -t . -v 2>&1 | tee tests.log | tail -5
+          # The tail hides which test failed; print every failure in full.
+          grep -A40 -E "^(FAIL|ERROR):" tests.log || true
           grep -q "test_the_real_backend_passes_the_probe .* ok" tests.log
           tail -1 tests.log | grep -q "^OK"
 
