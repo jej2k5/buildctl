@@ -182,9 +182,9 @@ A new attempt would exceed `max_phase_attempts`.
 
 #### REMEDIATION_ATTEMPTS_EXHAUSTED {#REMEDIATION_ATTEMPTS_EXHAUSTED signal=danger}
 
-Another remediation lap would exceed the phase's `max_remediation_attempts`.
+Another remediation lap would exceed the phase's `max_remediation_attempts` for this attempt.
 
-**Clear it:** `buildctl retry --authorize-extra-attempt --nonce <n>`, with the nonce from `status`, buys one more lap. Or fix the cause first.
+**Clear it:** `buildctl retry --authorize-extra-attempt --nonce <n>`, with the nonce from `status`. The retry is a fresh attempt, and each attempt counts its own remediation laps, so it gets the full allowance. Or fix the cause first.
 
 #### SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED {#SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED signal=danger}
 

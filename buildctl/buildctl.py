@@ -314,6 +314,15 @@ class Supervisor:
             state.phase_attempts[key] = state.phase_attempts.get(key, 0) + 1
             state.base_sha = self.git.current_sha()
             state.deadline_at = self._phase_deadline()
+            # Remediation laps measure one attempt's code; a new attempt rebuilds from the base,
+            # so it gets its own. Carried over, the count left a retried phase at its ceiling
+            # before its first review, and the first REMEDIATE stopped it again. Attempts stay
+            # bounded by max_phase_attempts, and every retry past a ceiling still needs a grant.
+            state.remediation_attempts.pop(key, None)
+            grant = state.extra_attempt_grant
+            if (grant and grant.phase == phase.number and grant.ceiling_code == "REMEDIATION_ATTEMPTS_EXHAUSTED"
+                    and grant.authorized and not grant.consumed):
+                grant.consumed = True  # the fresh count is the pass it bought
             self.store.event(state, "phase_started", phase=phase.number, attempt=state.phase_attempts[key])
         if state.phase_attempts[key] > self.config["limits"]["max_phase_attempts"]:
             self._ceiling_reached(state, phase, "PHASE_ATTEMPTS_EXHAUSTED", "phase attempt ceiling")

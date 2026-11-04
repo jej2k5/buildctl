@@ -343,3 +343,42 @@ class RetrySafetyTests(unittest.TestCase):
             self.assertNotIsInstance(caught.exception, StopPhase,
                                      "the ceiling must stop the phase before any work starts")
             self.assertEqual(state.escalation_code, "PHASE_ATTEMPTS_EXHAUSTED")
+
+
+class RemediationPerAttemptTests(unittest.TestCase):
+    """Phase 2 of a governed repository: attempt 5 began with remediation already at its
+    ceiling from attempts 1-4, so its first REMEDIATE would stop it before any fix-up."""
+
+    def test_a_new_attempt_starts_with_no_remediation_laps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            state = BuildState(governance_sha="gov-sha", phase_attempts={"1": 2}, remediation_attempts={"1": 3})
+            StateStore(root).save(state)
+            with self.assertRaises(StopPhase):
+                supervisor_for(root)._run_phase(state, PHASE)
+            self.assertEqual(state.phase_attempts["1"], 3)
+            self.assertNotIn("1", state.remediation_attempts)
+
+    def test_re_entering_the_running_attempt_keeps_its_laps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            workspace = root / "ws"; workspace.mkdir()
+            state = BuildState(governance_sha="gov-sha", current_phase=1, phase_attempts={"1": 2},
+                               remediation_attempts={"1": 1}, workspace=str(workspace),
+                               deadline_at=(datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat())
+            StateStore(root).save(state)
+            with self.assertRaises(StopPhase):
+                supervisor_for(root)._run_phase(state, PHASE)
+            self.assertEqual(state.remediation_attempts["1"], 1)
+
+    def test_an_authorized_remediation_grant_is_spent_by_the_fresh_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            grant = ExtraAttemptGrant(1, "REMEDIATION_ATTEMPTS_EXHAUSTED", 3, "n", authorized=True)
+            state = BuildState(governance_sha="gov-sha", phase_attempts={"1": 1}, remediation_attempts={"1": 1},
+                               extra_attempt_grant=grant)
+            StateStore(root).save(state)
+            with self.assertRaises(StopPhase):
+                supervisor_for(root)._run_phase(state, PHASE)
+            self.assertTrue(state.extra_attempt_grant.consumed)
+            self.assertNotIn("1", state.remediation_attempts)

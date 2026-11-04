@@ -85,7 +85,7 @@ Accepted with no terminal record means the command is still running, or was inte
 | `evidence.recording` | `"on"` (the default) or `"off"`. On records every agent call and seals a receipt for each commit, and needs the event flags in each role's command (`--json` for `codex`; `--output-format stream-json --verbose` for `claude`). Off turns all of that off. See [What agents did](#evidence). |
 | `phase_defaults.claude_review_required` | Whether the phase must pass review. |
 | `phase_defaults.debate_on_architecture_disagreement` | Whether architectural findings go to a debate. |
-| `phase_defaults.max_remediation_attempts` | Remediation laps before [REMEDIATION_ATTEMPTS_EXHAUSTED](#REMEDIATION_ATTEMPTS_EXHAUSTED). |
+| `phase_defaults.max_remediation_attempts` | Remediation laps per attempt before [REMEDIATION_ATTEMPTS_EXHAUSTED](#REMEDIATION_ATTEMPTS_EXHAUSTED). |
 | `phase_defaults.merge_policy` | `auto`, or `human` to wait for approval before integrating. |
 | `phase_defaults.allowed_paths` | The only paths a phase may change. |
 | `phases` | The ordered list of phases, each with `number`, `name` and `prompt`. |
