@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -63,6 +64,23 @@ class Review(GateCase):
                   '"findings": [{"severity": "SEVERE", "target": "PH-1", "summary": "s"}]}', "x")
         with self.assertRaises(RecordError):
             parse("no json here", "x")
+
+    def test_parse_reads_the_answer_out_of_an_event_stream(self):
+        answer = ('```json\n{"protocol_version": "buildctl-roadmap-review-v1", "render_digest": "x", '
+                  '"findings": []}\n```')
+        claude = "\n".join(json.dumps(event) for event in (
+            {"type": "system", "subtype": "init"},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "{not the answer}"}]}},
+            {"type": "result", "subtype": "success", "result": answer}))
+        codex = "\n".join(json.dumps(event) for event in (
+            {"type": "thread.started", "thread_id": "t"},
+            {"type": "item.completed", "item": {"type": "reasoning", "text": "{draft}"}},
+            {"type": "item.completed", "item": {"type": "agent_message", "text": answer}},
+            {"type": "turn.completed"}))
+        self.assertEqual(parse(claude, "x"), [])
+        self.assertEqual(parse(codex, "x"), [])
+        with self.assertRaises(RecordError):
+            parse(json.dumps({"type": "system"}) + "\n" + json.dumps({"type": "assistant"}), "x")
 
     def test_same_vendor_interviews_are_flagged(self):
         self.assertTrue(vendor_warnings("claude-code", {"vendor": "anthropic"}))
