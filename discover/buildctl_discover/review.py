@@ -32,8 +32,32 @@ def build_prompt(state: Any, files: dict[str, bytes], expected: str) -> str:
             .replace("{proposal}", "\n\n".join(sections)))
 
 
+def final_message(output: str) -> str:
+    """The reviewer's answer when its CLI emits an event stream, else the output unchanged.
+
+    Agent evidence recording requires event flags on role commands (Claude
+    `--output-format stream-json`, Codex `--json`), so the answer arrives as the last
+    `result` event or the last completed `agent_message` item, one JSON object per line."""
+    answer = None
+    lines = [line for line in output.splitlines() if line.strip()]
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return output
+        if not isinstance(event, dict):
+            return output
+        if event.get("type") == "result" and isinstance(event.get("result"), str):
+            answer = event["result"]
+        item = event.get("item")
+        if (event.get("type") == "item.completed" and isinstance(item, dict)
+                and item.get("type") == "agent_message" and isinstance(item.get("text"), str)):
+            answer = item["text"]
+    return answer if answer is not None and len(lines) > 1 else output
+
+
 def parse(output: str, expected: str) -> list[dict[str, str]]:
-    text = output.strip()
+    text = final_message(output).strip()
     fenced = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     candidates = [text, *reversed(fenced)]
     if "{" in text:
