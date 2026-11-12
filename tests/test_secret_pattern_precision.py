@@ -53,6 +53,9 @@ BENIGN = (
     "password = hashlib.sha256(pw).hexdigest()",
     "api_key: %API_KEY%",
     "secret = ***",
+    "secret = self.root/'secret'",
+    'token_file = tmp/"token.json"',
+    "password = self.fixtures/'auth'/'password.txt'",
 )
 
 # Values that plausibly carry a credential. Every one must still fail closed.

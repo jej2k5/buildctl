@@ -38,6 +38,9 @@ DOTTED_REFERENCE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_
 BARE_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 MIN_SECRET_VALUE_LENGTH = 16
 DOTTED_REFERENCE_MAX_LENGTH = 40
+# `self.root/'secret'`, `tmp/"token.json"`: a path join onto a quoted literal. Quotes never
+# appear inside credential material, so an identifier joined to a quoted segment is a path.
+PATH_JOIN_EXPRESSION = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*(/[\"'][^\"'/]*[\"']?)+")
 
 SECRET_FILENAMES = ("*.pem", "*.key", ".env", ".env.*", "id_rsa", "id_rsa.*")
 
@@ -184,6 +187,8 @@ def looks_like_secret_value(raw: str) -> bool:
         return False
     if len(value) < MIN_SECRET_VALUE_LENGTH:
         return False                                   # too short to be a real credential
+    if PATH_JOIN_EXPRESSION.fullmatch(value):
+        return False                                   # self.root/'secret', tmp/"token.json"
     if len(value) < DOTTED_REFERENCE_MAX_LENGTH and DOTTED_REFERENCE.fullmatch(value):
         return False                                   # response.token, settings.SECRET_KEY
     if BARE_IDENTIFIER.fullmatch(value) and ("_" in value or not any(c.isdigit() for c in value)):
