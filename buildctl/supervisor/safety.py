@@ -41,6 +41,12 @@ DOTTED_REFERENCE_MAX_LENGTH = 40
 # `self.root/'secret'`, `tmp/"token.json"`: a path join onto a quoted literal. Quotes never
 # appear inside credential material, so an identifier joined to a quoted segment is a path.
 PATH_JOIN_EXPRESSION = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*(/[\"'][^\"'/]*[\"']?)+")
+# `offline-client-secret`: lowercase words joined by hyphens, no digits. The kebab-case twin
+# of the snake_case identifier rule below; fixtures name their fake values this way.
+KEBAB_WORDS = re.compile(r"[a-z]+(-[a-z]+)+")
+# `https://oauth2.googleapis.com/token`: an endpoint, not a credential. Only URLs with no
+# userinfo, query or fragment qualify, since those are where a URL can carry a secret.
+PLAIN_URL = re.compile(r"https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?")
 
 SECRET_FILENAMES = ("*.pem", "*.key", ".env", ".env.*", "id_rsa", "id_rsa.*")
 
@@ -189,6 +195,10 @@ def looks_like_secret_value(raw: str) -> bool:
         return False                                   # too short to be a real credential
     if PATH_JOIN_EXPRESSION.fullmatch(value):
         return False                                   # self.root/'secret', tmp/"token.json"
+    if KEBAB_WORDS.fullmatch(value):
+        return False                                   # offline-client-secret
+    if PLAIN_URL.fullmatch(value):
+        return False                                   # https://oauth2.googleapis.com/token
     if len(value) < DOTTED_REFERENCE_MAX_LENGTH and DOTTED_REFERENCE.fullmatch(value):
         return False                                   # response.token, settings.SECRET_KEY
     if BARE_IDENTIFIER.fullmatch(value) and ("_" in value or not any(c.isdigit() for c in value)):

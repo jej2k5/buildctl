@@ -56,6 +56,10 @@ BENIGN = (
     "secret = self.root/'secret'",
     'token_file = tmp/"token.json"',
     "password = self.fixtures/'auth'/'password.txt'",
+    "SECRET = 'offline-client-secret'",
+    "TOKEN = 'offline-refresh-token'",
+    "TOKEN = 'https://oauth2.googleapis.com/token'",
+    "token_url = 'https://localhost:8765/api/token/'",
 )
 
 # Values that plausibly carry a credential. Every one must still fail closed.
@@ -68,6 +72,9 @@ SECRET_LIKE = (
     (github_token(), "github token"),
     (private_key_header(), "private key header"),
     (f"refresh_token = {high_entropy('1//0eXaMpLe-LoNg', '-OpAqUe-VaLuE-9876543210')}", "oauth refresh token"),
+    ("password = https://jj:Hunter2Hunter2@example.com/", "url with userinfo"),
+    ("secret = offline-client-secret-9f8a7b6c", "kebab with digits"),
+    ("secret = Offline-Client-Secret", "mixed-case kebab"),
 )
 
 
