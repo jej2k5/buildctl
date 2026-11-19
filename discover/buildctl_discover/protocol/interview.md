@@ -25,6 +25,7 @@ You are running discovery for a project that buildctl will build. buildctl execu
 A phase prompt is short. What makes a phase real is its acceptance contract, because buildctl merges whatever passes it. For every phase:
 
 - Add at least one command or required file that proves **this phase's** work. Re-running the whole test suite proves nothing new. Use `{"commands": {"add": [["{python}", "-m", "unittest", "tests.test_retry"]]}}`.
+- Commands that need a Node project's packages use `{node}`, `{npm}` or `{npx}` (buildctl installs `package-lock.json` before the gate); use `node --import tsx`, not the `tsx` command.
 - Commands run in a sandbox with no network. No services, no credentials, no downloads.
 - `{"add": [...]}` extends the project defaults. `{"set": [...]}` replaces them. Use `set` for `allowed_paths` when a phase must stay narrow, such as a documentation-only phase.
 - `allowed_paths` must never include governed paths: `build.yaml`, `AGENTS.md`, `CLAUDE.md`, `prompts/`, `templates/`, or the discovery documents under `docs/`. Name the paths the phase needs, like `src/delivery/`.

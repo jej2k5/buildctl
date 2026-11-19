@@ -24,7 +24,7 @@
 - The feed of what agents did is not in the terminal UI yet.
 - A role with network access reaches the whole network, on macOS and Linux alike. There is no per-host allowlist yet.
 - The implementer is assumed to be Codex and the reviewer Claude. `auth check`, credential staging and parts of config validation are written for those two CLIs.
-- Dependency provisioning for acceptance commands is Python-only (`pyproject.toml`, `{python}`).
+- Dependency provisioning for acceptance commands covers Python (`pyproject.toml`, `{python}`) and Node with npm lockfiles (`package-lock.json`, `{node}`/`{npm}`/`{npx}`). Yarn and pnpm lockfiles are not supported. Node installs run with network on, so a package's install script can reach the network, though not your home folder.
 - With `arbiter.mode` set to anything but `interactive` or `debate`, the arbiter command only receives `{prompt}` and `{output}`. A command that uses `{phase}`, `{review}` or `{rounds}` fails. Use `debate` or `interactive`.
 - A debate always has two sides, Codex and Claude, and cannot be steered while it runs. You decide only at the end, if they do not agree.
 - Deciding a debate is in the web console and the CLI. The terminal UI shows the stop and points to them.

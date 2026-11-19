@@ -24,6 +24,16 @@ PYTHON_PLACEHOLDER = "{python}"
 PRODUCT_MANIFEST = "pyproject.toml"
 PROVISION_TIMEOUT = 900.0
 
+# Node products: acceptance commands request {node}, {npm} or {npx}. Before the gate opens the
+# supervisor installs package-lock.json's exact, integrity-pinned packages into an environment
+# outside the workspace. The install runs sandboxed (network on, writes confined to that
+# environment, the host home denied) because packages such as Prisma fetch engines in their
+# install scripts. While the gate commands run, workspace/node_modules links to it; the link is
+# removed before the phase delta is taken, so it never counts as an edit.
+NODE_PLACEHOLDERS = ("{node}", "{npm}", "{npx}")
+NODE_MANIFEST, NODE_LOCKFILE, NODE_MODULES = "package.json", "package-lock.json", "node_modules"
+NPM_REGISTRY = "https://registry.npmjs.org/"
+
 
 @dataclass
 class GateResult:
@@ -110,6 +120,49 @@ def product_dependencies(raw: bytes) -> tuple[str, ...]:
     return tuple(requirements)
 
 
+def node_lock_packages(raw: bytes) -> int:
+    """Validate package-lock.json and return how many packages it pins.
+
+    Every installed package must come from the public npm registry with an integrity hash.
+    Git, tarball-URL and file dependencies are refused: like a Python direct URL reference,
+    they name an arbitrary location instead of a version the registry resolves.
+    """
+    try:
+        lock = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ProvisioningError(f"{NODE_LOCKFILE} is not valid JSON: {exc}") from exc
+    if not isinstance(lock, dict) or not isinstance(lock.get("lockfileVersion"), int) or lock["lockfileVersion"] < 2:
+        raise ProvisioningError(f"{NODE_LOCKFILE} must be lockfileVersion 2 or later (npm 7+)")
+    packages = lock.get("packages")
+    if not isinstance(packages, dict):
+        raise ProvisioningError(f"{NODE_LOCKFILE} has no packages table")
+    count = 0
+    for path, entry in packages.items():
+        if path == "" or not isinstance(entry, dict) or entry.get("link") is True:
+            continue
+        resolved, integrity = entry.get("resolved"), entry.get("integrity")
+        if not isinstance(resolved, str) or not resolved.startswith(NPM_REGISTRY):
+            raise ProvisioningError(f"{path} does not resolve from the npm registry: {resolved!r}")
+        if not isinstance(integrity, str) or not integrity.startswith(("sha512-", "sha384-", "sha256-")):
+            raise ProvisioningError(f"{path} has no integrity hash in {NODE_LOCKFILE}")
+        count += 1
+    return count
+
+
+def node_executables() -> dict[str, str]:
+    import shutil
+    found = {name: shutil.which(name) for name in ("node", "npm", "npx")}
+    missing = [name for name, path in found.items() if not path]
+    if missing:
+        raise ProvisioningError(f"Node tooling not found on PATH: {', '.join(missing)}")
+    home = Path.home().resolve()
+    for name, path in found.items():
+        if Path(path).resolve().is_relative_to(home):
+            raise ProvisioningError(f"{name} lives under the home folder ({path}); the gate sandbox "
+                                    f"cannot read it. Install Node outside the home folder.")
+    return {"{" + name + "}": str(Path(path)) for name, path in found.items()}
+
+
 def provisioning_environment() -> dict[str, str]:
     """Environment for the supervisor-side dependency install.
 
@@ -135,6 +188,7 @@ class MechanicalGates:
         # (manifest digest, interpreter). Rebuilt when the agent edits the manifest between
         # remediation rounds, reused otherwise so one phase installs its dependencies once.
         self._environment: tuple[str, Path] | None = None
+        self._node: tuple[str, Path] | None = None
 
     def product_interpreter(self) -> tuple[Path, tuple[str, ...]]:
         """Build the declared dependency environment and return its interpreter.
@@ -176,6 +230,56 @@ class MechanicalGates:
         self._environment = (digest, interpreter)
         return interpreter, requirements
 
+    def node_environment(self) -> tuple[Path, int]:
+        """Install the lockfile's packages, sandboxed, and return the node_modules directory."""
+        try:
+            manifest = (self.workspace / NODE_MANIFEST).read_bytes()
+            lockfile = (self.workspace / NODE_LOCKFILE).read_bytes()
+        except OSError as exc:
+            raise ProvisioningError(f"{NODE_MANIFEST} and {NODE_LOCKFILE} are both required to "
+                                    f"provision Node dependencies ({exc.strerror})") from exc
+        count = node_lock_packages(lockfile)
+        schema = self.workspace / "prisma" / "schema.prisma"
+        schema_bytes = schema.read_bytes() if schema.is_file() else b""
+        digest = hashlib.sha256(manifest + b"\0" + lockfile + b"\0" + schema_bytes).hexdigest()
+        if self._node and self._node[0] == digest:
+            return self._node[1], count
+        root = Path(tempfile.mkdtemp(prefix="buildctl-node-env-")).resolve()
+        project, home = root / "project", root / "home"
+        project.mkdir(); home.mkdir(mode=0o700)
+        (project / NODE_MANIFEST).write_bytes(manifest)
+        (project / NODE_LOCKFILE).write_bytes(lockfile)
+        if schema_bytes:
+            (project / "prisma").mkdir()
+            (project / "prisma" / "schema.prisma").write_bytes(schema_bytes)
+        tools = node_executables()
+        context = IsolationContext("provision", project, self.control_root, self.authoritative_repo,
+                                   output_dir=None, home_dir=home, network_allowed=True,
+                                   host_home=Path.home())
+        env = sanitized_environment("provision", home=home)
+        # Empty config files of our own: the operator's .npmrc (registries, tokens) never applies.
+        (home / "npmrc-user").write_text(""); (home / "npmrc-global").write_text("")
+        env.update({"npm_config_userconfig": str(home / "npmrc-user"),
+                    "npm_config_globalconfig": str(home / "npmrc-global"),
+                    "npm_config_cache": str(home / ".npm"), "npm_config_update_notifier": "false",
+                    "npm_config_fund": "false", "npm_config_audit": "false", "CI": "1"})
+        steps = [[tools["{npm}"], "ci", "--no-audit", "--no-fund", "--loglevel=error"]]
+        if schema_bytes:
+            steps.append([str(project / NODE_MODULES / ".bin" / "prisma"), "generate",
+                          "--schema", str(project / "prisma" / "schema.prisma")])
+        for argv in steps:
+            completed = self.runner(self.backend.command(argv, context), cwd=project, text=True,
+                                    capture_output=True, env=env, timeout=PROVISION_TIMEOUT)
+            if completed.returncode:
+                detail = (completed.stderr or "").strip() or (completed.stdout or "").strip()
+                raise ProvisioningError(f"{' '.join(Path(argv[0]).name.split()) } {argv[1]} failed: "
+                                        f"{redact(detail, limit=1500)}")
+        modules = project / NODE_MODULES
+        if not modules.is_dir():
+            raise ProvisioningError("npm ci finished without producing node_modules")
+        self._node = (digest, modules)
+        return modules, count
+
     def _link_product_sources(self, root: Path) -> None:
         """Put the workspace source tree on the environment's path without building it."""
         source = (self.workspace / "src").resolve()
@@ -201,6 +305,35 @@ class MechanicalGates:
             except ProvisioningError as exc:
                 details.append({"gate": "dependency_provision", "target": PRODUCT_MANIFEST,
                                 "passed": False, "output": redact(str(exc), limit=2000)})
+        node_tools: dict[str, str] | None = None
+        node_link: Path | None = None
+        if any(token in part for argv in phase.commands for part in argv for token in NODE_PLACEHOLDERS):
+            try:
+                modules, count = self.node_environment()
+                link = self.workspace / NODE_MODULES
+                if link.exists() or link.is_symlink():
+                    raise ProvisioningError(f"the workspace already has {NODE_MODULES}; it must "
+                                            f"come from the lockfile, not the repository")
+                link.symlink_to(modules, target_is_directory=True)
+                node_link, node_tools = link, node_executables()
+                details.append({"gate": "dependency_provision", "target": NODE_LOCKFILE, "passed": True,
+                                "output": f"installed {count} locked packages"})
+            except ProvisioningError as exc:
+                details.append({"gate": "dependency_provision", "target": NODE_LOCKFILE,
+                                "passed": False, "output": redact(str(exc), limit=2000)})
+        try:
+            self._run_checks(phase, timeout, details, interpreter, node_tools, runtime, isolated_home)
+        finally:
+            if node_link is not None and node_link.is_symlink():
+                node_link.unlink()
+        state_after = _digest_if_exists(self.control_root / "state.json")
+        if state_before != state_after:
+            raise RuntimeError("acceptance gate mutated canonical state")
+        return GateResult(bool(details) and all(item["passed"] for item in details), details)
+
+    def _run_checks(self, phase: Any, timeout: float, details: list[dict[str, Any]],
+                    interpreter: Path | None, node_tools: dict[str, str] | None,
+                    runtime: Path, isolated_home: Path) -> None:
         deadline = time.monotonic() + max(0.01, timeout)
         for required in phase.required_files:
             try:
@@ -210,7 +343,7 @@ class MechanicalGates:
                 passed = False
             details.append({"gate": "required_file", "target": required, "passed": passed})
         for argv in phase.commands:
-            resolved = _resolve_command(list(argv), interpreter)
+            resolved = _resolve_command(list(argv), interpreter, node_tools)
             if resolved is None:
                 # Fail closed. Falling back to a system interpreter would let a phase pass
                 # against whatever happens to be installed on the host.
@@ -240,18 +373,22 @@ class MechanicalGates:
                                     "passed": completed.returncode == 0, "output": redact(raw, limit=2000)})
             except subprocess.TimeoutExpired:
                 details.append({"gate": "command", "target": list(argv), "passed": False, "output": "TIMEOUT"})
-        state_after = _digest_if_exists(self.control_root / "state.json")
-        if state_before != state_after:
-            raise RuntimeError("acceptance gate mutated canonical state")
-        return GateResult(bool(details) and all(item["passed"] for item in details), details)
 
 
-def _resolve_command(argv: list[str], interpreter: Path | None) -> list[str] | None:
+def _resolve_command(argv: list[str], interpreter: Path | None,
+                     node_tools: dict[str, str] | None = None) -> list[str] | None:
     """Substitute the provisioned interpreter, or refuse the command outright.
 
     Plain string replacement rather than str.format, so a command containing unrelated
     braces cannot raise KeyError or be reinterpreted as a format field.
     """
+    if any(token in part for part in argv for token in NODE_PLACEHOLDERS):
+        if node_tools is None:
+            return None
+        resolved = list(argv)
+        for token, path in node_tools.items():
+            resolved = [part.replace(token, path) for part in resolved]
+        argv = resolved
     if not any(PYTHON_PLACEHOLDER in part for part in argv):
         return argv
     if interpreter is None:
