@@ -37,6 +37,10 @@ ACCEPTANCE = {
     "additionalProperties": False}
 
 
+OUTCOME = {"type": "string", "description": "Optional: one plain line for the operator, at most 160 characters: "
+           "what they can do or rely on once this phase is done. No code, paths or decision ids. Shown in the "
+           "console's Plan view and docs/ROADMAP.md."}
+
 def _schema(properties: dict[str, Any] | None = None, required: tuple[str, ...] = ()) -> dict[str, Any]:
     return {"type": "object", "properties": properties or {}, "required": list(required),
             "additionalProperties": False}
@@ -93,15 +97,16 @@ class Server:
                  "proves its own work. Returns its id (PH-n); phase numbers follow order.",
                  _schema({"name": _TEXT, "objective": _TEXT, "implements": _IDS, "acceptance": ACCEPTANCE,
                           "details": {"type": "string", "description": "Extra Markdown for the phase prompt"},
+                          "outcome": OUTCOME,
                           "position": {"type": "integer", "minimum": 0, "description": "Insert here instead of "
                                        "appending"}}, ("name", "objective", "implements", "acceptance")),
-                 lambda name, objective, implements, acceptance, details="", position=None: s.propose_phase(
+                 lambda name, objective, implements, acceptance, details="", position=None, outcome="": s.propose_phase(
                      name, objective, me, implements=implements, acceptance=acceptance, details=details,
-                     position=position)),
+                     position=position, outcome=outcome)),
             Tool("revise_phase", "Change a phase's name, objective, details, implements or acceptance. Acceptance "
                  "is replaced whole.",
                  _schema({"phase_id": _TEXT, "changes": {"type": "object", "properties": {
-                     "name": _TEXT, "objective": _TEXT, "details": _TEXT, "implements": _IDS,
+                     "name": _TEXT, "objective": _TEXT, "details": _TEXT, "outcome": OUTCOME, "implements": _IDS,
                      "acceptance": ACCEPTANCE}, "additionalProperties": False}}, ("phase_id", "changes")),
                  lambda phase_id, changes: s.revise_phase(phase_id, changes, me)),
             Tool("withdraw_phase", "Remove a phase, with the reason. Its id is never reused.",
@@ -113,10 +118,14 @@ class Server:
                  "operator approval. All by phase id.",
                  _schema({"milestones": {"type": "object", "additionalProperties": {"type": "string"},
                                          "description": "e.g. {\"mvp\": \"PH-9\"}"},
-                          "checkpoints_before": _IDS, "mvp_completion": _TEXT},
+                          "checkpoints_before": _IDS, "mvp_completion": _TEXT,
+                          "notes": {"type": "object", "additionalProperties": {"type": "string"},
+                                    "description": "Optional: one plain instruction per checkpoint, keyed by the "
+                                    "phase id in checkpoints_before, or \"mvp\" for the final check. Says what "
+                                    "the operator does there, e.g. \"Run a real sync and check the counts match.\""}},
                          ("milestones", "checkpoints_before", "mvp_completion")),
-                 lambda milestones, checkpoints_before, mvp_completion: s.set_milestones(
-                     milestones, checkpoints_before, mvp_completion, me)),
+                 lambda milestones, checkpoints_before, mvp_completion, notes=None: s.set_milestones(
+                     milestones, checkpoints_before, mvp_completion, me, notes=notes)),
             Tool("check", "Run the deterministic gate: buildctl validate plus discovery's rules. Returns every "
                  "failure with the record entries to fix.", _schema(), lambda: self._check(), mutates=False),
             Tool("request_review", "Have the project's reviewer command review the current proposal under "

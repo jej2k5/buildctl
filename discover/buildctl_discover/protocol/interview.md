@@ -16,8 +16,8 @@ You are running discovery for a project that buildctl will build. buildctl execu
 1. **The thesis.** Who is it for, and what does success look like? Get one or two sentences a test could check. `set_thesis`.
 2. **Decisions.** Scope, users, data, integrations, security, operations, what is out of scope. Group them with `section`. Mark `confidence` honestly.
 3. **Principles.** The invariants every phase must keep, such as "events are immutable". `add_principle`.
-4. **Phases.** Propose them in build order with `propose_phase`. Each phase cites the decision ids it implements.
-5. **Milestones.** The MVP cut and where the build should stop for operator approval. `set_milestones`.
+4. **Phases.** Propose them in build order with `propose_phase`. Each phase cites the decision ids it implements. Give each an `outcome`: one plain line saying what the operator can do or rely on once it is done, with no code, paths or decision ids. The operator reads these in the console's Plan view instead of the prompts.
+5. **Milestones.** The MVP cut and where the build should stop for operator approval. `set_milestones`, with `notes` saying in one plain instruction what the operator does at each stop.
 6. **Check and review.** Call `check`, fix what it reports, then `request_review`, and work the findings until `check` passes or only the operator's items remain.
 
 ## Acceptance is the hard part

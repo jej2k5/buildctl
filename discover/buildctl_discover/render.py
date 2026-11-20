@@ -204,7 +204,10 @@ def risks_document(state: State) -> str:
 
 def roadmap_document(state: State, cfg: dict[str, Any]) -> str:
     lines = ["# Roadmap", ""]
-    lines += [f"{number}. {item['name']}" for number, item in enumerate(state.phases)]
+    for number, item in enumerate(state.phases):
+        lines.append(f"{number}. {item['name']}")
+        if item.get("outcome"):
+            lines.append(f"   {item['outcome']}")
     lines.append("")
     checkpoints = cfg["checkpoints"]
     if checkpoints["mvp_completion"] is not None:
@@ -215,6 +218,15 @@ def roadmap_document(state: State, cfg: dict[str, Any]) -> str:
     for name, number in cfg["milestones"].items():
         if name != "mvp":
             lines.append(f"The {name} milestone is phase {number}.")
+    notes = (state.milestones or {}).get("notes") or {}
+    if notes:
+        numbers = {item["id"]: number for number, item in enumerate(state.phases)}
+        lines.append("")
+        for key, text in sorted(notes.items(), key=lambda kv: numbers.get(kv[0], 10**6)):
+            if key == "mvp":
+                lines.append(f"After phase {checkpoints['mvp_completion']}, the operator: {text}")
+            else:
+                lines.append(f"Before phase {numbers[key]}, the operator: {text}")
     return "\n".join(lines) + "\n"
 
 

@@ -62,6 +62,22 @@ BUILTIN_BASE: dict[str, Any] = {
 }
 
 
+
+OUTCOME_LIMIT = 160
+
+
+def _outcome(value: Any, what: str = "outcome") -> str:
+    """One plain line for the operator, rendered into docs/ROADMAP.md. Optional, so empty is allowed."""
+    if value is None or value == "":
+        return ""
+    if not isinstance(value, str):
+        raise RecordError(f"{what} must be text")
+    value = " ".join(value.split())
+    if len(value) > OUTCOME_LIMIT:
+        raise RecordError(f"{what} must be one line of at most {OUTCOME_LIMIT} characters")
+    return value
+
+
 class RecordError(ValueError):
     """A request the record refuses. The message says what to fix."""
 
@@ -216,7 +232,8 @@ def apply(state: State, event_type: str, payload: dict[str, Any], timestamp: str
             "text": payload["resolution"], "decisions": payload["decisions"], "by": by, "at": timestamp})
     elif event_type == "phase_proposed":
         item = {"id": payload["id"], "name": payload["name"], "objective": payload["objective"],
-                "details": payload.get("details", ""), "implements": payload["implements"],
+                "details": payload.get("details", ""), "outcome": payload.get("outcome", ""),
+                "implements": payload["implements"],
                 "acceptance": payload["acceptance"], "by": by, "at": timestamp}
         position = payload.get("position")
         state.phases.insert(len(state.phases) if position is None else position, item)
@@ -231,7 +248,8 @@ def apply(state: State, event_type: str, payload: dict[str, Any], timestamp: str
         state.phases = [index[phase_id] for phase_id in payload["order"]]
     elif event_type == "milestones_set":
         state.milestones = {"milestones": payload["milestones"], "checkpoints_before": payload["checkpoints_before"],
-                            "mvp_completion": payload["mvp_completion"], "by": by, "at": timestamp}
+                            "mvp_completion": payload["mvp_completion"], "notes": payload.get("notes", {}),
+                            "by": by, "at": timestamp}
     elif event_type == "review_completed":
         state.reviews.append({"id": payload["id"], "digest": payload["digest"], "reviewer": payload["reviewer"],
                               "findings": payload["findings"], "warnings": payload.get("warnings", []),
@@ -401,8 +419,9 @@ class Session:
             raise RecordError(f"unknown decisions: {', '.join(missing)}")
 
     def propose_phase(self, name: Any, objective: Any, by: Identity, *, implements: Any = (),
-                      acceptance: Any = None, details: Any = "", position: Any = None) -> str:
+                      acceptance: Any = None, details: Any = "", position: Any = None, outcome: Any = "") -> str:
         name, objective = _text(name, "phase name"), _text(objective, "objective")
+        outcome = _outcome(outcome)
         implements, acceptance = _strings(list(implements), "implements"), normalize_acceptance(acceptance)
         if not isinstance(details, str):
             raise RecordError("details must be text")
@@ -413,6 +432,7 @@ class Session:
                 raise RecordError(f"position must be between 0 and {len(state.phases)}")
             ident = self._next(state, "PH")
             return "phase_proposed", {"id": ident, "name": name, "objective": objective, "details": details.strip(),
+                                      "outcome": outcome,
                                       "implements": implements, "acceptance": acceptance, "position": position,
                                       "by": by.as_dict()}, ident
         return self._mutate(fn)
@@ -420,7 +440,7 @@ class Session:
     def revise_phase(self, phase_id: Any, changes: Any, by: Identity) -> None:
         if not isinstance(changes, dict) or not changes:
             raise RecordError("changes must be a non-empty object")
-        unknown = set(changes) - {"name", "objective", "details", "implements", "acceptance"}
+        unknown = set(changes) - {"name", "objective", "details", "outcome", "implements", "acceptance"}
         if unknown:
             raise RecordError(f"cannot revise: {', '.join(sorted(unknown))}")
         clean: dict[str, Any] = {}
@@ -431,6 +451,8 @@ class Session:
             if not isinstance(changes["details"], str):
                 raise RecordError("details must be text")
             clean["details"] = changes["details"].strip()
+        if "outcome" in changes:
+            clean["outcome"] = _outcome(changes["outcome"])
         if "implements" in changes:
             clean["implements"] = _strings(changes["implements"], "implements")
         if "acceptance" in changes:
@@ -467,20 +489,31 @@ class Session:
             return "phases_reordered", {"order": order, "by": by.as_dict()}, None
         self._mutate(fn)
 
-    def set_milestones(self, milestones: Any, checkpoints_before: Any, mvp_completion: Any, by: Identity) -> None:
+    def set_milestones(self, milestones: Any, checkpoints_before: Any, mvp_completion: Any, by: Identity,
+                       notes: Any = None) -> None:
         if not isinstance(milestones, dict) or not all(
                 isinstance(key, str) and re.fullmatch(r"[a-z][a-z0-9_-]*", key) and isinstance(value, str)
                 for key, value in milestones.items()):
             raise RecordError("milestones map lowercase names to phase ids, e.g. {\"mvp\": \"PH-14\"}")
         checkpoints_before = _strings(list(checkpoints_before), "checkpoints_before")
+        notes = {} if notes is None else notes
+        if not isinstance(notes, dict) or not all(isinstance(k, str) for k in notes):
+            raise RecordError("notes map a checkpoint (a phase id in checkpoints_before, or \"mvp\") to one line")
+        notes = {key: _outcome(value, "checkpoint note") for key, value in notes.items()}
 
         def fn(state: State) -> tuple[str, dict[str, Any], Any]:
             known = {item["id"] for item in state.phases}
             missing = [item for item in [*milestones.values(), *checkpoints_before, mvp_completion] if item not in known]
             if missing:
                 raise RecordError(f"unknown phases: {', '.join(map(str, missing))}")
-            return "milestones_set", {"milestones": dict(milestones), "checkpoints_before": checkpoints_before,
-                                      "mvp_completion": mvp_completion, "by": by.as_dict()}, None
+            stray = [key for key in notes if key != "mvp" and key not in checkpoints_before]
+            if stray:
+                raise RecordError(f"notes name no checkpoint: {', '.join(stray)}")
+            payload = {"milestones": dict(milestones), "checkpoints_before": checkpoints_before,
+                       "mvp_completion": mvp_completion, "by": by.as_dict()}
+            if notes:
+                payload["notes"] = notes
+            return "milestones_set", payload, None
         self._mutate(fn)
 
     # Review, risk and finalization
