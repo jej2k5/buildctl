@@ -22,6 +22,10 @@ Keys `1` to `6` switch views in both surfaces, in rail order. Both open on the P
 
 The Plan view reads `docs/ROADMAP.md`, `docs/DISCOVERY_DECISIONS.md` and `docs/DISCOVERY_RISKS.md` at the commit `trust init` pinned, so an agent cannot rewrite your summary of its own phase. The plain lines are optional: a phase's outcome is the indented line under it in `docs/ROADMAP.md`, and a checkpoint's instruction is a line such as `Before phase 6, the operator: Send a real webhook.` buildctl-discover writes both when the interview gives a phase an outcome and a checkpoint a note.
 
+## Watching a discovery draft
+
+`buildctl-ui --session NAME` opens a buildctl-discover session before it is finalized, read-only, in the web console. The rail shows only the Plan, and the bar says DRAFT. The page shows what the gate (`buildctl-discover check`) still counts against the draft: your open calls, open review findings and other failures. It also shows the proposed phases with their outcome lines, the checkpoint notes, the decisions so far, and a feed of what the interviewer records, newest first, refreshing every two seconds. It ends on the next command to run, `buildctl-discover --session NAME check` while the gate fails and `buildctl-discover --session NAME finalize --confirm <digest>` once it passes. The console never finalizes, accepts a risk or answers a call: those stay terminal acts. Nothing in a draft is governed until it is finalized and trusted.
+
 The feed of what agents did is in the web console only for now. The terminal UI does not show it yet. The feed never claims an agent is stuck, because a long test run and a hang look the same: it says how long the agent has been quiet.
 
 ### Levers and their conditions {#levers}

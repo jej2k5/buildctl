@@ -97,6 +97,8 @@ function buildAspect(m) {
 
 // ---------- shell ----------
 function renderBar(m) {
+  document.body.classList.toggle("is-draft", !!m.draft);
+  if (m.draft) return renderDraftBar(m);
   const repoName = m.repo.path.split("/").filter(Boolean).pop();
   $("#bar-repo").innerHTML = `<strong>${esc(repoName)}</strong><span>${esc(m.repo.branch || "detached")} @ ${esc(short(m.repo.head_sha, 7))}</span>`;
   const a = buildAspect(m);
@@ -725,6 +727,92 @@ function viewPlan(m) {
     </div>`;
 }
 
+// ---------- draft: a discovery session, read-only, before anyone finalizes it ----------
+// buildctl-ui --session NAME. The model comes from buildctl-discover status and check; the console
+// shows it and names the next command. It never finalizes: that stays a terminal act.
+function draftAspect(d) {
+  const toFix = d.failures.length + d.findings.length;
+  if (d.passes) return { aspect: "clear", word: "Ready to finalize", sub: "the gate passes" };
+  if (d.questions.length) return { aspect: "caution", word: "Waiting for you", sub: `${d.questions.length} call${d.questions.length === 1 ? "" : "s"} open` };
+  if (toFix) return { aspect: "danger", word: "Gate failing", sub: `${toFix} to fix` };
+  return { aspect: "unknown", word: "Not checked", sub: "buildctl-discover check gave no verdict" };
+}
+
+function renderDraftBar(m) {
+  const d = m.draft, a = draftAspect(d);
+  const repoName = m.repo.path.split("/").filter(Boolean).pop();
+  $("#bar-repo").innerHTML = `<strong>${esc(repoName)}</strong><span>draft · session ${esc(d.session)}</span>`;
+  $("#bar-aspect").innerHTML = `${sig(a.aspect, a.word, "lg")}<span><b>${esc(a.word)}</b><br><span class="mono">${esc(a.sub || "")}</span></span>`;
+  $("#bar-facts").innerHTML = `
+    <div><dd><span class="demo-flag" title="A buildctl-discover proposal. Nothing here is governed until it is finalized and trusted.">DRAFT</span></dd></div>
+    <div><dt>Digest</dt><dd><code>${esc(short(d.digest, 12))}</code></dd></div>
+    <div class="opt"><dt>Phases</dt><dd>${m.phases.length}</dd></div>
+    <div class="opt"><dt>Calls open</dt><dd>${d.questions.length}</dd></div>`;
+  $("#stop-flag").hidden = true;
+  const root = m.control_root.split("/").filter(Boolean);
+  $("#rail-foot").innerHTML = `<span title="${esc(m.control_root)}">Session in <code>…/${esc(root.slice(-2).join("/"))}</code></span><br>${d.events.length} recent events`;
+  for (const link of document.querySelectorAll(".rail a")) {
+    if (link.dataset.route === "plan") link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  document.title = `${a.word} · draft ${d.session} · buildctl`;
+}
+
+function draftNext(d) {
+  const base = `buildctl-discover --session ${d.session}`;
+  if (d.passes) return { say: "The gate passes. Finalizing writes the roadmap into the repository; trust it afterwards.", cmd: `${base} finalize --confirm ${short(d.digest, 12)}` };
+  if (d.questions.length) return { say: "Answer the open calls through the interviewer, then check again.", cmd: `${base} check` };
+  return { say: "The interviewer fixes what the gate lists, or you accept a finding as a risk, then check again.", cmd: `${base} check` };
+}
+
+function viewDraft(m) {
+  const d = m.draft, a = draftAspect(d), next = draftNext(d);
+  const plan = m.plan || { outcomes: {}, notes: { before: {}, after: {} }, decisions: [], risks: [] };
+  const finalAt = m.config?.checkpoints?.mvp_completion;
+  const gate = (p, where) => {
+    const note = plan.notes?.[where]?.[p.number];
+    return `<li class="plan-row plan-gate"><span class="plan-sig">${sig("pending", "Checkpoint")}</span><span class="plan-num"></span>
+      <div class="plan-body"><p class="plan-gate-text"><b>Checkpoint ${where} phase ${p.number}</b></p>${note ? `<p class="plan-out">${inline(note)}</p>` : ""}</div></li>`;
+  };
+  const rows = [];
+  for (const p of m.phases) {
+    if (p.checkpoint) rows.push(gate(p, "before"));
+    const outcome = plan.outcomes?.[p.number];
+    rows.push(`<li class="plan-row"><span class="plan-sig">${sig("pending")}</span><span class="plan-num mono">${pad(p.number)}</span>
+      <div class="plan-body"><h3 class="plan-name">${esc(p.name)}${p.milestones.map((s) => ` <span class="tag">${esc(s)}</span>`).join("")}</h3>
+        ${outcome ? `<p class="plan-out">${inline(outcome)}</p>` : `<p class="plan-meta">No outcome line yet.</p>`}</div></li>`);
+    if (finalAt === p.number) rows.push(gate(p, "after"));
+  }
+  const calls = d.questions.map((q) => `<li>${sig("caution")}<span><span class="mono muted">${esc(q.id)}</span> ${inline(q.text)}</span></li>`);
+  const fixes = d.failures.map((f) => `<li>${sig("danger")}<span><span class="mono muted">${esc(f.rule)}</span> ${inline(f.text)}</span></li>`);
+  const findings = d.findings;
+  const bySection = {};
+  for (const x of plan.decisions || []) (bySection[x.section] ||= []).push(x);
+  const events = [...d.events].reverse();
+  return `<div class="view-head"><h1>Draft plan</h1><p>Session <span class="mono">${esc(d.session)}</span> · ${m.phases.length} phases · digest <span class="mono">${esc(short(d.digest, 12))}</span></p></div>
+    <section class="plan-now panel" aria-labelledby="draft-say">
+      ${sig(a.aspect, a.word, "lg")}
+      <div><p class="plan-say" id="draft-say" role="status">${esc(next.say)}</p>
+        ${calls.length || fixes.length ? `<ul class="plan-needs">${calls.join("")}${fixes.join("")}</ul>` : ""}
+        <pre class="file draft-cmd" aria-label="Next command">${esc(next.cmd)}</pre></div>
+    </section>
+    <section class="section" aria-labelledby="draft-steps"><h2 class="h2" id="draft-steps">Phases <small>From the proposal's docs/ROADMAP.md. Nothing has run.</small></h2>
+      <ol class="plan-list panel">${rows.join("") || `<li class="plan-row"><p class="empty">No phases proposed yet.</p></li>`}</ol></section>
+    <div class="cols section">
+      <section aria-labelledby="draft-findings"><h2 class="h2" id="draft-findings">Open review findings <small>${findings.length} the gate counts against the draft</small></h2>
+        ${findings.length ? `<ul class="plan-risks panel">${findings.map((f) => `<li><span class="sev sev-${esc(f.severity)}">${esc(f.severity)}</span>
+          <div><p><span class="mono muted">${esc(f.id)}</span> ${inline(f.text)}</p><p class="muted">On ${esc(f.target)}</p></div></li>`).join("")}</ul>`
+          : `<p class="empty panel">No open findings.</p>`}
+        <h2 class="h2 gap" id="draft-decisions">Decisions <small>${(plan.decisions || []).length} so far</small></h2>
+        ${Object.keys(bySection).length ? `<div class="plan-decisions panel">${Object.entries(bySection).map(([section, list]) => `<details><summary>${esc(section)} <span class="muted mono">${list.length}</span></summary>
+          <ul>${list.map((x) => `<li><span class="mono muted">${esc(x.id)}</span> ${inline(x.text)}</li>`).join("")}</ul></details>`).join("")}</div>`
+          : `<p class="empty panel">No decisions recorded yet.</p>`}</section>
+      <aside aria-labelledby="draft-feed"><h2 class="h2" id="draft-feed">What the interviewer recorded <small>newest first, refreshes on its own</small></h2>
+        ${events.length ? `<div class="table-wrap flush feed-wrap panel"><table class="feed"><tbody>${events.map((e) => `<tr><td class="mono">${e.at ? esc(clock(e.at)) : ""}</td><td class="what">${inline(e.text)}</td></tr>`).join("")}</tbody></table></div>`
+          : `<p class="empty panel">Nothing recorded yet.</p>`}</aside>
+    </div>`;
+}
+
 const DAY_FMT = (iso) => iso.slice(0, 10);
 function viewLedger(m) {
   const events = S.audit;
@@ -794,7 +882,7 @@ function render() {
   const focused = document.activeElement;
   const focusKey = focused?.dataset?.typed || focused?.dataset?.lever || focused?.dataset?.tabId || focused?.id;
   const caret = focused?.selectionStart;
-  const view = { line: viewLine, stop: viewStop, phases: viewPhases, ledger: viewLedger, setup: viewSetup, plan: viewPlan }[S.route.view] || viewPlan;
+  const view = m.draft ? viewDraft : { line: viewLine, stop: viewStop, phases: viewPhases, ledger: viewLedger, setup: viewSetup, plan: viewPlan }[S.route.view] || viewPlan;
   const main = $("#main");
   main.innerHTML = view(m);
   for (const el of main.querySelectorAll("[data-w]")) el.style.width = `${Math.max(0.02, Number(el.dataset.w)) * 100}%`;

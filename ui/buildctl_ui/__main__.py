@@ -19,13 +19,21 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--no-open", action="store_true", help="web: print the link instead of opening a browser")
     result.add_argument("--demo", nargs="?", const="blocked", metavar="SCENARIO",
                         help="open a synthetic build instead: blocked, checkpoint, ceiling, unknown, running, debate, fresh")
+    result.add_argument("--session", metavar="NAME",
+                        help="web: open a buildctl-discover draft read-only, before it is finalized")
     return result
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        if args.demo:
+        if args.session:
+            if args.surface == "tui":
+                print("buildctl-ui: a discovery draft opens in the web console only", file=sys.stderr)
+                return 2
+            from .draft import Draft
+            build = Draft.open(resolve_repository(args.repo), args.session)
+        elif args.demo:
             from .demo import build_temporary
             repo, control = build_temporary(args.demo)
             build = Build.open(repo, control, demo=args.demo)

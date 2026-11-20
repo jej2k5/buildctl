@@ -395,6 +395,9 @@ The roadmap in the operator's words, for reading between other work. It is drawn
 - **Record:** accepted risks with severity chips and who accepted them, and the decisions grouped by section in disclosure rows.
 - **Source:** every line comes from governed documents at the trusted commit. Absent lines stay absent; the view never derives a summary.
 
+### The Draft (Operate)
+`buildctl-ui --session NAME`: a discovery proposal before finalize, built from the Plan's parts. The rail keeps only the Plan, the bar carries a dashed DRAFT flag, the digest and the open-call count, and every phase row and checkpoint row takes the pending signal because nothing has run. The status panel says what the gate needs: caution diamonds for the operator's open calls, danger squares for failures, then the next command in a mono block. Open review findings take severity chips; the interviewer's record is a newest-first feed. Like the Plan, the Draft never pulls a lever.
+
 ### The Phase Line
 A track diagram on a `surface` panel. Completed phases collapse into one 3px ink stretch labelled with its count. The current block is a 7px stroke in its aspect (occupied, danger, caution, or dashed `ink-2` for unknown). Phases ahead are a 2px dashed `rule-strong` track with numbered joints. Milestones are square station marks labelled in capitals with their number. Checkpoint signals stand on posts above the track before gated phases: danger until approved, caution while waiting, clear once approved. A legend under a hairline names every shape. Phase numbers are mono 10px; the current one is ink 700.
 

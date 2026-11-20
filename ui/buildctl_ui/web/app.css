@@ -462,3 +462,7 @@ pre.file { margin: 0; padding: var(--s3) var(--s4); font: var(--t-xs)/1.55 var(-
 .plan-fold-btn { font: 600 var(--t-md) var(--sans); color: var(--ink); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .plan-fold-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
 .plan-fold-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Draft (buildctl-ui --session): only the Plan exists before a roadmap is finalized */
+body.is-draft .rail a[data-route]:not([data-route="plan"]) { display: none; }
+pre.draft-cmd { margin-top: var(--s3); border: 1px solid var(--rule); max-height: none; }
