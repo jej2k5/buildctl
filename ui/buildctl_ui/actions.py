@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,49 @@ class Refused(Exception):
     def __init__(self, message: str, status: int = 409):
         super().__init__(message)
         self.status = status
+
+
+
+PLAN_PHASE = re.compile(r"^(\d+)\. (.+)$")
+PLAN_NOTE = re.compile(r"^(Before|After) phase (\d+), the operator: (.+)$")
+PLAN_DECISION = re.compile(r"^- \*\*(D-\d+)\*\*(?: \(([^)]*)\))?: (.+)$")
+PLAN_RISK = re.compile(r"^- \*\*([FQ]-\d+)\*\*: (?:(CRITICAL|HIGH|MEDIUM|LOW) finding: )?(.+?)(?: Accepted by ([^:]+): (.+))?$")
+
+
+def read_plan(roadmap: str, decisions: str, risks: str, sha: str | None) -> dict[str, Any]:
+    """Parse the discovery documents buildctl-discover renders. Pure: text in, plain data out."""
+    outcomes: dict[int, str] = {}
+    notes: dict[str, dict[int, str]] = {"before": {}, "after": {}}
+    current = None
+    for line in roadmap.splitlines():
+        phase = PLAN_PHASE.match(line)
+        if phase:
+            current = int(phase.group(1))
+            continue
+        if current is not None and line.startswith("   ") and line.strip():
+            outcomes[current] = line.strip()
+            continue
+        note = PLAN_NOTE.match(line)
+        if note:
+            notes[note.group(1).lower()][int(note.group(2))] = note.group(3)
+        if not line.strip() or not line.startswith(" "):
+            current = None if not phase else current
+    section = "General"
+    found = []
+    for line in decisions.splitlines():
+        if line.startswith("## "):
+            section = line[3:].strip()
+        match = PLAN_DECISION.match(line)
+        if match and section not in ("Superseded",):
+            found.append({"id": match.group(1), "section": section, "text": match.group(3)})
+    accepted = []
+    for line in risks.splitlines():
+        match = PLAN_RISK.match(line)
+        if match:
+            accepted.append({"id": match.group(1), "severity": match.group(2), "text": match.group(3),
+                             "accepted_by": (match.group(4) or "").strip() or None, "reason": match.group(5)})
+    return {"sha": sha, "outcomes": outcomes, "notes": notes, "decisions": found, "risks": accepted,
+            "has_lines": bool(outcomes or notes["before"] or notes["after"])}
 
 
 @dataclass
@@ -59,8 +103,24 @@ class Build:
     def model(self) -> dict[str, Any]:
         value = inspect(self.repo, self.control_root)
         value["demo"] = self.demo
+        value["plan"] = self.plan((value.get("state") or {}).get("governance_sha") or value["repo"].get("head_sha"))
         value["jobs"] = [self._job_view(job) for job in self.jobs[-8:]]
         return value
+
+    def plan(self, sha: str | None) -> dict[str, Any]:
+        """The roadmap in the operator's words, from the governed discovery documents at the trusted commit.
+
+        buildctl-discover writes one plain outcome line under each phase in docs/ROADMAP.md, an
+        instruction per checkpoint, and the decisions and accepted risks. Read-only; absent lines stay absent.
+        """
+        def show(path: str) -> str:
+            if not sha:
+                return ""
+            result = subprocess.run(["git", "-C", str(self.repo), "show", f"{sha}:{path}"],
+                                    capture_output=True, text=True)
+            return result.stdout if result.returncode == 0 else ""
+        return read_plan(show("docs/ROADMAP.md"), show("docs/DISCOVERY_DECISIONS.md"),
+                         show("docs/DISCOVERY_RISKS.md"), sha)
 
     def audit(self, after: int = 0, limit: int = 500) -> list[dict[str, Any]]:
         return audit_events(self.control_root, after, limit)

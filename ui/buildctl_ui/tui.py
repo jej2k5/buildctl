@@ -199,7 +199,7 @@ class BuildctlTUI(App[None]):
     """
     BINDINGS = [
         Binding("1", "tab('line')", "Line"), Binding("2", "tab('stop')", "Stop"), Binding("3", "tab('phases')", "Phases"),
-        Binding("4", "tab('ledger')", "Ledger"), Binding("5", "tab('setup')", "Setup"),
+        Binding("4", "tab('ledger')", "Ledger"), Binding("5", "tab('setup')", "Setup"), Binding("6", "tab('plan')", "Plan"),
         Binding("r", "refresh", "Refresh"), Binding("q", "quit", "Quit"),
     ]
 
@@ -230,6 +230,8 @@ class BuildctlTUI(App[None]):
                     yield DataTable(id="ledger", cursor_type="row")
             with TabPane("Setup", id="setup-tab"):
                 yield VerticalScroll(id="setup-view")
+            with TabPane("Plan", id="plan-tab"):
+                yield VerticalScroll(id="plan-view")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -273,6 +275,7 @@ class BuildctlTUI(App[None]):
         self.render_phases(m)
         self.render_ledger(m)
         await self.render_setup(m)
+        await self.render_plan(m)
         if first and not m["bootstrapped"]:
             self.action_tab("setup")
         elif first and m["escalation"]:
@@ -443,6 +446,69 @@ class BuildctlTUI(App[None]):
             name = Text(event["event_type"], style=f"bold {DANGER}" if event["event_type"] == "human_escalation" else
                         CLEAR if event["event_type"] == "phase_completed" else "")
             table.add_row(str(event["sequence"]), event["timestamp"][11:19], name, str(phase), detail)
+
+    async def render_plan(self, m: dict[str, Any]) -> None:
+        """The roadmap in the operator's words, as the web console's Plan view draws it."""
+        view = self.query_one("#plan-view", VerticalScroll)
+        await view.remove_children()
+        st, plan = m["state"], m.get("plan") or {}
+        outcomes = {int(k): v for k, v in (plan.get("outcomes") or {}).items()}
+        notes = {where: {int(k): v for k, v in ((plan.get("notes") or {}).get(where) or {}).items()} for where in ("before", "after")}
+        aspect, word, _ = build_aspect(m)
+        done, total, n = set(st.get("completed_phases") or []), len(m["phases"]), st.get("current_phase")
+        if aspect == "occupied":
+            say = f"Running phase {n}. {len(done)} of {total} phases clear."
+        elif word == "Waiting for you":
+            say = f"Waiting for you before phase {n}. {len(done)} of {total} phases clear."
+        elif aspect == "danger":
+            say = f"Stopped at phase {n}. {len(done)} of {total} phases clear."
+        elif st.get("status") == "complete":
+            say = f"Complete. All {total} phases clear."
+        else:
+            say = f"{len(done)} of {total} phases clear."
+        lines = [f"{glyph(aspect)} [b]{escape(say)}[/b]"]
+        if m.get("escalation"):
+            e = m["escalation"]
+            note = notes["before"].get(n) if e["code"] == "CHECKPOINT_REQUIRED" else None
+            lines.append(f"  {glyph('caution' if aspect == 'caution' else 'danger')} "
+                         + escape(f"Checkpoint before phase {n}: {note}" if note else f"{e['code']}: {e['meaning']}")
+                         + "  [dim]see Stop (2)[/dim]")
+        if m.get("bootstrapped") and m.get("trust", {}).get("ok") is False:
+            lines.append(f"  {glyph('caution')} Trust needs renewing  [dim]see Setup (5)[/dim]")
+        if len(lines) == 1:
+            lines.append("  [dim]Nothing waits on you.[/dim]")
+        lines.append("")
+        cleared = 0
+        while cleared < total and m["phases"][cleared]["number"] in done:
+            cleared += 1
+        if 3 < cleared < total:
+            lines.append(f"{glyph('clear')}      [b]Phases 0 to {cleared - 1}[/b]  [dim]{cleared} clear; Phases (3) lists them[/dim]")
+        final = (m.get("config") or {}).get("checkpoints", {}).get("mvp_completion")
+        for p in m["phases"]:
+            if 3 < cleared < total and p["number"] < cleared:
+                continue
+            if p["checkpoint"]:
+                waiting = n == p["number"] and (st.get("pending_approval") or (m.get("escalation") or {}).get("code") == "CHECKPOINT_REQUIRED")
+                passed = p["number"] in done or (n == p["number"] and not waiting)
+                mark = "caution" if waiting else "clear" if passed else "danger"
+                text = notes["before"].get(p["number"])
+                lines.append(f"{glyph(mark)}      Checkpoint before phase {p['number']}"
+                             + (f"\n         [dim]{escape(text)}[/dim]" if text else ""))
+            tags = "".join(f" [dim]\\[{escape(t)}][/dim]" for t in p["milestones"])
+            lines.append(f"{glyph(p['aspect'])} {p['number']:>4}  [b]{escape(p['name'])}[/b]{tags}")
+            if outcomes.get(p["number"]):
+                lines.append(f"         {escape(outcomes[p['number']])}")
+            if final == p["number"] and notes["after"].get(p["number"]):
+                later = (n if n is not None else -1) > p["number"] or st.get("status") == "complete"
+                lines.append(f"{glyph('clear' if p['number'] in done and later else 'danger')}      Checkpoint after phase "
+                             f"{p['number']}\n         [dim]{escape(notes['after'][p['number']])}[/dim]")
+        risks = plan.get("risks") or []
+        if risks:
+            lines += ["", f"[b]Accepted risks[/b]  [dim]{len(risks)} in docs/DISCOVERY_RISKS.md[/dim]"]
+            lines += [f"  {escape(r.get('severity') or 'OPEN'):<8} {escape(r['id'])}  {escape(r['text'])}" for r in risks]
+        if not plan.get("has_lines"):
+            lines += ["", "[dim]docs/ROADMAP.md has no outcome lines yet; buildctl-discover writes them when a phase has an outcome.[/dim]"]
+        await view.mount(Static("\n".join(lines)))
 
     async def render_setup(self, m: dict[str, Any]) -> None:
         view = self.query_one("#setup-view", VerticalScroll)

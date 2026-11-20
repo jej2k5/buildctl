@@ -631,6 +631,98 @@ function viewPhases(m) {
   return `<div class="view-head"><h1>Phases</h1><p>${m.phases.length} in build.yaml (${esc(m.config.source || "unreadable")})</p></div>${detail}<div class="section">${table}</div>`;
 }
 
+// ---------- plan: the roadmap in the operator's words ----------
+function planNeeds(m) {
+  const plan = m.plan || {}, notes = plan.notes || { before: {}, after: {} }, items = [];
+  const e = m.escalation, n = m.state.current_phase;
+  if (e) {
+    const a = buildAspect(m);
+    const note = e.code === "CHECKPOINT_REQUIRED" && n != null ? notes.before?.[n] : null;
+    items.push({ aspect: a.aspect === "caution" ? "caution" : a.aspect === "unknown" ? "unknown" : "danger",
+      text: note ? `Checkpoint before phase ${n}: ${note}` : `${e.code}: ${e.meaning}`,
+      link: "#/stop", linkText: e.code === "CHECKPOINT_REQUIRED" ? "Open the stop to approve" : "Open the stop" });
+  }
+  if (m.bootstrapped && m.trust && m.trust.ok === false)
+    items.push({ aspect: "caution", text: `Trust needs renewing: ${m.trust.error || "the trust anchor no longer matches"}`, link: "#/setup", linkText: "Open setup" });
+  return items;
+}
+
+function planSentence(m) {
+  const st = m.state, total = m.phases.length, done = (st.completed_phases || []).length, n = st.current_phase;
+  const a = buildAspect(m);
+  if (!m.bootstrapped) return "Not set up yet.";
+  if (a.aspect === "occupied") return `Running phase ${n}. ${done} of ${total} phases clear.`;
+  if (a.word === "Waiting for you") return `Waiting for you before phase ${n}. ${done} of ${total} phases clear.`;
+  if (a.aspect === "danger") return `Stopped at phase ${n}. ${done} of ${total} phases clear.`;
+  if (st.status === "complete") return `Complete. All ${total} phases clear.`;
+  return `${done} of ${total} phases clear.`;
+}
+
+function checkpointRow(m, p, where) {
+  const plan = m.plan || {}, notes = plan.notes || { before: {}, after: {} };
+  const st = m.state, done = new Set(st.completed_phases || []);
+  const note = (where === "before" ? notes.before : notes.after)?.[p.number];
+  const waiting = where === "before" && st.current_phase === p.number && (st.pending_approval || m.escalation?.code === "CHECKPOINT_REQUIRED");
+  const later = (st.current_phase ?? -1) > p.number || st.status === "complete";
+  const passed = where === "before" ? (done.has(p.number) || (st.current_phase === p.number && !waiting)) : done.has(p.number) && later;
+  const aspect = waiting ? "caution" : passed ? "clear" : "danger";
+  const label = waiting ? "waiting for your approval" : passed ? "approved" : "ahead, needs approval";
+  return `<li class="plan-row plan-gate${waiting ? " is-waiting" : ""}">
+    <span class="plan-sig">${sig(aspect, `Checkpoint ${label}`)}</span><span class="plan-num"></span>
+    <div class="plan-body"><p class="plan-gate-text"><b>Checkpoint ${where} phase ${p.number}</b> <span class="muted">${esc(label)}</span></p>
+      ${note ? `<p class="plan-out">${esc(note)}</p>` : ""}
+      ${waiting ? `<p class="plan-meta"><a href="#/stop">Open the stop to approve</a></p>` : ""}</div></li>`;
+}
+
+function viewPlan(m) {
+  const plan = m.plan || { outcomes: {}, notes: { before: {}, after: {} }, decisions: [], risks: [], has_lines: false };
+  const a = buildAspect(m), needs = planNeeds(m);
+  const finalAt = m.config?.checkpoints?.mvp_completion;
+  const rows = [];
+  // Like the Phase Line, the cleared run from phase 0 folds into one row once it gets long.
+  const done = new Set(m.state.completed_phases || []);
+  let cleared = 0;
+  while (cleared < m.phases.length && done.has(m.phases[cleared].number)) cleared++;
+  const fold = cleared > 3 && cleared < m.phases.length;
+  if (fold) rows.push(`<li class="plan-row plan-fold"><span class="plan-sig">${sig("clear")}</span><span class="plan-num"></span>
+      <div class="plan-body"><button class="plan-fold-btn" type="button" data-fold aria-expanded="${!!S.planOpen}">${S.planOpen ? "Hide" : "Show"} phases 0 to ${cleared - 1} <span class="muted">${cleared} clear</span></button></div></li>`);
+  for (const p of m.phases) {
+    if (fold && !S.planOpen && p.number < cleared && !(p.checkpoint && p.number === cleared)) continue;
+    if (p.checkpoint) rows.push(checkpointRow(m, p, "before"));
+    const outcome = plan.outcomes?.[p.number];
+    const facts = [p.attempts > 1 ? `${p.attempts} attempts` : "", p.cost_usd ? money(p.cost_usd) : ""].filter(Boolean);
+    rows.push(`<li class="plan-row">
+      <span class="plan-sig">${sig(p.aspect)}</span><span class="plan-num mono">${pad(p.number)}</span>
+      <div class="plan-body"><h3 class="plan-name">${esc(p.name)}${p.milestones.map((s) => ` <span class="tag">${esc(s)}</span>`).join("")}</h3>
+        ${outcome ? `<p class="plan-out">${esc(outcome)}</p>` : ""}
+        <p class="plan-meta">${esc(ASPECT_WORDS[p.aspect] || p.aspect)}${facts.length ? ` · <span class="mono">${esc(facts.join(" · "))}</span>` : ""} · <a href="#/phases/${p.number}">Details</a></p></div></li>`);
+    if (finalAt === p.number && (plan.notes?.after?.[p.number])) rows.push(checkpointRow(m, p, "after"));
+  }
+  const bySection = {};
+  for (const d of plan.decisions || []) (bySection[d.section] ||= []).push(d);
+  const risks = plan.risks || [];
+  return `<div class="view-head"><h1>Plan</h1><p>${m.phases.length} phases${plan.sha ? ` · roadmap at <span class="mono">${esc(short(plan.sha, 7))}</span>` : ""}</p></div>
+    <section class="plan-now panel" aria-labelledby="plan-say">
+      ${sig(a.aspect, a.word, "lg")}
+      <div><p class="plan-say" id="plan-say" role="status">${esc(planSentence(m))}</p>
+        ${needs.length ? `<ul class="plan-needs">${needs.map((x) => `<li>${sig(x.aspect)}<span>${esc(x.text)} <a href="${x.link}">${esc(x.linkText)}</a></span></li>`).join("")}</ul>`
+          : `<p class="muted">Nothing waits on you.</p>`}</div>
+    </section>
+    <div class="section">${renderLine(m)}</div>
+    <section class="section" aria-labelledby="plan-steps"><h2 class="h2" id="plan-steps">Phases <small>${plan.has_lines ? "In plain words, from docs/ROADMAP.md." : "docs/ROADMAP.md has no outcome lines yet; buildctl-discover writes them when a phase has an outcome."}</small></h2>
+      <ol class="plan-list panel">${rows.join("")}</ol></section>
+    <div class="cols section">
+      <section aria-labelledby="plan-risks"><h2 class="h2" id="plan-risks">Accepted risks <small>${risks.length} recorded in docs/DISCOVERY_RISKS.md</small></h2>
+        ${risks.length ? `<ul class="plan-risks panel">${risks.map((r) => `<li>${r.severity ? `<span class="sev sev-${esc(r.severity)}">${esc(r.severity)}</span>` : `<span class="sev sev-LOW">OPEN</span>`}
+          <div><p><span class="mono muted">${esc(r.id)}</span> ${esc(r.text)}</p>${r.accepted_by ? `<p class="muted">Accepted by ${esc(r.accepted_by)}${r.reason ? `: ${esc(r.reason)}` : ""}</p>` : ""}</div></li>`).join("")}</ul>`
+          : `<p class="empty panel">No accepted risks.</p>`}</section>
+      <aside aria-labelledby="plan-decisions"><h2 class="h2" id="plan-decisions">Decisions <small>${(plan.decisions || []).length} in docs/DISCOVERY_DECISIONS.md</small></h2>
+        ${Object.keys(bySection).length ? `<div class="plan-decisions panel">${Object.entries(bySection).map(([section, list]) => `<details><summary>${esc(section)} <span class="muted mono">${list.length}</span></summary>
+          <ul>${list.map((d) => `<li><span class="mono muted">${esc(d.id)}</span> ${esc(d.text)}</li>`).join("")}</ul></details>`).join("")}</div>`
+          : `<p class="empty panel">No discovery decisions recorded.</p>`}</aside>
+    </div>`;
+}
+
 const DAY_FMT = (iso) => iso.slice(0, 10);
 function viewLedger(m) {
   const events = S.audit;
@@ -700,7 +792,7 @@ function render() {
   const focused = document.activeElement;
   const focusKey = focused?.dataset?.typed || focused?.dataset?.lever || focused?.dataset?.tabId || focused?.id;
   const caret = focused?.selectionStart;
-  const view = { line: viewLine, stop: viewStop, phases: viewPhases, ledger: viewLedger, setup: viewSetup }[S.route.view] || viewLine;
+  const view = { line: viewLine, stop: viewStop, phases: viewPhases, ledger: viewLedger, setup: viewSetup, plan: viewPlan }[S.route.view] || viewLine;
   const main = $("#main");
   main.innerHTML = view(m);
   for (const el of main.querySelectorAll("[data-w]")) el.style.width = `${Math.max(0.02, Number(el.dataset.w)) * 100}%`;
@@ -787,6 +879,7 @@ function parseRoute() {
 // ---------- events ----------
 document.addEventListener("click", async (event) => {
   if (event.target.closest("[data-dismiss-receipt]")) { S.signed = null; render(); return; }
+  if (event.target.closest("[data-fold]")) { S.planOpen = !S.planOpen; render(); $("[data-fold]")?.focus(); return; }
   const t = event.target.closest("[data-lever],[data-sign],[data-cancel],[data-tab],[data-goto],[data-phase],[data-artifact],[data-record]");
   if (!t) return;
   if (t.dataset.lever) {
@@ -862,7 +955,7 @@ document.addEventListener("keydown", (event) => {
     S.tab[next.dataset.tab] = next.dataset.tabId; render(); $(`[data-tab-id="${next.dataset.tabId}"]`)?.focus(); return;
   }
   if (["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName) || event.metaKey || event.ctrlKey || event.altKey) return;
-  const routes = { 1: "line", 2: "stop", 3: "phases", 4: "ledger", 5: "setup" };
+  const routes = { 1: "line", 2: "stop", 3: "phases", 4: "ledger", 5: "setup", 6: "plan" };
   if (routes[event.key]) location.hash = `#/${routes[event.key]}`;
 });
 

@@ -385,6 +385,16 @@ Trust-critical levers do not act on click. The quiet button opens a ceremony ins
 ### The Stamp
 Mono 700 0.75rem, uppercase "SIGNED" with 0.06em tracking, followed by sentence-case detail at 500 weight. 2px stamp border with a 1px stamp outline offset 2px, stamp-coloured text, no fill. Freshly applied stamps settle from 1.35x scale over 0.45s; ledger stamps are static.
 
+### The Plan (Operate)
+The roadmap in the operator's words, for reading between other work. It is drawn from the same parts as the Line, not a second dashboard.
+- **Status panel:** a `surface` panel at the top: the build aspect as a large glyph, one plain sentence ("Waiting for you before phase 15. 15 of 24 phases clear."), then one row per thing that waits on the operator, each with its own aspect glyph and a link to the Stop or Setup view that holds the lever. The Plan never pulls a lever itself. With nothing waiting it says so in `ink-3`.
+- **Phase line:** the Line's track diagram, unchanged.
+- **Phase list:** one ruled `surface` panel. Each row is a 20px aspect glyph, the zero-padded phase number in mono `ink-3`, the phase name as a title with milestone tags, the outcome line in ink (72ch max), and a muted meta line: aspect word, attempts and money in mono, and a Details link to the phase.
+- **Checkpoint rows:** sit between phases on `paper-2`, with the checkpoint signal's shape (danger square ahead, caution diamond waiting, clear circle approved) and the instruction as the row's text. A waiting checkpoint takes `caution-wash` and links to the Stop.
+- **Fold:** a cleared run of more than three phases from phase 0 folds into one row ("Show phases 0 to 14"), as the Line collapses its cleared stretch.
+- **Record:** accepted risks with severity chips and who accepted them, and the decisions grouped by section in disclosure rows.
+- **Source:** every line comes from governed documents at the trusted commit. Absent lines stay absent; the view never derives a summary.
+
 ### The Phase Line
 A track diagram on a `surface` panel. Completed phases collapse into one 3px ink stretch labelled with its count. The current block is a 7px stroke in its aspect (occupied, danger, caution, or dashed `ink-2` for unknown). Phases ahead are a 2px dashed `rule-strong` track with numbered joints. Milestones are square station marks labelled in capitals with their number. Checkpoint signals stand on posts above the track before gated phases: danger until approved, caution while waiting, clear once approved. A legend under a hairline names every shape. Phase numbers are mono 10px; the current one is ink 700.
 
