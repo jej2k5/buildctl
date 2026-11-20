@@ -368,7 +368,7 @@ Standard controls, ink on paper.
 
 ### Navigation
 - **Top bar:** `bar` mass carrying, left to right, the lowercase mono wordmark `buildctl`, repository and branch@commit, the build aspect between two `bar-rule` hairlines (large glyph, word, code in mono), then facts: spend versus cap meter (4px bar, `bar-ink` fill, danger above 95% of cap), sandbox age, trust digest, lock holder.
-- **Rail:** `paper-2` column with 18px stroked line icons, labels at 500 weight in `ink-2`, and kbd hints 1–5. Hover fills `rule`; the current page sits on `surface` with an inset hairline and a 3px ink bar on its left edge. The Stop item carries a small danger square, or caution diamond, when there is a stop.
+- **Rail:** `paper-2` column with 18px stroked line icons, labels at 500 weight in `ink-2`, and kbd hints 1–6, Plan first, which is also the view the console opens on. Hover fills `rule`; the current page sits on `surface` with an inset hairline and a 3px ink bar on its left edge. The Stop item carries a small danger square, or caution diamond, when there is a stop.
 - **Tabs:** sans 500 0.8125rem, `ink-2`, 2px ink underline and 600 weight when selected, counts in mono `ink-3`. The tab panel continues the tab bar's rule with no top border.
 
 ### The Interlocking Table (signature)

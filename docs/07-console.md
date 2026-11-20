@@ -11,14 +11,14 @@ buildctl-ui tui      # the same in the terminal
 
 | View | What it is for |
 |---|---|
+| Plan | The roadmap in plain words: one sentence on where the build stands, what waits on you, the phase line, each phase with its outcome, each checkpoint with what you do there, and the accepted risks and decisions. A long cleared run folds into one row. |
 | Line | The phase line, the call in flight with what it has reported and how long it has been quiet, spend by phase, and the levers you can pull now. |
 | Stop | Why the build stopped, the evidence (what agents did, findings, agent calls, gates, artifacts, and a [debate](#debates) turn by turn), and only the levers the kernel will accept. At [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION), the Decide lever takes your ruling. |
 | Phases | Every phase with its attempts, reviews, fixes, debates and cost, and its feed of [what agents did](#evidence). Selecting a row opens that part of the full record. |
 | Ledger | The audit chain, newest first, filterable by phase and event. |
 | Setup | Readiness in the order buildctl checks it, and the trust levers. |
-| Plan | The roadmap in plain words: one sentence on where the build stands, what waits on you, the phase line, each phase with its outcome, each checkpoint with what you do there, and the accepted risks and decisions. A long cleared run folds into one row. |
 
-Keys `1` to `6` switch views in both surfaces.
+Keys `1` to `6` switch views in both surfaces, in rail order. Both open on the Plan.
 
 The Plan view reads `docs/ROADMAP.md`, `docs/DISCOVERY_DECISIONS.md` and `docs/DISCOVERY_RISKS.md` at the commit `trust init` pinned, so an agent cannot rewrite your summary of its own phase. The plain lines are optional: a phase's outcome is the indented line under it in `docs/ROADMAP.md`, and a checkpoint's instruction is a line such as `Before phase 6, the operator: Send a real webhook.` buildctl-discover writes both when the interview gives a phase an outcome and a checkpoint a note.
 

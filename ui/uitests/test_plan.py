@@ -109,7 +109,7 @@ class Model(unittest.TestCase):
             app = BuildctlTUI(self.build)
             async with app.run_test(size=(140, 60)) as pilot:
                 await pilot.pause(1.0)
-                await pilot.press("6")
+                await pilot.press("1")
                 await pilot.pause(0.5)
                 text = "\n".join(str(w.render()) for w in app.query_one("#plan-view").query(Static))
                 return text
@@ -124,7 +124,9 @@ class Web(unittest.TestCase):
         self.assertIn('href="#/plan" data-route="plan"', (WEB / "index.html").read_text())
         app = (WEB / "app.js").read_text()
         self.assertIn("plan: viewPlan", app)
-        self.assertIn('6: "plan"', app)
+        self.assertIn('1: "plan"', app)
+        rail = (WEB / "index.html").read_text()
+        self.assertLess(rail.index('data-route="plan"'), rail.index('data-route="line"'))
 
 
 if __name__ == "__main__":

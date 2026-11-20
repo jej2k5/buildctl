@@ -3,7 +3,7 @@
 // which runs the buildctl CLI. Nothing here decides what is allowed: the model's levers do.
 
 const S = {
-  token: "", model: null, fingerprint: "", route: { view: "line", arg: null },
+  token: "", model: null, fingerprint: "", route: { view: "plan", arg: null },
   tab: {}, open: {}, typed: {}, results: {}, stamps: {}, busy: {},
   audit: [], auditSeq: 0, ledger: { phase: "", event: "" },
   cells: {}, trustDiff: null, trustDiffKey: "", artifact: null, error: null,
@@ -794,7 +794,7 @@ function render() {
   const focused = document.activeElement;
   const focusKey = focused?.dataset?.typed || focused?.dataset?.lever || focused?.dataset?.tabId || focused?.id;
   const caret = focused?.selectionStart;
-  const view = { line: viewLine, stop: viewStop, phases: viewPhases, ledger: viewLedger, setup: viewSetup, plan: viewPlan }[S.route.view] || viewLine;
+  const view = { line: viewLine, stop: viewStop, phases: viewPhases, ledger: viewLedger, setup: viewSetup, plan: viewPlan }[S.route.view] || viewPlan;
   const main = $("#main");
   main.innerHTML = view(m);
   for (const el of main.querySelectorAll("[data-w]")) el.style.width = `${Math.max(0.02, Number(el.dataset.w)) * 100}%`;
@@ -873,7 +873,7 @@ async function loadTrustDiff(m) {
 }
 
 function parseRoute() {
-  const [, view = "line", arg = null] = (location.hash.replace(/^#/, "") || "/line").split("/");
+  const [, view = "plan", arg = null] = (location.hash.replace(/^#/, "") || "/plan").split("/");
   S.route = { view, arg };
   if (view !== "stop" && view !== "phases") S.artifact = null;
 }
@@ -957,7 +957,7 @@ document.addEventListener("keydown", (event) => {
     S.tab[next.dataset.tab] = next.dataset.tabId; render(); $(`[data-tab-id="${next.dataset.tabId}"]`)?.focus(); return;
   }
   if (["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName) || event.metaKey || event.ctrlKey || event.altKey) return;
-  const routes = { 1: "line", 2: "stop", 3: "phases", 4: "ledger", 5: "setup", 6: "plan" };
+  const routes = { 1: "plan", 2: "line", 3: "stop", 4: "phases", 5: "ledger", 6: "setup" };
   if (routes[event.key]) location.hash = `#/${routes[event.key]}`;
 });
 
@@ -969,13 +969,13 @@ window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer
 (function start() {
   const match = location.hash.match(/token=([\w-]+)/);
   try {
-    const landing = (location.hash.match(/&r=([\w/]+)/) || [])[1] || "/line";
+    const landing = (location.hash.match(/&r=([\w/]+)/) || [])[1] || "/plan";
     if (match) { sessionStorage.setItem("buildctl-token", match[1]); history.replaceState(null, "", location.pathname + "#" + landing); }
     S.token = match ? match[1] : sessionStorage.getItem("buildctl-token") || "";
-  } catch { S.token = match ? match[1] : ""; if (match) history.replaceState(null, "", location.pathname + "#/line"); }
+  } catch { S.token = match ? match[1] : ""; if (match) history.replaceState(null, "", location.pathname + "#/plan"); }
   parseRoute();
   refresh().then(() => {
-    if (S.model && !S.model.bootstrapped && S.route.view === "line") location.hash = "#/setup";
+    if (S.model && !S.model.bootstrapped && ["plan", "line"].includes(S.route.view)) location.hash = "#/setup";
   });
   setInterval(refresh, 2000);
   setInterval(tick, 1000);

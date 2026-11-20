@@ -198,8 +198,8 @@ class BuildctlTUI(App[None]):
     #result { height: auto; padding: 0 1; }
     """
     BINDINGS = [
-        Binding("1", "tab('line')", "Line"), Binding("2", "tab('stop')", "Stop"), Binding("3", "tab('phases')", "Phases"),
-        Binding("4", "tab('ledger')", "Ledger"), Binding("5", "tab('setup')", "Setup"), Binding("6", "tab('plan')", "Plan"),
+        Binding("1", "tab('plan')", "Plan"), Binding("2", "tab('line')", "Line"), Binding("3", "tab('stop')", "Stop"),
+        Binding("4", "tab('phases')", "Phases"), Binding("5", "tab('ledger')", "Ledger"), Binding("6", "tab('setup')", "Setup"),
         Binding("r", "refresh", "Refresh"), Binding("q", "quit", "Quit"),
     ]
 
@@ -215,7 +215,9 @@ class BuildctlTUI(App[None]):
         with Horizontal(id="bar"):
             yield Static("", id="aspect")
             yield Static("", id="facts")
-        with TabbedContent(initial="line-tab"):
+        with TabbedContent(initial="plan-tab"):
+            with TabPane("Plan", id="plan-tab"):
+                yield VerticalScroll(id="plan-view")
             with TabPane("Line", id="line-tab"):
                 yield VerticalScroll(id="line-view")
             with TabPane("Stop", id="stop-tab"):
@@ -230,8 +232,6 @@ class BuildctlTUI(App[None]):
                     yield DataTable(id="ledger", cursor_type="row")
             with TabPane("Setup", id="setup-tab"):
                 yield VerticalScroll(id="setup-view")
-            with TabPane("Plan", id="plan-tab"):
-                yield VerticalScroll(id="plan-view")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -472,9 +472,9 @@ class BuildctlTUI(App[None]):
             note = notes["before"].get(n) if e["code"] == "CHECKPOINT_REQUIRED" else None
             lines.append(f"  {glyph('caution' if aspect == 'caution' else 'danger')} "
                          + escape(f"Checkpoint before phase {n}: {note}" if note else f"{e['code']}: {e['meaning']}")
-                         + "  [dim]see Stop (2)[/dim]")
+                         + "  [dim]see Stop (3)[/dim]")
         if m.get("bootstrapped") and m.get("trust", {}).get("ok") is False:
-            lines.append(f"  {glyph('caution')} Trust needs renewing  [dim]see Setup (5)[/dim]")
+            lines.append(f"  {glyph('caution')} Trust needs renewing  [dim]see Setup (6)[/dim]")
         if len(lines) == 1:
             lines.append("  [dim]Nothing waits on you.[/dim]")
         lines.append("")
@@ -482,7 +482,7 @@ class BuildctlTUI(App[None]):
         while cleared < total and m["phases"][cleared]["number"] in done:
             cleared += 1
         if 3 < cleared < total:
-            lines.append(f"{glyph('clear')}      [b]Phases 0 to {cleared - 1}[/b]  [dim]{cleared} clear; Phases (3) lists them[/dim]")
+            lines.append(f"{glyph('clear')}      [b]Phases 0 to {cleared - 1}[/b]  [dim]{cleared} clear; Phases (4) lists them[/dim]")
         final = (m.get("config") or {}).get("checkpoints", {}).get("mvp_completion")
         for p in m["phases"]:
             if 3 < cleared < total and p["number"] < cleared:
