@@ -181,7 +181,9 @@ class GitManager:
             if ignored:
                 raise GitSafetyError(f"refusing to stage ignored path: {relative}")
             self._git("add", "--", relative)
-        actual = sorted(self._git("diff", "--cached", "--name-only").stdout.splitlines())
+        # --no-renames: a moved file is staged as a delete plus an add, and git's rename
+        # detection would otherwise list only the new path and fail this comparison.
+        actual = sorted(self._git("diff", "--cached", "--name-only", "--no-renames").stdout.splitlines())
         if actual != sorted(staged):
             raise GitSafetyError("staged paths differ from attributed phase delta")
         if not actual:
