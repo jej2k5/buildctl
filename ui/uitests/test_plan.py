@@ -74,6 +74,33 @@ class Model(unittest.TestCase):
         self.assertIn(14, plan["notes"]["after"])
         self.assertTrue(plan["sha"])
 
+    def test_a_new_trust_anchor_shows_its_lines_without_a_new_phase(self):
+        """A governed edit plus trust init re-anchors the plan, even on a finished or stale build.
+
+        The build state's governance_sha moves only when an attempt starts, so a complete build still
+        records the old commit after the operator's trust init. The plan must follow the anchor.
+        """
+        import json, subprocess
+        repo, control = self.build.repo, self.build.control_root
+        roadmap = repo / "docs" / "ROADMAP.md"
+        old = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        roadmap.write_text(roadmap.read_text().replace("Events are delivered to their endpoints.",
+                                                       "Events reach their endpoints within a second."))
+        subprocess.run(["git", "-C", str(repo), "commit", "-qam", "Sharper outcome"], check=True,
+                       env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+                            "GIT_COMMITTER_EMAIL": "t@t", "PATH": "/usr/bin:/bin"})
+        new = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        stale_state = {"state": {"governance_sha": old}, "repo": {"head_sha": new}}
+        # Healthy trust: the anchor in the model wins over the state's older commit.
+        self.assertEqual(self.build.trusted_sha(dict(stale_state, trust={"ok": True, "governance_sha": new})), new)
+        # Stale trust (the model carries no anchor): the anchor file still names the pinned commit.
+        anchor = control / "trust.json"
+        value = json.loads(anchor.read_text()); value["governance_sha"] = new; anchor.write_text(json.dumps(value))
+        sha = self.build.trusted_sha(dict(stale_state, trust={"ok": False, "error": "kernel changed"}))
+        self.assertEqual(sha, new)
+        self.assertEqual(self.build.plan(sha)["outcomes"][6], "Events reach their endpoints within a second.")
+        self.assertEqual(self.build.plan(old)["outcomes"][6], "Events are delivered to their endpoints.")
+
     def test_the_terminal_ui_draws_the_plan_tab(self):
         from buildctl_ui.tui import BuildctlTUI
         from textual.widgets import Static

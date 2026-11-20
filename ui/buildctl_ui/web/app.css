@@ -449,6 +449,8 @@ pre.file { margin: 0; padding: var(--s3) var(--s4); font: var(--t-xs)/1.55 var(-
 .plan-gate-text b { font-weight: 600; }
 .plan-risks { list-style: none; margin: 0; padding: 0; }
 .plan-risks li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s3); padding: var(--s3) var(--s4); border-top: 1px solid var(--rule); font-size: var(--t-sm); }
+.plan-risks .sev { align-self: start; }
+.plan-risks code, .plan-decisions code, .plan-out code { font: 500 0.92em var(--mono); background: var(--paper-2); padding: 1px 4px; }
 .plan-risks li:first-child { border-top: 0; }
 .plan-risks p + p { margin-top: 2px; }
 .plan-decisions details { border-top: 1px solid var(--rule); }

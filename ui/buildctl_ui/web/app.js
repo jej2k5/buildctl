@@ -632,6 +632,8 @@ function viewPhases(m) {
 }
 
 // ---------- plan: the roadmap in the operator's words ----------
+// Discovery text marks code with backticks; set it in mono (the Machine Text Rule), escape everything else.
+const inline = (value) => esc(value).replace(/`([^`]+)`/g, "<code>$1</code>");
 function planNeeds(m) {
   const plan = m.plan || {}, notes = plan.notes || { before: {}, after: {} }, items = [];
   const e = m.escalation, n = m.state.current_phase;
@@ -694,7 +696,7 @@ function viewPlan(m) {
     rows.push(`<li class="plan-row">
       <span class="plan-sig">${sig(p.aspect)}</span><span class="plan-num mono">${pad(p.number)}</span>
       <div class="plan-body"><h3 class="plan-name">${esc(p.name)}${p.milestones.map((s) => ` <span class="tag">${esc(s)}</span>`).join("")}</h3>
-        ${outcome ? `<p class="plan-out">${esc(outcome)}</p>` : ""}
+        ${outcome ? `<p class="plan-out">${inline(outcome)}</p>` : ""}
         <p class="plan-meta">${esc(ASPECT_WORDS[p.aspect] || p.aspect)}${facts.length ? ` · <span class="mono">${esc(facts.join(" · "))}</span>` : ""} · <a href="#/phases/${p.number}">Details</a></p></div></li>`);
     if (finalAt === p.number && (plan.notes?.after?.[p.number])) rows.push(checkpointRow(m, p, "after"));
   }
@@ -714,11 +716,11 @@ function viewPlan(m) {
     <div class="cols section">
       <section aria-labelledby="plan-risks"><h2 class="h2" id="plan-risks">Accepted risks <small>${risks.length} recorded in docs/DISCOVERY_RISKS.md</small></h2>
         ${risks.length ? `<ul class="plan-risks panel">${risks.map((r) => `<li>${r.severity ? `<span class="sev sev-${esc(r.severity)}">${esc(r.severity)}</span>` : `<span class="sev sev-LOW">OPEN</span>`}
-          <div><p><span class="mono muted">${esc(r.id)}</span> ${esc(r.text)}</p>${r.accepted_by ? `<p class="muted">Accepted by ${esc(r.accepted_by)}${r.reason ? `: ${esc(r.reason)}` : ""}</p>` : ""}</div></li>`).join("")}</ul>`
+          <div><p><span class="mono muted">${esc(r.id)}</span> ${inline(r.text)}</p>${r.accepted_by ? `<p class="muted">Accepted by ${esc(r.accepted_by)}${r.reason ? `: ${inline(r.reason)}` : ""}</p>` : ""}</div></li>`).join("")}</ul>`
           : `<p class="empty panel">No accepted risks.</p>`}</section>
       <aside aria-labelledby="plan-decisions"><h2 class="h2" id="plan-decisions">Decisions <small>${(plan.decisions || []).length} in docs/DISCOVERY_DECISIONS.md</small></h2>
         ${Object.keys(bySection).length ? `<div class="plan-decisions panel">${Object.entries(bySection).map(([section, list]) => `<details><summary>${esc(section)} <span class="muted mono">${list.length}</span></summary>
-          <ul>${list.map((d) => `<li><span class="mono muted">${esc(d.id)}</span> ${esc(d.text)}</li>`).join("")}</ul></details>`).join("")}</div>`
+          <ul>${list.map((d) => `<li><span class="mono muted">${esc(d.id)}</span> ${inline(d.text)}</li>`).join("")}</ul></details>`).join("")}</div>`
           : `<p class="empty panel">No discovery decisions recorded.</p>`}</aside>
     </div>`;
 }

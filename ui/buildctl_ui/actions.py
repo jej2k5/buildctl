@@ -103,9 +103,23 @@ class Build:
     def model(self) -> dict[str, Any]:
         value = inspect(self.repo, self.control_root)
         value["demo"] = self.demo
-        value["plan"] = self.plan((value.get("state") or {}).get("governance_sha") or value["repo"].get("head_sha"))
+        value["plan"] = self.plan(self.trusted_sha(value))
         value["jobs"] = [self._job_view(job) for job in self.jobs[-8:]]
         return value
+
+    def trusted_sha(self, model: dict[str, Any]) -> str | None:
+        """The commit trust init pinned: the anchor, even while it no longer verifies (stale trust).
+
+        The build state's governance_sha refreshes only when an attempt starts, so a finished build
+        would show the roadmap from before the operator's last trust init.
+        """
+        sha = (model.get("trust") or {}).get("governance_sha")
+        if not sha:
+            try:
+                sha = json.loads((self.control_root / "trust.json").read_text()).get("governance_sha")
+            except (OSError, ValueError):
+                sha = None
+        return sha or (model.get("state") or {}).get("governance_sha") or model["repo"].get("head_sha")
 
     def plan(self, sha: str | None) -> dict[str, Any]:
         """The roadmap in the operator's words, from the governed discovery documents at the trusted commit.
