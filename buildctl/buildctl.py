@@ -305,8 +305,21 @@ class Supervisor:
                 state.status = "failed"
                 state.escalation_code = "UNEXPECTED_FAILURE"
                 state.escalation_detail = redact(str(exc), limit=500)
+                if state.current_phase is not None:
+                    state.last_failure = {"phase": state.current_phase,
+                                          "attempt": state.phase_attempts.get(str(state.current_phase)),
+                                          "code": state.escalation_code, "detail": state.escalation_detail}
                 self.store.event(state, "phase_failed", code=state.escalation_code)
                 raise
+
+    @staticmethod
+    def _prior_failure(state: BuildState, phase: Phase) -> str | None:
+        """The previous attempt's failure for this phase, as text for the next implementer."""
+        failure = state.last_failure
+        if not failure or failure.get("phase") != phase.number:
+            return None
+        return (f"Attempt {failure.get('attempt')} of this phase failed with {failure.get('code')}: "
+                f"{redact(str(failure.get('detail') or ''), limit=500)}")
 
     def _run_phase(self, state: BuildState, phase: Phase) -> None:
         key = str(phase.number)
@@ -366,7 +379,8 @@ class Supervisor:
         paths = self._paths(phase)
         phase_result = self._implementer_result(state, self._agent_operation(
             state, phase, "implement", PaidOperation.IMPLEMENTATION, paths["result"],
-            lambda timeout: codex.implement(phase, paths["result"], timeout)))
+            lambda timeout, pf=self._prior_failure(state, phase): codex.implement(
+                phase, paths["result"], timeout, prior_failure=pf)))
         phase_result = self._implementer_result(state, self._consume_interactive_debate_if_ready(
             state, phase, codex, workspace, paths, phase_result))
         phase_result = self._implementer_result(state, self._consume_debate_decision(
@@ -602,6 +616,7 @@ class Supervisor:
         publication = self.git.publish(phase)
         if phase.number not in state.completed_phases:
             state.completed_phases.append(phase.number)
+            state.last_failure = None
         state.current_phase, state.workspace, state.active_branch, state.phase_step = None, None, None, "pending"
         state.consecutive_failures = 0
         self.store.event(state, "phase_completed", phase=phase.number, branch=branch, publication=publication)

@@ -110,6 +110,9 @@ class BuildState:
     consecutive_failures: int = 0
     escalation_code: str | None = None
     escalation_detail: str | None = None
+    # Why the last attempt of the current phase failed, kept across `retry` so the next attempt's
+    # implementer is told. A blind retry repeats the same mistake (replcrm phase 6: .env.example).
+    last_failure: dict[str, Any] | None = None
     pending_approval: ApprovalRequirement | None = None
     active_branch: str | None = None
     base_sha: str | None = None
