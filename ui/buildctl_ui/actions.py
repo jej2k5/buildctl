@@ -24,6 +24,10 @@ from buildctl.buildctl import control_root_for
 from buildctl.supervisor.debate import OPERATOR_ANSWERS
 from buildctl.supervisor.evidence import EvidenceError, activity as evidence_activity, record_lines
 from buildctl.supervisor.inspect import audit_events, inspect
+from buildctl.supervisor.phases import load_config
+from buildctl.supervisor.phaseview import documentation_detail
+from buildctl.supervisor.state import BuildState, StateStore
+from buildctl.supervisor.trust import TrustStore
 
 
 class Refused(Exception):
@@ -146,6 +150,20 @@ class Build:
         if root not in target.parents:
             raise Refused("only files under the build's artifacts directory can be read", 403)
         return target.read_text(errors="replace")[:limit]
+
+    def documentation(self, phase: int) -> dict[str, Any]:
+        """The Docs tab for one phase: the documenter's results, its gates and each file's diff. Read-only."""
+        store = StateStore(self.control_root)
+        state = store.load() if store.path.exists() else BuildState()
+        config = None
+        try:
+            config = TrustStore(self.repo, self.control_root).config()
+        except Exception:
+            try:
+                config = load_config(self.repo / "build.yaml")
+            except Exception:
+                config = None
+        return documentation_detail(self.repo, self.control_root, state, phase, config)
 
     def activity(self, phase: int, operation: str | None = None) -> dict[str, Any]:
         """What agents reported doing in a phase, and what buildctl saw. Read-only."""

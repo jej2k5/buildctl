@@ -26,6 +26,10 @@ BENIGN = (
     "password = getpass()",
     "secret: none",
     "token = response.token",
+    # replcrm phase 6: TypeScript optional chaining and non-null assertion are member access.
+    "const accessToken = fields?.access_token;",
+    "const secret = record?.fields?.client_secret ?? null;",
+    "token = response!.payload.access_token",
     "assert response.token == expected",
     'API_KEY = os.getenv("API_KEY")',
     "export ANTHROPIC_API_KEY=...",

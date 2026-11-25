@@ -91,7 +91,7 @@ Most of a record is the agent's own account. Every row says who vouches for it:
 
 It does not prove that an agent's report is true or complete, that a receipt was not rewritten before you received it, or why an agent did anything. Receipts are not signed yet. Anyone with your machine can rewrite the branch and the audit chain.
 
-**Reviewing before it lands.** Set `merge_policy: human` on a phase. It stops after the commit and before publication, with the receipt already sealed. A `before_phases` checkpoint runs before the agent starts, so it can only show the previous phase's work.
+**Reviewing before it lands.** Set `merge_policy: human` on a phase. It stops after the commit and before publication, with the receipt already sealed. If what you see should not land, `buildctl reject` discards it and the next run tries again. A `before_phases` checkpoint runs before the agent starts, so it can only show the previous phase's work.
 
 **Secrets.** A credential buildctl was given kills the agent the moment it appears, and never reaches the record. A secret-shaped string, such as a token in a file the agent read, is redacted from the record without stopping the build. The result file is still checked as strictly as before. Receipts hold file paths and command lines, which get the same redaction plus patterns for command-line credentials. That lowers the risk but does not remove it, and on a public repo with `git.push` on, receipts are public too.
 

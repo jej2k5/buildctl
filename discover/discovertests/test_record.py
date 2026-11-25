@@ -15,6 +15,20 @@ class Record(unittest.TestCase):
         self.temporary, self.session = session(BUILTIN_BASE)
         self.addCleanup(self.temporary.cleanup)
 
+    def test_revising_one_acceptance_field_keeps_the_others(self):
+        """MCPxy: revising one field wiped allowed_paths, then gate commands, for several phases."""
+        decision = self.session.record_decision("Retry with backoff", OWNER)
+        phase = self.session.propose_phase("Retry", "Retry deliveries.", OWNER, implements=[decision], acceptance={
+            "commands": {"set": [["make", "test"]]}, "allowed_paths": {"set": ["src/retry/"]}})
+        self.session.revise_phase(phase, {"acceptance": {"invariants": {"add": ["bounded_retries"]}}}, OWNER)
+        acceptance = self.session.state().phase(phase)["acceptance"]
+        self.assertEqual(acceptance, {"commands": {"set": [["make", "test"]]}, "allowed_paths": {"set": ["src/retry/"]},
+                                      "invariants": {"add": ["bounded_retries"]}})
+        self.session.revise_phase(phase, {"acceptance": {"allowed_paths": None}}, OWNER)
+        self.assertNotIn("allowed_paths", self.session.state().phase(phase)["acceptance"])
+        with self.assertRaises(RecordError):
+            self.session.propose_phase("Other", "x", OWNER, implements=[decision], acceptance={"commands": None})
+
     def test_ids_are_sequential_per_kind_and_survive_replay(self):
         self.assertEqual(self.session.record_decision("A", OWNER), "D-1")
         self.assertEqual(self.session.add_open_question("Q?", OWNER), "Q-1")

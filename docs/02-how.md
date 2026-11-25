@@ -12,6 +12,17 @@ Every phase runs the same seven steps. Each step is recorded before and after it
 6. **Commit.** Only paths the phase may touch, none of them governance files, are copied into your repository and committed to `build/phase-N`.
 7. **Integrate.** The integration branch is fast-forwarded to the phase commit and the repository is left on it, so the next phase starts from there.
 
+### Documentation {#documentation}
+
+Off unless `documentation.mode` turns it on. Then a documenter keeps the docs true to the code, phase by phase, under the same review as the code:
+
+1. **Document.** Once the implementation passes its gate, the documenter edits only the documentation paths and writes `DOC_RESULT`: each change and the code it reflects, or why nothing needed changing. By default it runs as the implementer's model family, so the reviewer never grades its own family's prose.
+2. **Check its scope.** Any change outside the documentation paths, or to a governed file inside them, stops the phase: [DOC_SCOPE_VIOLATION](#DOC_SCOPE_VIOLATION).
+3. **Gate the docs.** The acceptance commands run again, because docs can break tests that read them. Then three documentation gates: every relative link and heading anchor resolves, a user-visible change has a new changelog entry under the unreleased heading, and no documentation file gains a forbidden phrase. A failure sends the documenter back with what failed, up to `documentation.max_attempts` times: [DOCUMENTATION_ATTEMPTS_EXHAUSTED](#DOCUMENTATION_ATTEMPTS_EXHAUSTED).
+4. **Review it with the code.** The reviewer sees the combined change and `DOC_RESULT`, with three more criteria: what the docs say matches the code, nothing the phase made stale is left stale, and no marketing language crept in. Blocking findings that all cite documentation paths go back to the documenter; any finding on code goes to the implementer, and the documenter runs again on the new code.
+
+In `optional` mode the documentation gates never stop a phase: their failures go to the reviewer and the audit log. A broken acceptance command or an out-of-scope change still does. A phase with `documentation: false` skips the step, and the reviewer is told so.
+
 ### How findings route a phase {#findings}
 
 | Finding | What happens |

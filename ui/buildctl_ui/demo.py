@@ -25,7 +25,7 @@ from buildctl.supervisor.state import (ApprovalRequirement, BuildState, DebateDe
                                        StateStore)
 from buildctl.supervisor.trust import TrustError, TrustStore
 
-SCENARIOS = ("blocked", "checkpoint", "ceiling", "unknown", "running", "debate", "fresh")
+SCENARIOS = ("blocked", "checkpoint", "ceiling", "unknown", "running", "debate", "docs", "fresh")
 FIXTURE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "target"
 COST = {"implement": 2.0, "remediate": 2.0, "review": 2.0, "debate": 5.0}
 
@@ -72,9 +72,35 @@ def _git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(repo), *args], check=True, text=True, capture_output=True).stdout.strip()
 
 
-def _repository(root: Path) -> Path:
+README = """# Relay
+
+Relay delivers webhooks to customer endpoints with retries.
+
+## Replay
+
+Replay resends a time window of events to one endpoint. See [the API contract](docs/API_CONTRACT.md).
+"""
+DOCS_README = README.replace("Replay resends a time window of events to one endpoint.",
+                             "Replay resends a time window of one tenant's events to one of its endpoints, through the "
+                             "normal delivery path, so every resend gets retries and an attempt record.")
+DOCS_SECTION = {"mode": "required", "paths": ["README.md", "CHANGELOG.md", "docs/**"], "changelog": "CHANGELOG.md",
+                "forbidden_phrases": ["production-ready", "seamless", "blazing"]}
+
+
+def _repository(root: Path, scenario: str = "blocked") -> Path:
     repo = root / "relay"
     shutil.copytree(FIXTURE, repo)
+    if scenario == "docs":
+        # The documentation role on: the same roadmap, with docs to keep true and phase 10 opted out.
+        config = json.loads((repo / "build.yaml").read_text())
+        config["documentation"] = DOCS_SECTION
+        config["operation_cost_usd"].update({"documentation": 2.0, "documentation_remediation": 2.0})
+        for phase in config["phases"]:
+            if phase["number"] == 10:
+                phase["documentation"] = False
+        (repo / "build.yaml").write_text(json.dumps(config, indent=2) + "\n")
+        (repo / "README.md").write_text(README)
+        (repo / "CHANGELOG.md").write_text("# Changelog\n\n## Unreleased\n")
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "-c", "user.name=demo", "-c", "user.email=demo@example.invalid", "add", "-A")
     _git(repo, "-c", "user.name=demo", "-c", "user.email=demo@example.invalid", "commit", "-q", "-m", "Roadmap")
@@ -94,7 +120,7 @@ def build(root: Path, scenario: str = "blocked") -> tuple[Path, Path]:
     """Create the demo repository and its control root under `root`. Returns (repo, control_root)."""
     if scenario not in SCENARIOS:
         raise ValueError(f"unknown scenario {scenario}; choose from {', '.join(SCENARIOS)}")
-    repo = _repository(root)
+    repo = _repository(root, scenario)
     control = root / "state"
     control.mkdir(mode=0o700)
     head = _git(repo, "rev-parse", "HEAD")
@@ -145,7 +171,7 @@ def build(root: Path, scenario: str = "blocked") -> tuple[Path, Path]:
             _escalate(store, state, "CHECKPOINT_REQUIRED", f"phase-{stop_at}")
         else:
             clock.value = now - timedelta(hours=1, minutes=48)
-            laps = 4 if scenario == "ceiling" else 3
+            laps = 4 if scenario == "ceiling" else 1 if scenario == "docs" else 3
             _phase(store, state, clock, costs, 12, laps, complete=False)
             _review_artifacts(control, 12, laps)
             for finding in FINDINGS:
@@ -169,6 +195,8 @@ def build(root: Path, scenario: str = "blocked") -> tuple[Path, Path]:
                 _escalate(store, state, "OPERATION_TIMEOUT_UNKNOWN", op_id)
             elif scenario == "debate":
                 _debate(store, state, clock, costs, control)
+            elif scenario == "docs":
+                _documentation(store, state, clock, costs, control, root, repo)
             elif scenario == "running":
                 op_id = "phase-12:remediate-3:1"
                 clock.value = now - timedelta(minutes=14)
@@ -288,6 +316,58 @@ def _debate(store: StateStore, state: BuildState, clock: Clock, costs: list, con
                                           "c31d7a0e94b25f86d1e3a7c09b4f2e58")
     _escalate(store, state, "DEBATE_AWAITING_DECISION",
               "phase 12, debate 1: 4 turns without an accepted proposal")
+
+
+def _documentation(store: StateStore, state: BuildState, clock: Clock, costs: list, control: Path, root: Path,
+                   repo: Path) -> None:
+    """Phase 12's documenter: one pass sent back by the links gate, then a second pass that edited code."""
+    directory = control / "artifacts" / "phase-12"
+    # The documenter runs before review, so this attempt never reached it.
+    state.operations.pop("phase-12:review-1:1", None)
+    for name in ("REVIEW_RESULT-1.json",):
+        (directory / name).unlink(missing_ok=True)
+    state.findings.clear()
+    workspace = root / "workspace"
+    shutil.copytree(repo, workspace, ignore=shutil.ignore_patterns(".git"))
+    (workspace / "README.md").write_text(DOCS_README)
+    (workspace / "CHANGELOG.md").write_text("# Changelog\n\n## Unreleased\n\n- Replay is scoped to the endpoint's "
+                                            "tenant and goes through the normal delivery path.\n")
+    (workspace / "src" / "relay").mkdir(parents=True)
+    (workspace / "src" / "relay" / "replay.py").write_text(
+        '"""Replay a window of events to one endpoint."""\n\nREPLAY_DOC = "see README.md#replay"\n')
+    state.workspace, state.base_sha = str(workspace), _git(repo, "rev-parse", "HEAD")
+    first = {"status": "updated", "summary": "Documented that replay is tenant-scoped and uses the delivery path.",
+             "user_visible": True, "reason": "", "changes": [
+                 {"path": "README.md", "reflects": "src/relay/replay.py:142 scopes by tenant", "kind": "fixed_stale"}]}
+    second = dict(first, summary="Documented tenant-scoped replay, added the changelog entry, and fixed the link "
+                                 "the gate reported.", changes=[
+        {"path": "README.md", "reflects": "src/relay/replay.py:142 scopes by tenant", "kind": "fixed_stale"},
+        {"path": "CHANGELOG.md", "reflects": "this phase's delta", "kind": "added"}])
+    for label, result, seconds in (("1-0", first, 41), ("1-1", second, 37)):
+        op_id = f"phase-12:document-{label}:1"
+        state.operations[op_id] = Operation(op_id, f"document-{label}", 12, status="started", started_at=clock(),
+                                            output_path=str(directory / f"DOC_RESULT-{label}.json"))
+        costs.append(dict(_cost(clock, "documentation" if label == "1-0" else "documentation_remediation", 12, op_id),
+                          cost_usd=2.0))
+        clock.advance(seconds / 60)
+        state.operations[op_id].status, state.operations[op_id].completed_at = "completed", clock()
+        (directory / f"DOC_RESULT-{label}.json").write_text(json.dumps(result, indent=2) + "\n")
+        store.event(state, "operation_completed", operation=op_id)
+        if label == "1-0":
+            gate_id = "phase-12:doc-gate-1-0:1"
+            state.operations[gate_id] = Operation(gate_id, "doc-gate", 12, status="completed", started_at=clock(),
+                                                  completed_at=clock(),
+                                                  output_path=str(directory / "DOC_GATE_RESULT-1-0.json"))
+            (directory / "DOC_GATE_RESULT-1-0.json").write_text(json.dumps({
+                "passed": False, "acceptance": {"passed": True, "details": []},
+                "documentation": {"passed": False, "failures": [
+                    {"gate": "links", "problems": ["README.md:7 docs/API.md (missing file)"]},
+                    {"gate": "changelog", "problems": ['a user-visible change needs a new entry under "Unreleased" in CHANGELOG.md']}]}},
+                indent=2) + "\n")
+            state.documentation_attempts["12"] = 1
+            store.event(state, "documentation_remediation", phase=12, source="gates", attempt=1)
+    store.event(state, "documentation_scope_violation", phase=12, paths=["src/relay/replay.py"])
+    _escalate(store, state, "DOC_SCOPE_VIOLATION", "src/relay/replay.py")
 
 
 def _escalate(store: StateStore, state: BuildState, code: str, detail: str) -> None:

@@ -34,7 +34,7 @@ REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 # Commands that change state. Everything else is read-only or changes trust, which a
 # request id cannot cover; passing --request-id to them is refused rather than ignored.
 MUTATING = frozenset({"start", "run", "phase", "pause", "resume", "retry", "approve", "debate",
-                      "reconcile", "reopen"})
+                      "reconcile", "reopen", "reject"})
 
 # Arguments that do not change what the command does.
 _NEUTRAL = frozenset({"repo", "dry_run", "request_id"})

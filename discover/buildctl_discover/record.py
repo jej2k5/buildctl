@@ -166,11 +166,12 @@ def slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
-def normalize_acceptance(value: Any) -> dict[str, Any]:
+def normalize_acceptance(value: Any, allow_clear: bool = False) -> dict[str, Any]:
     """Each list field is {"add": [...]} (extend the defaults) or {"set": [...]} (replace them).
 
     buildctl replaces a default when a phase names the key, so the record has to say which one
-    the speaker meant. merge_policy is a plain value."""
+    the speaker meant. merge_policy is a plain value. With `allow_clear` (a revision), a field
+    given as null is kept as None: the caller removes it, so the phase falls back to the default."""
     if value is None:
         return {}
     if not isinstance(value, dict):
@@ -183,6 +184,9 @@ def normalize_acceptance(value: Any) -> dict[str, Any]:
         if name not in value:
             continue
         entry = value[name]
+        if entry is None and allow_clear:
+            result[name] = None
+            continue
         if not isinstance(entry, dict) or len(entry) != 1 or next(iter(entry)) not in ("add", "set"):
             raise RecordError(f"acceptance.{name} must be {{\"add\": [...]}} or {{\"set\": [...]}}")
         mode, items = next(iter(entry.items()))
@@ -194,7 +198,9 @@ def normalize_acceptance(value: Any) -> dict[str, Any]:
         else:
             items = _strings(items, f"acceptance.{name}.{mode}")
         result[name] = {mode: items}
-    if "merge_policy" in value:
+    if "merge_policy" in value and value["merge_policy"] is None and allow_clear:
+        result["merge_policy"] = None
+    elif "merge_policy" in value:
         if value["merge_policy"] not in ("auto", "human"):
             raise RecordError("acceptance.merge_policy must be auto or human")
         result["merge_policy"] = value["merge_policy"]
@@ -340,6 +346,9 @@ class Session:
             if self.exists:
                 raise RecordError(f"a session already exists at {self.directory}")
             self._append("session_started", {"repo": str(repo.resolve()), "base": base, "by": by.as_dict()})
+            # The fleet view names session folders by this, as it does buildctl state folders.
+            record = {"path": str(repo.resolve()), "recorded_at": self.clock()}
+            (self.directory / "repo.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 
     # Requirements
 
@@ -456,13 +465,21 @@ class Session:
         if "implements" in changes:
             clean["implements"] = _strings(changes["implements"], "implements")
         if "acceptance" in changes:
-            clean["acceptance"] = normalize_acceptance(changes["acceptance"])
+            revised = normalize_acceptance(changes["acceptance"], allow_clear=True)
 
         def fn(state: State) -> tuple[str, dict[str, Any], Any]:
             current = state.phase(phase_id)
             self._check_phase_fields(state, clean.get("name", current["name"]),
                                      clean.get("implements", current["implements"]), phase_id)
-            return "phase_revised", {"id": phase_id, "changes": clean, "by": by.as_dict()}, None
+            changed = dict(clean)
+            if "acceptance" in changes:
+                # Revising one acceptance field keeps the others. It used to replace the whole
+                # block: on MCPxy the keeper twice lost allowed_paths, then gate commands, for
+                # phases it meant to touch one field of, and they fell back to the defaults.
+                # A field given as null is cleared on purpose.
+                merged = {**(current.get("acceptance") or {}), **revised}
+                changed["acceptance"] = {key: value for key, value in merged.items() if value is not None}
+            return "phase_revised", {"id": phase_id, "changes": changed, "by": by.as_dict()}, None
         self._mutate(fn)
 
     def withdraw_phase(self, phase_id: Any, reason: Any, by: Identity) -> None:

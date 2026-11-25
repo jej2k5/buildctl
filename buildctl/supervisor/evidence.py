@@ -588,7 +588,8 @@ def discrepancies(records: list[dict[str, Any]], changed: tuple[str, ...] | list
     """Where the agent's account and the observed change disagree. Flags, never stops."""
     # A debate turn runs as the implementer against a read-only workspace. It wrote nothing,
     # so counting its account against the change would flag every debate.
-    implementers = [record for record in records if record["header"].get("role") == "implementer"
+    # The documenter writes the same workspace, so its edits count as reported changes too.
+    implementers = [record for record in records if record["header"].get("role") in {"implementer", "documenter"}
                     and not is_debate_turn(record["header"].get("operation"))]
     actions = [action for record in implementers for action in actions_of(record)]
     written = {action["target"] for action in actions if action["kind"] == "edit"}
@@ -621,20 +622,23 @@ def _artifact_entries(control_root: Path, phase: int, interactive_debate: bool) 
         kind = next((label for prefix, label in (("GATE_RESULT", "gate"), ("REVIEW_RESULT", "review"),
                                                  ("DEBATE_DECISION", "operator_decision"),
                                                  ("DEBATE_TURN", "debate_turn"), ("DEBATE_", "debate"),
-                                                 ("PHASE_RESULT", "implementer_result"))
+                                                 ("PHASE_RESULT", "implementer_result"),
+                                                 ("DOC_GATE_RESULT", "doc_gate"), ("DOC_RESULT", "documentation_result"))
                      if name.startswith(prefix)), None)
         if kind is None:
             continue
         entry = {"file": name, "kind": kind, "sha256": digest(path.read_bytes()),
-                 "source": {"gate": "observed", "operator_decision": "operator",
+                 "source": {"gate": "observed", "doc_gate": "observed", "operator_decision": "operator",
                             "debate": "human_run" if interactive_debate else "agent_reported"}
                  .get(kind, "agent_reported")}
         try:
             value = json.loads(path.read_text())
         except (OSError, ValueError):
             value = {}
-        if kind == "gate":
+        if kind in {"gate", "doc_gate"}:
             entry["passed"] = value.get("passed")
+        if kind == "documentation_result":
+            entry["status"] = value.get("status")
         if kind == "review":
             entry["verdict"] = value.get("verdict")
         entries.append(entry)

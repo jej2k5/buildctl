@@ -32,7 +32,9 @@ PLACEHOLDER_VALUES = frozenset({
     "secret", "password", "token", "apikey", "key", "credential", "credentials",
 })
 # `response.token`, `os.environ`, `settings.SECRET_KEY` — a member-access path, not a literal.
-DOTTED_REFERENCE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)+")
+# Optional chaining (`fields?.access_token`) and non-null assertion (`resp!.token`) are member
+# access too: replcrm phase 6 failed on `const accessToken = fields?.access_token;`.
+DOTTED_REFERENCE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*([?!]?\.[A-Za-z_$][A-Za-z0-9_$]*)+")
 # A bare identifier such as `configuration_value` or `myConfiguredToken`. Real credentials
 # are not snake_case and rarely lack digits, so those two shapes read as variable names.
 BARE_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")

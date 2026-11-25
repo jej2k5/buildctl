@@ -19,6 +19,10 @@ class AgentError(RuntimeError):
     pass
 
 
+# Roles that write the workspace with a Codex login staged into their isolated HOME.
+STAGED_CODEX_ROLES = ("implementer", "documenter")
+
+
 # Bounded length for the redacted provider reason carried on a process failure.
 PROCESS_DIAGNOSTIC_LIMIT = 500
 
@@ -182,7 +186,7 @@ class RoleRunner:
         if not host_authenticated_reviewer:
             isolated_home.mkdir(mode=0o700)
         staged_secrets: dict[str, str] = {}
-        if auth_mode == "host_cli" and role == "implementer":
+        if auth_mode == "host_cli" and role in STAGED_CODEX_ROLES:
             cleanup_staged_auth(isolated_home)
             try:
                 _, staged_secrets = stage_codex_auth(isolated_home, self.context.host_home)
@@ -249,7 +253,7 @@ class RoleRunner:
                 raise AgentError(f"{role.upper()}_MUTATED_WORKSPACE")
             return load_structured(agent_output, role.upper())
         finally:
-            if auth_mode == "host_cli" and role == "implementer":
+            if auth_mode == "host_cli" and role in STAGED_CODEX_ROLES:
                 cleanup_staged_auth(isolated_home)
 
     def _run_recorded(self, role: str, configured: list[str], executable: str, prompt: str, command: list[str],

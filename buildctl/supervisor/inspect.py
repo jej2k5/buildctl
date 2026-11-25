@@ -23,6 +23,7 @@ from .evidence import _printable, receipts_state, recording_enabled
 from .isolation import IsolationError, production_backend, require_fresh_conformance
 from .kernel import kernel_identity
 from .phases import ConfigurationError, load_config, merged_metadata
+from .phaseview import documentation_summary, phase_steps
 from .review import NON_BLOCKING_FINDING_STATUSES
 from .state import BuildState, StateStore
 from .trust import TrustError, TrustStore
@@ -66,6 +67,10 @@ ESCALATIONS: dict[str, tuple[str, str]] = {
                                    "Investigate before retrying. This should never happen."),
     "STALE_DEBATE_RESULT": ("The debate result was written for a different phase or base.",
                             "Re-run the debate for the current request, then retry."),
+    "DOC_SCOPE_VIOLATION": ("The documenter changed files outside the documentation paths. Nothing was "
+                            "reviewed or committed.",
+                            "Check the detail for the paths, then retry. If they should count as documentation, "
+                            "add them to documentation.paths and run trust init."),
     "AGENT_RECORD_INCOMPLETE": ("Part of the phase went unrecorded, so buildctl will not commit it.",
                                 "Fix the cause in the detail, such as a full disk, then retry. A retry starts a fresh attempt."),
     "UNEXPECTED_FAILURE": ("The supervisor hit an error it does not classify.",
@@ -325,6 +330,7 @@ def inspect(repo: Path, control_root: Path, runner: Callable[..., Any] = subproc
             operations = [asdict(op) for op in state.operations.values() if op.phase == number]
             if any(op["status"] == "unknown" for op in operations):
                 aspect = "unknown"
+            track = phase_steps(state, number, operations, config, lock["held"], control_root)
             phases.append({
                 "number": number, "name": item["name"], "aspect": aspect,
                 "merge_policy": meta["merge_policy"], "checkpoint": number in before,
@@ -333,6 +339,11 @@ def inspect(repo: Path, control_root: Path, runner: Callable[..., Any] = subproc
                 "remediations": state.remediation_attempts.get(key, 0),
                 "reviews": state.semantic_review_attempts.get(key, 0),
                 "debates": state.debate_attempts.get(key, 0),
+                # Documenter passes in any attempt; None when documentation is off for the phase.
+                "doc_passes": (sum(1 for op in operations if ":document-" in op["id"]
+                                   and op["id"].endswith(f":{track['attempt']}"))
+                               if track["documentation"] not in (None, "off") else None),
+                "documentation": track["documentation"], "track": track,
                 "cost_usd": budget["by_phase"].get(key, 0.0),
                 "operations": operations,
             })
@@ -395,5 +406,6 @@ def inspect(repo: Path, control_root: Path, runner: Callable[..., Any] = subproc
         "current": current,
         "phases": phases,
         "findings": {"open": open_findings, "total": len(findings)},
+        "documentation": documentation_summary(config),
         "levers": lever_rules.levers(state, facts) if not state_error and audit["ok"] else [],
     }

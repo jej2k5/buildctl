@@ -289,3 +289,23 @@ class ProvisioningEnvironmentTests(unittest.TestCase):
                 os.environ.pop("PIP_TARGET", None)
             else:
                 os.environ["PIP_TARGET"] = original
+
+
+class GovernedProvisioningWiringTests(unittest.TestCase):
+    """build.yaml's python section reaches pip: named extras, and the governed constraints file."""
+
+    def test_extras_and_constraints_reach_the_install(self):
+        manifest = (b'[project]\nname="p"\nversion="0"\ndependencies=["structlog"]\n'
+                    b'[project.optional-dependencies]\ndev=["pytest>=8,<9"]\n')
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            workspace, control, repo = workspace_with(base, manifest)
+            snapshot = base / "snapshot"; (snapshot / "ci").mkdir(parents=True)
+            (snapshot / "ci" / "constraints.txt").write_text("structlog==24.1.0\n")
+            calls: list = []
+            MechanicalGates(workspace, control, repo, FakeIsolationBackend(), recording_runner(calls),
+                            python={"extras": ["dev"], "constraints": "ci/constraints.txt"},
+                            snapshot=snapshot).run(phase(PRODUCT_COMMAND), 30)
+            install = next(call for call in calls if "install" in call)
+            self.assertEqual(install[install.index("-c") + 1], str(snapshot / "ci" / "constraints.txt"))
+            self.assertEqual(install[install.index("--") + 1:], ["structlog", "pytest>=8,<9"])

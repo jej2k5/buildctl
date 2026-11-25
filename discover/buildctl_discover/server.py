@@ -35,6 +35,12 @@ ACCEPTANCE = {
     "properties": {"required_files": _LIST_MODE, "commands": _COMMANDS_MODE, "allowed_paths": _LIST_MODE,
                    "invariants": _LIST_MODE, "merge_policy": {"type": "string", "enum": ["auto", "human"]}},
     "additionalProperties": False}
+_NULL = {"type": "null"}
+# A revision names only the fields it changes; the rest are kept. null clears a field.
+REVISE_ACCEPTANCE = dict(ACCEPTANCE, description=(
+    "Only the fields you name change; every other field is kept. Each list is {\"add\": [...]} or "
+    "{\"set\": [...]} as when proposing; null clears that field so the phase uses the project default."),
+    properties={name: {"anyOf": [schema, _NULL]} for name, schema in ACCEPTANCE["properties"].items()})
 
 
 OUTCOME = {"type": "string", "description": "Optional: one plain line for the operator, at most 160 characters: "
@@ -104,10 +110,10 @@ class Server:
                      name, objective, me, implements=implements, acceptance=acceptance, details=details,
                      position=position, outcome=outcome)),
             Tool("revise_phase", "Change a phase's name, objective, details, implements or acceptance. Acceptance "
-                 "is replaced whole.",
+                 "fields you leave out are kept; null clears one.",
                  _schema({"phase_id": _TEXT, "changes": {"type": "object", "properties": {
                      "name": _TEXT, "objective": _TEXT, "details": _TEXT, "outcome": OUTCOME, "implements": _IDS,
-                     "acceptance": ACCEPTANCE}, "additionalProperties": False}}, ("phase_id", "changes")),
+                     "acceptance": REVISE_ACCEPTANCE}, "additionalProperties": False}}, ("phase_id", "changes")),
                  lambda phase_id, changes: s.revise_phase(phase_id, changes, me)),
             Tool("withdraw_phase", "Remove a phase, with the reason. Its id is never reused.",
                  _schema({"phase_id": _TEXT, "reason": _TEXT}, ("phase_id", "reason")),

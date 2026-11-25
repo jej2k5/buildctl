@@ -14,6 +14,12 @@ A phase in `checkpoints.before_phases`, a `merge_policy: human` merge, or the MV
 
 **Clear it:** review the evidence, then approve. `buildctl approve --nonce <n>`, with the nonce from `status`. In the console, the Approve lever asks you to type the first 7 characters of the tree hash you reviewed. An approval made against state that has since moved is refused.
 
+**If you committed while it waited:** the checkpoint is bound to the tree it was issued on, so approve refuses it. Run `buildctl retry`: it reissues the same checkpoint for the repository as it is now, with a new nonce, and you approve that. Nothing else changes, and no attempt is spent. A before-phase checkpoint also takes the current trust anchor, so a re-trust at a checkpoint asks for a fresh signature.
+
+**If a phase waiting to merge should not land:** `buildctl reject --phase <n> --confirm <n>` discards its commit without merging and the next run builds a fresh attempt from the integration branch. Use it when the work is wrong, or when the integration branch moved and the fast-forward merge refuses.
+
+The phase's clock, base commit and trust anchor are set when work starts, after a before-phase checkpoint clears, so a long wait at a checkpoint costs no phase time.
+
 #### DEBATE_REQUIRES_HUMAN {#DEBATE_REQUIRES_HUMAN signal=caution}
 
 With `roles.arbiter.mode: interactive`, the review routed the phase to a debate, and the debate is yours to run. buildctl wrote `DEBATE_REQUEST.json`: the strategic findings, the evidence digest, the exact output format and the `output_path` to write the result to. The status detail is the request's path, in the phase's `artifacts/phase-N/` directory.
@@ -54,9 +60,9 @@ The reviewer could not clear the phase.
 
 #### UNREVIEWABLE_DELTA {#UNREVIEWABLE_DELTA signal=danger}
 
-The change has binary or oversized files the reviewer cannot read.
+The change has files the reviewer cannot read: a binary file, a new text file over `limits.max_review_file_bytes`, or an edit to a large file whose diff is itself over that limit. An edit to an existing large text file is shown to the reviewer as its diff, so it does not stop here.
 
-**Clear it:** adjust the phase so its output is reviewable, then `buildctl retry`.
+**Clear it:** adjust the phase so its output is reviewable, or raise `limits.max_review_file_bytes` in a reviewed governance commit, then `buildctl retry`.
 
 #### DEBATE_UNRESOLVED {#DEBATE_UNRESOLVED signal=danger}
 
@@ -90,7 +96,7 @@ The phase passed review, but the budget ledger or a required approval no longer 
 
 #### AGENT_OPERATION_FAILED {#AGENT_OPERATION_FAILED signal=danger}
 
-An agent call failed. The status detail starts with a detail code, then a redacted reason. Find the code below. `<ROLE>` is `IMPLEMENTER`, `REVIEWER` or `ARBITER`. `<KIND>` is the role, or `DEBATE` for an interactive debate result.
+An agent call failed. The status detail starts with a detail code, then a redacted reason. Find the code below. `<ROLE>` is `IMPLEMENTER`, `REVIEWER`, `ARBITER` or `DOCUMENTER`. `<KIND>` is the role, or `DEBATE` for an interactive debate result.
 
 **Clear it:** do what the detail code's row says, then `buildctl retry`.
 
@@ -105,6 +111,7 @@ An agent call failed. The status detail starts with a detail code, then a redact
 | `<ROLE>_MUTATED_WORKSPACE` | The workspace changed during a read-only call: a review, or either side's [debate](#debates) turn. | For the reviewer, check its command still limits it to `--tools Read,Grep,Glob`. For a Codex turn, the sandbox's read-only workspace failed: run `isolation verify`. Then retry. |
 | `DEBATE_TURN_INVALID` | A debate turn broke the turn contract: no argument, a proposal that does not dispose of exactly the debated findings, or an acceptance of a proposal the other side never made. | Retry. If it repeats, look at the turn in What agents did. |
 | `IMPLEMENTER_OUTPUT_SCHEMA_INVALID` | The implementer's `PHASE_RESULT` did not have the contract's fields. | Retry. If it repeats, check the phase prompt does not ask for another format. |
+| `DOCUMENTER_OUTPUT_SCHEMA_INVALID` | The documenter's `DOC_RESULT` broke its contract. The detail says how: wrong keys, an `updated` result with no changes, or a `no_change` result with no reason. | Retry. If it repeats, check `prompts/documentation.md` does not ask for another format. |
 | `<KIND>_OUTPUT_MISSING` | The agent finished without writing a result. | Retry. If it repeats, check the agent command writes to `{output}` or prints its result. |
 | `<KIND>_OUTPUT_EMPTY` | The result file was empty. | Retry. |
 | `<KIND>_OUTPUT_INVALID_JSON` | The result was not valid JSON. The detail quotes the text near the error. | Retry. If it repeats, check the phase prompt does not ask for prose around the JSON. |
@@ -123,6 +130,12 @@ The phase ran past `max_phase_minutes`.
 Part of the phase went unrecorded, so buildctl will not commit it: a record could not be written (often a full disk), a stream ended with no final event, a supervisor crash left a record unclosed, or a record fails its internal chain. The agent is killed at once, which stops further spend. The flat amount reserved for the call stays booked, and the provider bills what it used. See [What agents did](#evidence).
 
 **Clear it:** fix the cause in the detail, then `buildctl retry`. A retry starts a fresh attempt in a fresh workspace, and the earlier record stays in the receipt, labelled incomplete. If the phase had already committed and only the seal failed, the retry seals it and carries on.
+
+#### DOC_SCOPE_VIOLATION {#DOC_SCOPE_VIOLATION signal=danger}
+
+The [documenter](#documentation) changed a file outside `documentation.paths`, or a governed file inside them. The detail lists the paths. Nothing was reviewed or committed.
+
+**Clear it:** `buildctl retry`. A retry starts a fresh attempt. If the paths should count as documentation, add them to `documentation.paths`, commit, run `trust init`, then retry.
 
 #### DELTA_CHANGED_AFTER_REVIEW {#DELTA_CHANGED_AFTER_REVIEW signal=danger}
 
@@ -185,6 +198,12 @@ A new attempt would exceed `max_phase_attempts`.
 Another remediation lap would exceed the phase's `max_remediation_attempts` for this attempt.
 
 **Clear it:** `buildctl retry --authorize-extra-attempt --nonce <n>`, with the nonce from `status`. The retry is a fresh attempt, and each attempt counts its own remediation laps, so it gets the full allowance. Or fix the cause first.
+
+#### DOCUMENTATION_ATTEMPTS_EXHAUSTED {#DOCUMENTATION_ATTEMPTS_EXHAUSTED signal=danger}
+
+The [documenter](#documentation) was sent back `documentation.max_attempts` times in this attempt, by failed documentation gates or by review findings on documentation, and still did not clear them. Each send-back is in the audit log as `documentation_remediation`, and each gate result is in the phase artifacts as `DOC_GATE_RESULT`.
+
+**Clear it:** read the last gate result or review, fix the cause if it is outside the documenter's reach (a governed file, a wrong `documentation.paths`), then `buildctl retry --authorize-extra-attempt --nonce <n>`, with the nonce from `status`.
 
 #### SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED {#SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED signal=danger}
 

@@ -1,0 +1,11 @@
+{
+  "status": "updated",
+  "summary": "What the documentation now says that it did not before",
+  "user_visible": true,
+  "changes": [
+    {"path": "README.md", "reflects": "src/cli.py:42 adds the --dry-run flag", "kind": "updated"},
+    {"path": "CHANGELOG.md", "reflects": "this phase's delta", "kind": "added"},
+    {"path": "docs/install.md", "reflects": "package.json engines now >=22", "kind": "fixed_stale"}
+  ],
+  "reason": ""
+}
