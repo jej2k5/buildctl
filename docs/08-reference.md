@@ -55,6 +55,7 @@ Accepted with no terminal record means the command is still running, or was inte
 | `limits.max_semantic_review_attempts` | Reviews of one phase before [SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED](#SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED). |
 | `limits.max_debate_rounds` | Debates one phase may hold. |
 | `limits.max_debate_turns` | Turns in one debate when `roles.arbiter.mode` is `debate`, both sides together. Optional; default 6, at least 2. |
+| `limits.max_review_file_bytes` | Largest changed text file the reviewer is shown whole. Optional; default 100000. A larger changed file is shown as its diff against the phase base instead; only a larger new file, or a diff over the limit, is [UNREVIEWABLE_DELTA](#UNREVIEWABLE_DELTA). |
 | `limits.max_phase_minutes` | Wall-clock limit for one attempt, before [PHASE_DEADLINE_EXCEEDED](#PHASE_DEADLINE_EXCEEDED). |
 | `limits.max_daily_cost_usd` | The daily budget, in UTC days. |
 | `limits.max_consecutive_failures` | Stops in a row before [MAX_CONSECUTIVE_FAILURES_EXHAUSTED](#MAX_CONSECUTIVE_FAILURES_EXHAUSTED). |
@@ -67,6 +68,9 @@ Accepted with no terminal record means the command is still running, or was inte
 | `documentation.max_attempts` | Times the documenter may be sent back in one attempt before [DOCUMENTATION_ATTEMPTS_EXHAUSTED](#DOCUMENTATION_ATTEMPTS_EXHAUSTED). Default 3. |
 | `documentation.brief` | Optional governed file with the docs' structure and voice, given to the documenter. Default `prompts/documentation.md` when it exists. |
 | `roles.documenter` | Optional, and only when documentation is on. Same keys as the other roles. Left out, the documenter runs as the implementer with the lineage `documentation-v1`. `buildctl validate` warns when it shares the reviewer's model family. |
+| `python.extras` | Optional. Names of `[project.optional-dependencies]` groups `{python}` gates also install, such as `["dev"]` for pytest. Same bound rules as the main dependencies. |
+| `python.constraints` | Optional. A governed constraints file (list it in `governance_documents`). A requirement it bounds from above may be unbounded in `pyproject.toml`. Passed to pip as `-c`. |
+| `python.direct_references` | Optional. Exact `name @ https://...whl#sha256=<hash>` entries a manifest may use: pre-built wheels pinned by hash. Git and source URLs are refused. |
 | `governance_documents` | Files beyond the fixed governed set that `trust init` pins and agents may not modify. Required; may be `[]`. |
 | `git.remote` | The remote phase branches are pushed to when `push` is on. |
 | `git.push` | Push the phase branch instead of fast-forwarding the integration branch locally. |
@@ -74,7 +78,7 @@ Accepted with no terminal record means the command is still running, or was inte
 | `git.merge` | Request a squash auto-merge of that pull request, for phases whose `merge_policy` is `auto`. |
 | `git.integration_branch` | The branch fast-forwarded after each phase. Default `main`. Fast-forward only: if it has commits the phase lacks, buildctl stops instead of merging. |
 | `roles.*.command` | The argv for each agent. `{prompt}` and `{output}` are substituted. While recording is on, `codex` needs `--json` and `claude` needs `--output-format stream-json --verbose`; see [Setting it up](#evidence). |
-| `roles.*.network` | Whether the agent has network access in the sandbox. |
+| `roles.*.network` | Whether the agent has network access in the sandbox. Must be `true` with `auth_mode: host_cli`, because the CLI calls its provider's API. |
 | `roles.*.auth_mode` | How the agent authenticates: `host_cli` (your CLI login; macOS only), `environment` (the named variables) or `none`. |
 | `roles.*.credential_env` | The `*_API_KEY` or `*_TOKEN` variables an `environment` agent receives. Must be empty otherwise. |
 | `roles.reviewer.vendor` | Reviewer identity every review report must echo back exactly. |
@@ -82,7 +86,7 @@ Accepted with no terminal record means the command is still running, or was inte
 | `roles.reviewer.prompt_lineage` | Reviewer identity every review report must echo back exactly. |
 | `roles.reviewer.protocol_version` | Must be `buildctl-review-v2`. |
 | `roles.reviewer.context_documents` | Governed files the reviewer gets as architecture context. Required; may be `[]`. |
-| `roles.reviewer.review_prompt` | Optional. Your own governed review prompt, replacing the built-in one. |
+| `roles.reviewer.review_prompt` | Optional. Your own governed review criteria, appended to the built-in review prompt. They cannot change its verdict or coverage rules. |
 | `roles.implementer.remediation_prompt` | Optional. Your own governed remediation prompt. |
 | `roles.arbiter.mode` | `debate`: Codex and Claude debate the findings inside the build, and you decide only what they cannot settle. See [Debates](#debates). `interactive`: debates stop for a human. See [DEBATE_REQUIRES_HUMAN](#DEBATE_REQUIRES_HUMAN). Any other value: the arbiter's own command rules on the findings in one call. |
 | `milestones` | Names for `run --until`. |

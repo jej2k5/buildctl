@@ -192,8 +192,11 @@ class GitManager:
                   "-m", f"Base-SHA: {base_sha}")
         return branch
 
-    def review_evidence(self, workspace: Path, delta: Delta, gate: dict[str, Any], *, max_text_bytes: int = 100_000) -> dict[str, Any]:
+    def review_evidence(self, workspace: Path, delta: Delta, gate: dict[str, Any], *,
+                        base_sha: str | None = None, max_text_bytes: int | None = None) -> dict[str, Any]:
         workspace = workspace.resolve()
+        if max_text_bytes is None:
+            max_text_bytes = int(self.config.get("limits", {}).get("max_review_file_bytes", DEFAULT_REVIEW_FILE_BYTES))
         changed_files = []
         tests = []
         for change in delta.changes:
@@ -203,14 +206,22 @@ class GitManager:
             else:
                 target = ensure_safe_relative(workspace, change["path"])
                 raw = target.read_bytes()
+                encoding = "utf-8"
                 try:
                     content = raw.decode("utf-8")
                     reviewable = len(raw) <= max_text_bytes
                 except UnicodeDecodeError:
                     content, reviewable = None, False
+                if content is not None and not reviewable and base_sha and change["change_type"] in {"modified", "renamed"}:
+                    # MCPxy phase 7: the brief asked for the smallest edit to a 212 KB file, and the
+                    # phase stopped UNREVIEWABLE_DELTA because only whole files were offered. A
+                    # changed text file too large to show whole is shown as its diff instead.
+                    diff = self._text_diff(base_sha, change, content)
+                    if diff is not None and len(diff.encode()) <= max_text_bytes:
+                        content, reviewable, encoding = diff, True, "unified_diff"
                 item.update({"reviewable": reviewable,
                              "content": content if reviewable else None,
-                             "content_encoding": "utf-8" if reviewable else "binary_or_oversized",
+                             "content_encoding": encoding if reviewable else "binary_or_oversized",
                              "size": len(raw)})
                 if reviewable and change["path"].startswith("tests/"):
                     tests.append(content or "")
@@ -222,6 +233,29 @@ class GitManager:
                 "changed_files": changed_files, "gates": gate, "tests": "\n\n".join(tests),
                 "digest": delta.digest, "coverage": coverage,
                 "unreviewable": [item["path"] for item in changed_files if not item["reviewable"]]}
+
+    def _text_diff(self, base_sha: str, change: dict[str, Any], content: str) -> str | None:
+        """The change to one text file as a unified diff against the phase base, or None.
+
+        The old bytes come from the authoritative repository at the phase's base commit, never from
+        the agent's clone, whose history the agent can rewrite. They must hash to the digest the
+        baseline recorded, or the file stays unreviewable.
+        """
+        import difflib
+        previous = change["previous_path"] if change["change_type"] == "renamed" else change["path"]
+        shown = self.runner(["git", "-C", str(self.root), "-c", "core.hooksPath=/dev/null", "show",
+                             f"{base_sha}:{previous}"], capture_output=True,
+                            env={"PATH": os.environ.get("PATH", ""), "GIT_CONFIG_GLOBAL": "/dev/null",
+                                 "GIT_CONFIG_NOSYSTEM": "1"})
+        if shown.returncode or hashlib.sha256(shown.stdout).hexdigest() != change.get("previous_digest"):
+            return None
+        try:
+            old = shown.stdout.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        lines = difflib.unified_diff(old.splitlines(keepends=True), content.splitlines(keepends=True),
+                                     fromfile=f"a/{previous}", tofile=f"b/{change['path']}", n=REVIEW_DIFF_CONTEXT)
+        return "".join(lines)
 
     def integration_branch(self) -> str:
         return self.config["git"].get("integration_branch", DEFAULT_INTEGRATION_BRANCH)
@@ -276,6 +310,10 @@ class GitManager:
                 raise GitSafetyError("PR merge request failed")
             return "auto_merge_requested"
         return "pr_created"
+
+
+DEFAULT_REVIEW_FILE_BYTES = 100_000
+REVIEW_DIFF_CONTEXT = 40
 
 
 def path_allowed(path: str, allowed_paths: tuple[str, ...]) -> bool:

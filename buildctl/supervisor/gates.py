@@ -51,17 +51,31 @@ UPPER_BOUND_OPERATORS = ("===", "==", "~=", "<=", "<")
 REQUIREMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
-def _requirement_specifier(value: str) -> tuple[str, str]:
+# A direct reference the operator may allow in build.yaml: a pre-built wheel over HTTPS, pinned by
+# its hash. It installs without running any project code. Git and source URLs would need building,
+# which runs the project's own build backend as the supervisor, outside the sandbox.
+ALLOWED_DIRECT_REFERENCE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\s*@\s*https://\S+\.whl#sha256=[0-9a-f]{64}$")
+
+
+def _canonical_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _requirement_specifier(value: str, allowed_references: tuple[str, ...] = ()) -> tuple[str, str]:
     """Split a requirement into its distribution name and version specifier.
 
-    Rejects the direct-reference form (`name @ url`) outright: it names an arbitrary
-    location rather than a distribution the index resolves, which is a supply-chain
-    vector no product dependency here needs.
+    Rejects the direct-reference form (`name @ url`): it names an arbitrary location rather
+    than a distribution the index resolves, which is a supply-chain vector. The one exception
+    is a hash-pinned wheel the operator listed in `python.direct_references` (governed).
     """
     base = value.split(";", 1)[0].strip()          # drop any environment marker
     if "@" in base:
+        if base in allowed_references and ALLOWED_DIRECT_REFERENCE.match(base):
+            name = REQUIREMENT_NAME.match(base)
+            return name.group(0), "===direct"      # pinned by its hash: treated as bounded
         raise ProvisioningError(
-            f"dependency may not use a direct URL reference: {value}")
+            f"dependency may not use a direct URL reference: {value}. A pre-built wheel pinned by its "
+            "sha256 can be allowed in build.yaml under python.direct_references; git and source URLs cannot.")
     match = REQUIREMENT_NAME.match(base)
     if not match:
         raise ProvisioningError(f"dependency is not a valid requirement: {value}")
@@ -80,7 +94,21 @@ def _is_upper_bounded(specifier: str) -> bool:
                for clause in specifier.split(",") if clause)
 
 
-def product_dependencies(raw: bytes) -> tuple[str, ...]:
+def constraint_bounds(text: str) -> set[str]:
+    """Names an operator's constraints file bounds from above, canonicalized."""
+    bounded = set()
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            continue
+        name, specifier = _requirement_specifier(line)
+        if _is_upper_bounded(specifier):
+            bounded.add(_canonical_name(name))
+    return bounded
+
+
+def product_dependencies(raw: bytes, settings: dict[str, Any] | None = None,
+                         constraints: str = "") -> tuple[str, ...]:
     """Read `[project].dependencies` out of the product manifest.
 
     Parsing only — `tomllib` evaluates no code, so an untrusted agent-authored manifest
@@ -100,9 +128,21 @@ def product_dependencies(raw: bytes) -> tuple[str, ...]:
     project = data.get("project")
     if not isinstance(project, dict):
         raise ProvisioningError(f"{PRODUCT_MANIFEST} declares no [project] table")
+    settings = settings or {}
     declared = project.get("dependencies", [])
     if not isinstance(declared, list):
         raise ProvisioningError("[project].dependencies must be an array of requirement strings")
+    declared = list(declared)
+    # Test-only dependencies (pytest under a `dev` extra) are installed only when the operator's
+    # governed build.yaml names the extra; an agent cannot widen the install by adding one.
+    optional = project.get("optional-dependencies", {})
+    for extra in settings.get("extras", []):
+        group = optional.get(extra) if isinstance(optional, dict) else None
+        if not isinstance(group, list):
+            raise ProvisioningError(f"python.extras names '{extra}', but [project.optional-dependencies] has no such list")
+        declared.extend(group)
+    references = tuple(item.strip() for item in settings.get("direct_references", []))
+    bounded_by_constraints = constraint_bounds(constraints) if constraints else set()
     requirements: list[str] = []
     for entry in declared:
         if not isinstance(entry, str) or not entry.strip():
@@ -110,12 +150,12 @@ def product_dependencies(raw: bytes) -> tuple[str, ...]:
         value = entry.strip()
         if value.startswith("-"):
             raise ProvisioningError(f"dependency entry may not be a pip option: {value}")
-        name, specifier = _requirement_specifier(value)
-        if not _is_upper_bounded(specifier):
+        name, specifier = _requirement_specifier(value, references)
+        if not _is_upper_bounded(specifier) and _canonical_name(name) not in bounded_by_constraints:
             raise ProvisioningError(
                 f"dependency '{name}' is not upper-bounded: {value!r}. Declare a bound such "
                 f"as '{name}>=X,<Y' or '{name}==X.Y.Z' so the resolved distribution cannot "
-                f"change between installs.")
+                f"change between installs, or pin it in the governed python.constraints file.")
         requirements.append(value)
     return tuple(requirements)
 
@@ -182,9 +222,12 @@ def provisioning_environment() -> dict[str, str]:
 
 class MechanicalGates:
     def __init__(self, workspace: Path, control_root: Path, authoritative_repo: Path,
-                 backend: IsolationBackend, runner: Callable[..., Any] = subprocess.run):
+                 backend: IsolationBackend, runner: Callable[..., Any] = subprocess.run, *,
+                 python: dict[str, Any] | None = None, snapshot: Path | None = None):
         self.workspace, self.control_root, self.authoritative_repo = workspace, control_root, authoritative_repo
         self.backend, self.runner = backend, runner
+        # build.yaml's `python` section, and the trusted snapshot its constraints file is read from.
+        self.python, self.snapshot = python or {}, snapshot
         # (manifest digest, interpreter). Rebuilt when the agent edits the manifest between
         # remediation rounds, reused otherwise so one phase installs its dependencies once.
         self._environment: tuple[str, Path] | None = None
@@ -205,8 +248,10 @@ class MechanicalGates:
             raise ProvisioningError(
                 f"no product dependency manifest: {PRODUCT_MANIFEST} is missing from the phase "
                 f"workspace, so declared dependencies cannot be installed ({exc.strerror})") from exc
-        digest = hashlib.sha256(raw).hexdigest()
-        requirements = product_dependencies(raw)
+        constraints_path = (self.snapshot / self.python["constraints"]) if self.python.get("constraints") and self.snapshot else None
+        constraints = constraints_path.read_text() if constraints_path else ""
+        digest = hashlib.sha256(raw + constraints.encode()).hexdigest()
+        requirements = product_dependencies(raw, self.python, constraints)
         if self._environment and self._environment[0] == digest:
             return self._environment[1], requirements
         root = Path(tempfile.mkdtemp(prefix="buildctl-product-env-")).resolve()
@@ -218,8 +263,9 @@ class MechanicalGates:
                                     f"{redact((created.stderr or '').strip(), limit=1000)}")
         interpreter = root / "bin" / "python"
         if requirements:
+            constraint_args = ["-c", str(constraints_path)] if constraints_path else []
             installed = self.runner([str(interpreter), "-m", "pip", "install", "--no-input",
-                                     "--no-cache-dir", "--only-binary=:all:", "--", *requirements],
+                                     "--no-cache-dir", "--only-binary=:all:", *constraint_args, "--", *requirements],
                                     text=True, capture_output=True, env=provisioning_environment(),
                                     timeout=PROVISION_TIMEOUT)
             if installed.returncode:

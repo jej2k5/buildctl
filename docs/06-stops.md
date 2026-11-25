@@ -60,9 +60,9 @@ The reviewer could not clear the phase.
 
 #### UNREVIEWABLE_DELTA {#UNREVIEWABLE_DELTA signal=danger}
 
-The change has binary or oversized files the reviewer cannot read.
+The change has files the reviewer cannot read: a binary file, a new text file over `limits.max_review_file_bytes`, or an edit to a large file whose diff is itself over that limit. An edit to an existing large text file is shown to the reviewer as its diff, so it does not stop here.
 
-**Clear it:** adjust the phase so its output is reviewable, then `buildctl retry`.
+**Clear it:** adjust the phase so its output is reviewable, or raise `limits.max_review_file_bytes` in a reviewed governance commit, then `buildctl retry`.
 
 #### DEBATE_UNRESOLVED {#DEBATE_UNRESOLVED signal=danger}
 

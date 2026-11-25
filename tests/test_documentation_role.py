@@ -470,7 +470,7 @@ class RunPhaseTests(LoopHarness):
                 mock.patch("buildctl.buildctl.DebateAdapter"), mock.patch("buildctl.buildctl.RoleRunner"), \
                 mock.patch("buildctl.buildctl.IsolationContext"), \
                 mock.patch("buildctl.buildctl.DocumenterAdapter", lambda *args: documenter), \
-                mock.patch("buildctl.buildctl.MechanicalGates", lambda *args: StubGates()), \
+                mock.patch("buildctl.buildctl.MechanicalGates", lambda *args, **kwargs: StubGates()), \
                 mock.patch("buildctl.buildctl.validate_review"), \
                 mock.patch("buildctl.buildctl.accumulate_findings", accumulate), \
                 mock.patch("buildctl.buildctl.reduce_review", side_effect=reductions):

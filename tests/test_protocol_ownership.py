@@ -96,15 +96,22 @@ class PromptTests(Workspace):
         self.assertIn(REVIEW_PROTOCOL_MARKER, text)
         self.assertNotIn("Relay", text, "the kernel prompt must not carry any project's policy")
 
-    def test_a_configured_review_prompt_overrides_it(self):
-        (self.root / "prompts/review.md").write_text(f"{REVIEW_PROTOCOL_MARKER}\nPROJECT POLICY")
+    def test_a_configured_review_prompt_is_appended_to_the_kernel_rules(self):
+        """wyrit's override replaced the verdict rules, and its reviewer held a phase on MEDIUMs."""
+        (self.root / "prompts/review.md").write_text("PROJECT POLICY")
+        text = prompt(config_with(review_prompt="prompts/review.md"), "review", self.root)
+        kernel = (PROTOCOL_ROOT / "prompts/review.md").read_text()
+        self.assertTrue(text.startswith(kernel.rstrip()))
+        self.assertIn("MEDIUM` and `LOW` findings do **not** block the phase", text)
+        self.assertLess(text.index(kernel.rstrip()[-40:]), text.index("PROJECT POLICY"))
+        self.assertIn("## Project review policy", text)
         reviewer = ClaudeAdapter(self.runner(config_with(review_prompt="prompts/review.md")), self.root)
         self.assertIn("PROJECT POLICY", reviewer.build_prompt(self.phase, EVIDENCE, {}))
 
-    def test_an_override_without_the_protocol_marker_is_refused(self):
-        (self.root / "prompts/review.md").write_text("PROJECT POLICY")
-        with self.assertRaisesRegex(ProtocolError, "does not declare"):
-            prompt(config_with(review_prompt="prompts/review.md"), "review", self.root)
+    def test_an_override_no_longer_needs_the_protocol_marker(self):
+        (self.root / "prompts/review.md").write_text("Protocol version: buildctl-review-v2\nPROJECT POLICY")
+        text = prompt(config_with(review_prompt="prompts/review.md"), "review", self.root)
+        self.assertIn(REVIEW_PROTOCOL_MARKER, text, "the kernel's marker is always present")
 
     def test_remediation_uses_the_kernel_default_then_the_override(self):
         config = config_with()

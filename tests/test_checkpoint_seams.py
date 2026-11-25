@@ -223,3 +223,19 @@ class RejectTests(Harness):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RepositoryRecordTests(unittest.TestCase):
+    """The fleet view reads repo.json to name each state folder (docs/planning/fleet-view.md)."""
+
+    def test_the_state_folder_names_its_repository(self):
+        import json as _json
+        from buildctl.buildctl import record_repository
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            (base / "repo").mkdir()
+            record_repository(base / "state", base / "repo")
+            record = _json.loads((base / "state" / "repo.json").read_text())
+            self.assertEqual(record["path"], str(base / "repo"))
+            self.assertIn("recorded_at", record)
+            self.assertFalse((base / "state" / "repo.json.tmp").exists())

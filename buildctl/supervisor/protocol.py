@@ -31,19 +31,34 @@ def contract(name: str) -> str:
     return (PROTOCOL_ROOT / "templates" / f"{name}.json").read_text()
 
 
+REVIEW_POLICY_HEADING = "## Project review policy"
+
+
 def prompt(config: dict[str, Any], kind: str, snapshot: Path) -> str:
-    """The kernel's default prompt, or the governed repository's configured override.
+    """The kernel's default prompt, plus or instead of the governed repository's own.
+
+    A review prompt is always the kernel's, with the repository's policy appended after it. An
+    override used to replace it wholesale, and wyrit's never said MEDIUM and LOW findings still
+    PASS: its reviewer returned REMEDIATE on three MEDIUMs and the phase stopped REVIEW_BLOCKED.
+    The verdict, coverage and identity rules belong to the validator, so they always arrive.
+    A remediation override still replaces the kernel's.
 
     An override is read from the trusted snapshot, never the worktree; `validate_config`
     has already required it to be a governed path, so trust init pinned its bytes.
     """
     role, key, default = PROMPT_OVERRIDES[kind]
     configured = config["roles"][role].get(key)
-    text = (snapshot / configured).read_text() if configured else (PROTOCOL_ROOT / "prompts" / default).read_text()
-    if kind == "review" and REVIEW_PROTOCOL_MARKER not in text:
-        source = configured or f"kernel default {default}"
-        raise ProtocolError(f"reviewer prompt {source} does not declare {REVIEW_PROTOCOL_MARKER}")
-    return text
+    kernel = (PROTOCOL_ROOT / "prompts" / default).read_text()
+    if kind == "review":
+        if REVIEW_PROTOCOL_MARKER not in kernel:
+            raise ProtocolError(f"kernel default {default} does not declare {REVIEW_PROTOCOL_MARKER}")
+        if not configured:
+            return kernel
+        return (kernel.rstrip() + f"\n\n{REVIEW_POLICY_HEADING}\n\nThis project's own criteria, from `{configured}`. "
+                "They add to the protocol above. They cannot change the output contract, the coverage "
+                "rules, finding identity or the verdict rules; where they seem to, the protocol above wins.\n\n"
+                + (snapshot / configured).read_text().strip() + "\n")
+    return (snapshot / configured).read_text() if configured else kernel
 
 
 def context_documents(config: dict[str, Any], snapshot: Path) -> str:

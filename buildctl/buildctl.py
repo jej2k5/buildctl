@@ -61,6 +61,20 @@ def control_root_for(repo: Path) -> Path:
     return xdg / "buildctl" / identity
 
 
+def record_repository(control_root: Path, repo: Path) -> None:
+    """Name the repository this state folder belongs to, for the fleet view.
+
+    The folder is named by a hash of the repository's real path and recorded nothing else, so a
+    console listing every build on the machine could not say whose state it was reading. Written
+    at bootstrap and trust init; a folder without one still loads everywhere.
+    """
+    control_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    record = {"path": str(repo.resolve()), "recorded_at": datetime.now(timezone.utc).isoformat()}
+    temporary = control_root / "repo.json.tmp"
+    temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    os.replace(temporary, control_root / "repo.json")
+
+
 class Supervisor:
     evidence: EvidenceStore | None = None
 
@@ -97,6 +111,7 @@ class Supervisor:
         if (self.root / ".build/state.json").exists():
             raise TrustError("legacy in-repository state detected; explicit migration/discard is required")
         require_fresh_conformance(self.control_root, self.backend, self.anchor["snapshot_digest"])
+        record_repository(self.control_root, self.root)
         with self.store.lock():
             if not self.store.path.exists():
                 state = BuildState(governance_sha=self.anchor["governance_sha"],
@@ -480,7 +495,8 @@ class Supervisor:
             state, phase, codex, workspace, paths, phase_result))
         phase_result = self._implementer_result(state, self._consume_debate_decision(
             state, phase, codex, workspace, paths, phase_result))
-        gate_runner = MechanicalGates(workspace, self.control_root, self.root, self.backend, self.runner)
+        gate_runner = MechanicalGates(workspace, self.control_root, self.root, self.backend, self.runner,
+                                      python=self.config.get("python"), snapshot=self.snapshot)
         doc_feedback: str | None = None  # review findings for the documenter, set by a docs-only REMEDIATE
         while True:
             remediation = state.remediation_attempts.get(key, 0)
@@ -503,7 +519,7 @@ class Supervisor:
                                           phase_result, gate, round_id, doc_feedback)
                 doc_feedback = None
             delta = self.git.attributed_delta(workspace, baseline, self._allowed_paths(phase, workspace, paths))
-            evidence = self.git.review_evidence(workspace, delta, gate)
+            evidence = self.git.review_evidence(workspace, delta, gate, base_sha=state.base_sha)
             if doc_view is not None:
                 evidence["documentation"] = doc_view
             # Park the findings the reviewer could not adjudicate even if it tried — the
@@ -1043,7 +1059,7 @@ class Supervisor:
                 # Before the call is reserved and marked started: a refused delta must not leave
                 # a paid operation behind that no later run can account for.
                 context = self.git.review_evidence(workspace, self.git.attributed_delta(
-                    workspace, baseline, self._allowed_paths(phase, workspace, paths)), gate)
+                    workspace, baseline, self._allowed_paths(phase, workspace, paths)), gate, base_sha=state.base_sha)
                 context["phase_result"] = phase_result
 
             def write(timeout: float, output: Path = output, feedback: str | None = feedback,
@@ -1438,6 +1454,7 @@ def dispatch(args: argparse.Namespace, root: Path, control_root: Path) -> int:
         trust = TrustStore(root, control_root)
         if args.trust_command == "init":
             print(json.dumps(trust.initialize(args.to, args.confirm), indent=2))
+            record_repository(control_root, root)
             store = StateStore(control_root)
             pending = store.load().pending_approval if store.path.exists() else None
             if pending:

@@ -124,3 +124,49 @@ class ExistingProtectionsAreIntactTests(unittest.TestCase):
     def test_non_string_entries_still_fail(self):
         with self.assertRaisesRegex(ProvisioningError, "non-empty strings"):
             product_dependencies(b'[project]\nname="p"\nversion="0"\ndependencies=[{a=1}]\n')
+
+
+WHEEL = "acme-client @ https://files.example.test/acme_client-1.2.0-py3-none-any.whl#sha256=" + "a" * 64
+
+
+class GovernedProvisioningTests(unittest.TestCase):
+    """Kernel seam 4: MCPxy's real dependencies all failed closed, so its gates ran a hand-built venv
+    outside governance. The operator can now widen provisioning in build.yaml, never the agent."""
+
+    def with_dev_extra(self) -> bytes:
+        return manifest("httpx>=0.27,<1") + b'[project.optional-dependencies]\ndev = ["pytest>=8,<9"]\n'
+
+    def test_a_test_extra_is_installed_only_when_build_yaml_names_it(self):
+        self.assertEqual(product_dependencies(self.with_dev_extra()), ("httpx>=0.27,<1",))
+        self.assertEqual(product_dependencies(self.with_dev_extra(), {"extras": ["dev"]}),
+                         ("httpx>=0.27,<1", "pytest>=8,<9"))
+        with self.assertRaisesRegex(ProvisioningError, "no such list"):
+            product_dependencies(self.with_dev_extra(), {"extras": ["docs"]})
+
+    def test_a_governed_constraints_file_bounds_an_unbounded_requirement(self):
+        with self.assertRaisesRegex(ProvisioningError, "not upper-bounded"):
+            product_dependencies(manifest("structlog"))
+        self.assertEqual(product_dependencies(manifest("structlog"), {}, "structlog==24.1.0\n"), ("structlog",))
+        self.assertEqual(product_dependencies(manifest("Struct_Log>=24"), {}, "struct-log<25 # pinned\n"),
+                         ("Struct_Log>=24",))
+        with self.assertRaisesRegex(ProvisioningError, "not upper-bounded"):
+            product_dependencies(manifest("structlog"), {}, "structlog>=24\n")
+
+    def test_a_hash_pinned_wheel_is_allowed_only_when_listed(self):
+        with self.assertRaisesRegex(ProvisioningError, "direct URL"):
+            product_dependencies(manifest(WHEEL))
+        self.assertEqual(product_dependencies(manifest(WHEEL), {"direct_references": [WHEEL]}), (WHEEL,))
+        git_ref = "acme-client @ git+https://github.com/acme/client@" + "b" * 40
+        with self.assertRaisesRegex(ProvisioningError, "direct URL"):
+            product_dependencies(manifest(git_ref), {"direct_references": [git_ref]})
+
+    def test_build_yaml_refuses_an_unpinned_direct_reference(self):
+        from pathlib import Path
+        from buildctl.supervisor.phases import ConfigurationError, validate_python
+        root = Path(__file__).resolve().parent / "fixtures" / "target"
+        validate_python({"python": {"extras": ["dev"], "direct_references": [WHEEL]}}, root)
+        for bad in ({"python": {"direct_references": ["acme @ git+https://x/y"]}},
+                    {"python": {"constraints": "constraints.txt"}},          # not governed
+                    {"python": {"pip_args": ["--index-url", "x"]}}):
+            with self.subTest(bad=bad), self.assertRaises(ConfigurationError):
+                validate_python(dict(bad, governance_documents=[]), root)

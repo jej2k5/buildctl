@@ -49,6 +49,9 @@ class ClaudeAdapter:
                     # Claims the operator ruled on after a debate: the code stands. They are
                     # closed, and a finding restating one cannot block this phase.
                     "operator_rulings": evidence.get("operator_rulings", [])}, sort_keys=True)
+        prompt += ("\nA changed_files entry whose content_encoding is `unified_diff` is a file too large to show "
+                   "whole: its content is the diff against the phase base, with 40 lines of context. Review it "
+                   "like any other path; you may Read the full file in the workspace.")
         prompt += untrusted("supervisor_delta", evidence["diff"])
         prompt += untrusted("changed_files", json.dumps(evidence["changed_files"], indent=2))
         prompt += untrusted("gate_artifacts", json.dumps(evidence["gates"], indent=2))

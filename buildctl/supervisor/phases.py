@@ -9,6 +9,7 @@ from typing import Any
 
 from . import documentation
 from .evidence import validate_evidence_config
+from .gates import ALLOWED_DIRECT_REFERENCE, ProvisioningError, constraint_bounds
 from .governance import is_governance_path
 from .safety import ensure_safe_relative
 from .operations import DEBATE_OPERATION_IDS, DOCUMENTATION_OPERATION_IDS, PAID_OPERATION_IDS
@@ -118,6 +119,9 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
     if "documenter" in roles and not documenting:
         raise ConfigurationError("roles.documenter is configured but documentation.mode is off")
     debate = roles["arbiter"].get("mode") == "debate"
+    if "max_review_file_bytes" in limits and (not isinstance(limits["max_review_file_bytes"], int)
+                                              or limits["max_review_file_bytes"] < 1000):
+        raise ConfigurationError("limits.max_review_file_bytes must be a whole number of at least 1000")
     if "max_debate_turns" in limits and (not isinstance(limits["max_debate_turns"], int)
                                           or limits["max_debate_turns"] < 2):
         raise ConfigurationError("limits.max_debate_turns must be a whole number of at least 2")
@@ -136,6 +140,14 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
             raise ConfigurationError(f"role {name} requires a supported explicit auth_mode")
         if role["auth_mode"] == "host_cli" and not host_cli_supported():
             raise ConfigurationError(f"role {name}: auth_mode host_cli is macOS only; use environment")
+        if role["auth_mode"] == "environment" and role["credential_env"] and role["network"] is False:
+            raise ConfigurationError(f"role {name}: credentials in credential_env mean it calls an API, so it "
+                                     "needs network true")
+        if role["auth_mode"] == "host_cli" and role["network"] is False:
+            # wyrit's reviewer had network false and died ENOTFOUND reaching its API, after
+            # `validate` had passed. A role that logs in through its CLI calls the vendor's API.
+            raise ConfigurationError(f"role {name}: auth_mode host_cli needs network true, because the "
+                                     "CLI calls its provider's API")
         if role["auth_mode"] == "host_cli" and role["credential_env"]:
             raise ConfigurationError(f"role {name} host_cli authentication cannot use credential_env")
         if role["auth_mode"] == "none" and role["credential_env"]:
@@ -160,6 +172,7 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
     if evidence_problems:
         raise ConfigurationError("; ".join(evidence_problems))
     validate_governed_inputs(config, root)
+    validate_python(config, root)
     costs = config.get("operation_cost_usd")
     # Only a build whose arbiter runs debates pays per turn, so only it must price one; only a
     # build with documentation on pays for documentation.
@@ -210,6 +223,37 @@ def validate_governed_inputs(config: dict[str, Any], root: Path) -> None:
     for role, key in (("reviewer", "review_prompt"), ("implementer", "remediation_prompt")):
         if key in config["roles"][role]:
             _governed_file(root, config["roles"][role][key], documents, f"roles.{role}.{key}")
+
+
+def validate_python(config: dict[str, Any], root: Path) -> None:
+    """The optional `python` section: how `{python}` gates provision a real project (seam 4)."""
+    if "python" not in config:
+        return
+    section = config["python"]
+    if not isinstance(section, dict) or set(section) - {"extras", "constraints", "direct_references"}:
+        raise ConfigurationError("python may set only extras, constraints and direct_references")
+    extras = section.get("extras", [])
+    if not isinstance(extras, list) or not all(isinstance(item, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", item)
+                                               for item in extras):
+        raise ConfigurationError("python.extras must be a list of extra names")
+    if "constraints" in section:
+        _governed_file(root, section["constraints"], tuple(config.get("governance_documents", ())),
+                       "python.constraints")
+        for number, line in enumerate((root / section["constraints"]).read_text().splitlines(), 1):
+            line = line.split("#", 1)[0].strip()
+            if line.startswith("-"):
+                # constraint_bounds skips option lines, but pip would obey them (--index-url).
+                raise ConfigurationError(f"python.constraints line {number} is a pip option; only requirements are allowed")
+            if line:
+                try:
+                    constraint_bounds(line)
+                except ProvisioningError as exc:
+                    raise ConfigurationError(f"python.constraints line {number}: {exc}") from exc
+    references = section.get("direct_references", [])
+    if not isinstance(references, list) or not all(isinstance(item, str) and ALLOWED_DIRECT_REFERENCE.match(item.strip())
+                                                   for item in references):
+        raise ConfigurationError("python.direct_references entries must be 'name @ https://...whl#sha256=<64 hex>': "
+                                 "a pre-built wheel pinned by its hash")
 
 
 def merged_metadata(defaults: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
