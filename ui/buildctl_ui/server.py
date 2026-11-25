@@ -77,6 +77,8 @@ def handler_for(build: Build, token: str, port_ref: list[int]) -> type[BaseHTTPR
                     return self._send(HTTPStatus.OK, dumps(build.audit(after, min(limit, 2000))))
                 if url.path == "/api/artifact":
                     return self._send(HTTPStatus.OK, dumps({"text": build.read_artifact(query.get("path", [""])[0])}))
+                if url.path == "/api/documentation":
+                    return self._send(HTTPStatus.OK, dumps(build.documentation(int(query.get("phase", [""])[0]))))
                 if url.path == "/api/activity":
                     return self._send(HTTPStatus.OK, dumps(build.activity(int(query.get("phase", [""])[0]))))
                 if url.path == "/api/record":

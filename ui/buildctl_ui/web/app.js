@@ -8,6 +8,7 @@ const S = {
   audit: [], auditSeq: 0, ledger: { phase: "", event: "" },
   cells: {}, trustDiff: null, trustDiffKey: "", artifact: null, error: null,
   activity: null, activityKey: "", recordRow: null, decision: { answer: "" },
+  docs: null, docsKey: "", docOpen: {},
 };
 const PRIMARY = ["start", "recover", "pause", "resume", "approve", "decide", "grant", "retry", "reconcile-accept", "reconcile-retry"];
 const STOP_LEVERS = ["approve", "decide", "grant", "retry", "reconcile-accept", "reconcile-retry", "recover"];
@@ -209,7 +210,8 @@ function renderLine(m) {
 function currentOperation(m) {
   const n = m.state.current_phase;
   if (n == null) return null;
-  const ops = phaseByNumber(n)?.operations || [];
+  // State stores operations keyed by id, so they arrive alphabetically; "last" means last to start.
+  const ops = (phaseByNumber(n)?.operations || []).slice().sort((a, b) => String(a.started_at || "").localeCompare(String(b.started_at || "")));
   return ops.find((o) => o.status === "started") || ops.find((o) => o.status === "unknown") || ops[ops.length - 1] || null;
 }
 
@@ -392,9 +394,11 @@ function opCard(m) {
       <div class="bar-track ${left < 0 ? "danger" : ""}" role="img" aria-label="${Math.round(used * 100)} percent of the phase time used"><i data-w="${used}"></i></div>
       <span class="mono muted">${left > 0 ? `${span(new Date().toISOString(), deadline)} left of ${limit}m` : "deadline passed"}</span></div>`;
   }
+  const documenter = op.id.includes(":document-") && m.documentation?.documenter;
   return `<div class="panel op">
     <div class="op-head">${sig(aspect, op.status)}<h3>${running ? "In flight" : op.status === "unknown" ? "Outcome unknown" : "Last call"}: ${esc(op.kind)}</h3></div>
-    <dl>
+    ${stepTrack(phaseByNumber(n), { vertical: true })}
+    <dl>${documenter ? `<dt>Role</dt><dd>documenter · ${esc([documenter.model_family, documenter.prompt_lineage].filter(Boolean).join(" · "))}</dd>` : ""}
       <dt>Operation</dt><dd><code>${esc(op.id)}</code></dd>
       <dt>Status</dt><dd>${esc(op.status)}${op.detail_code ? ` · <code>${esc(op.detail_code)}</code>` : ""}</dd>
       <dt>Started</dt><dd>${op.started_at ? `${esc(clock(op.started_at))} · <span data-since="${esc(op.started_at)}" ${op.completed_at ? `data-until="${esc(op.completed_at)}"` : ""}>${esc(span(op.started_at, op.completed_at))}</span>` : "not started"}</dd>
@@ -496,6 +500,83 @@ function activityPanel(m, number, flags) {
   </tbody></table></div>`;
 }
 
+// ---------- the step track: one phase attempt, drawn like the phase line ----------
+const DOC_MODE_WORDS = { required: "documentation required", optional: "documentation optional", off: "documentation off for this phase" };
+function stepTrack(p, { vertical = false, note = "" } = {}) {
+  const t = p?.track;
+  if (!t || !t.steps?.length) return "";
+  const head = [`attempt ${t.attempt || 1}`, t.documentation ? DOC_MODE_WORDS[t.documentation] : "", note].filter(Boolean).join(" · ");
+  return `<div class="steps${vertical ? " v" : ""}">
+    <p class="steps-head"><b>Phase ${p.number}</b><span>${esc(head)}</span></p>
+    <ol aria-label="Steps of phase ${p.number}">${t.steps.map((st) => `<li class="${st.aspect === "clear" ? "done" : ""}${st.skipped ? " skipped" : ""}">
+      ${sig(st.aspect, st.skipped ? "off" : ASPECT_WORDS[st.aspect])}<span class="name">${esc(st.name)}</span>
+      <span class="meta${st.aspect === "danger" ? " blocked" : ""}">${esc(st.meta || "")}</span></li>`).join("")}</ol></div>`;
+}
+
+const KIND_LABELS = { added: "added", updated: "updated", removed: "removed", fixed_stale: "fixed stale" };
+function diffBlock(path, d) {
+  if (!d) return "";
+  if (!d.available) return `<p class="muted diff-note">${esc(d.reason)}</p>`;
+  return `<div class="diff" role="group" aria-label="Change to ${esc(path)}">${d.lines.map((line) => {
+    const mark = line[0], cls = line.startsWith("@@") ? "hunk" : mark === "+" ? "add" : mark === "-" ? "del" : "";
+    if (cls === "hunk") {
+      const at = /\+(\d+)(?:,(\d+))?/.exec(line), from = at ? Number(at[1]) : null, count = at ? Number(at[2] ?? 1) : 0;
+      const where = from == null ? "" : count > 1 ? `lines ${from} to ${from + count - 1}` : `line ${from}`;
+      return `<div class="hunk"><i aria-hidden="true">@@</i><span>${esc([where, line.replace(/^@@[^@]*@@ ?/, "")].filter(Boolean).join(" · "))}</span></div>`;
+    }
+    return `<div class="${cls}"><i aria-hidden="true">${mark === "-" ? "−" : mark === "+" ? "+" : " "}</i><span>${cls === "add" ? '<span class="announce">added: </span>' : cls === "del" ? '<span class="announce">removed: </span>' : ""}${esc(line.slice(1))}</span></div>`;
+  }).join("")}${d.truncated ? `<div class="hunk"><i>⋯</i><span>${d.truncated} more lines</span></div>` : ""}</div>`;
+}
+
+function changeRow(number, path, d, { aspect = "clear", kind = "", reflects = "" } = {}) {
+  const key = `${number}:${path}`;
+  const lines = d?.available ? `+${d.added}${d.removed ? ` −${d.removed}` : ""}` : "";
+  return `<details class="change" data-doc-open="${esc(key)}" ${S.docOpen[key] ? "open" : ""}>
+    <summary>${sig(aspect, aspect === "danger" ? "outside the documentation paths" : "inside the documentation paths")}<span class="path">${esc(path)}</span>
+      <span class="kind">${esc(kind)}</span><span class="reflects">${esc(reflects)}</span><span class="lines">${esc(lines)}</span></summary>
+    ${diffBlock(path, d)}</details>`;
+}
+
+const GATE_NAMES = { links: "Links", changelog: "Changelog", forbidden_phrases: "Forbidden phrases" };
+function docGates(gate, mode) {
+  if (!gate) return `<p class="empty">The documentation gates have not run.</p>`;
+  const failures = Object.fromEntries((gate.documentation?.failures || []).map((f) => [f.gate, f.problems || []]));
+  const recorded = mode === "optional";
+  const row = (name, ok, why) => `<div class="gate-row${ok ? "" : " failed"}">${sig(ok ? "clear" : "danger", ok ? "passed" : recorded ? "failed, recorded" : "failed")}<span>${esc(name)}</span><span class="why">${esc(why)}${!ok && recorded ? " · recorded, did not stop" : ""}</span></div>`;
+  const acceptance = gate.acceptance || {};
+  const failedCommands = (acceptance.details || []).filter((d) => d.passed === false);
+  return [
+    row("Acceptance re-run", acceptance.passed !== false, acceptance.passed === false ? failedCommands.map((d) => d.output || JSON.stringify(d.target)).join(" · ") : "the phase's acceptance commands pass with the new docs"),
+    ...Object.entries(GATE_NAMES).map(([id, name]) => row(name, !failures[id], failures[id] ? failures[id].join(" · ") : { links: "every relative link and anchor resolves", changelog: "a user-visible change has a new entry, or none was needed", forbidden_phrases: "no documentation file gained a forbidden phrase" }[id])),
+  ].join("");
+}
+
+function docsPanel(m, number) {
+  const d = S.docs?.phase === number ? S.docs : null;
+  if (!d) return `<p class="empty">Reading the documentation record…</p>`;
+  const sum = d.summary || {};
+  const result = d.results.at(-1), gate = d.gates.at(-1);
+  const passes = d.results.length;
+  const label = (file) => (file || "").replace(/^DOC_(GATE_)?RESULT-|\.json$/g, "");
+  const stale = Boolean(result && gate && label(result.file) !== label(gate.file));
+  const facts = [["Mode", sum.mode], ["Documenter", [sum.documenter?.vendor, sum.documenter?.model_family, sum.documenter?.prompt_lineage].filter(Boolean).join(" · ")],
+    ["Reviewer", [sum.reviewer?.vendor, sum.reviewer?.model_family].filter(Boolean).join(" · ")],
+    ["Passes", passes ? `${passes}${passes > 1 ? ` · ${passes - 1} send-back${passes > 2 ? "s" : ""}` : " · no send-backs"}` : "none yet"],
+    ...(result ? [["User-visible", result.user_visible ? "yes" : "no"]] : [])];
+  const out = d.out_of_scope.length ? `<h3 class="docs-sub">Outside the documentation paths <small>documentation.paths: ${esc((sum.paths || []).join(", "))}</small></h3>
+    ${d.out_of_scope.map((path) => changeRow(number, path, d.diffs[path], { aspect: "danger", kind: (result?.changes || []).some((c) => c.path === path) ? "reported" : "not reported", reflects: "outside the documentation paths" })).join("")}` : "";
+  const changes = result?.changes || [];
+  const listed = changes.filter((c) => !d.out_of_scope.includes(c.path));
+  return `<dl class="docs-facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || "")}</dd></div>`).join("")}</dl>
+    ${out}
+    ${result ? `<p class="docs-summary">${inline(result.summary || "")}<small>The documenter's own account, from <code>${esc(result.file)}</code>. Treat it like implementer claims: the changes below are what happened.${result.status === "no_change" ? ` It changed nothing: ${esc(result.reason)}` : ""}</small></p>` : `<p class="empty">The documenter has not reported yet.</p>`}
+    ${listed.length ? `<h3 class="docs-sub">${d.out_of_scope.length ? "Reported changes" : "Changes"} <small>${listed.length} file${listed.length > 1 ? "s" : ""} · choose one to read its change</small></h3>
+      ${listed.map((c) => changeRow(number, c.path, d.diffs[c.path], { kind: KIND_LABELS[c.kind] || c.kind, reflects: c.reflects })).join("")}` : ""}
+    <h3 class="docs-sub">Documentation gates <small>${gate ? `from <code>${esc(gate.file)}</code>` : ""}${sum.mode === "optional" ? " · optional: failures go to the reviewer and do not stop the phase" : ""}</small></h3>
+    ${stale ? `<p class="note">These results are from pass ${d.gates.length}, which sent the documenter back. Pass ${passes} stopped before its gates ran.</p>` : ""}
+    ${docGates(gate, sum.mode)}`;
+}
+
 function viewLine(m) {
   const done = m.state.completed_phases.length;
   const primary = m.levers.filter((l) => PRIMARY.includes(l.action));
@@ -590,8 +671,13 @@ function viewStop(m) {
   if (m.state.pending_approval) entries.push({ id: "approval", label: "What you are signing", render: () => approvalPanel(m) + flagsNote(m) });
   const debate = m.current?.debate;
   if (debate?.awaiting_decision) entries.push({ id: "debate-turns", label: "Debate", count: debate.turns.length, render: () => debatePanel(debate) });
+  const docCode = /^DOC(UMENTATION)?_/.test(m.escalation.code);
+  if (p?.documentation && p.documentation !== "off" && docCode)
+    entries.unshift({ id: "docs", label: "Docs", count: m.escalation.code === "DOC_SCOPE_VIOLATION" ? "outside the paths" : null, render: () => docsPanel(m, n) });
   entries.push({ id: "findings", label: "Findings", count: (m.current?.review?.findings || m.findings.open).filter((f) => !["resolved", "superseded", "operator_accepted"].includes(f.status)).length, render: () => findingsPanel(m) });
   if (debate && !debate.awaiting_decision) entries.push({ id: "debate-turns", label: "Debate", count: debate.turns.length, render: () => debatePanel(debate) });
+  if (p?.documentation && p.documentation !== "off" && !docCode && p.doc_passes)
+    entries.push({ id: "docs", label: "Docs", count: p.doc_passes, render: () => docsPanel(m, n) });
   entries.push({ id: "activity", label: "What agents did", count: m.current?.evidence_flags?.length || null, render: () => activityPanel(m, n, m.current?.evidence_flags) });
   entries.push({ id: "operations", label: "Agent calls", count: p?.operations.length || 0, render: () => operationsPanel(p?.operations) });
   entries.push({ id: "gates", label: "Gates", render: () => gatesPanel(m) });
@@ -600,6 +686,7 @@ function viewStop(m) {
   const levers = m.levers.filter((l) => STOP_LEVERS.includes(l.action));
   return `<div class="view-head"><h1>Stop</h1><p>Generation ${m.state.generation} · ${esc(ago(m.state.updated_at))}</p></div>
     ${stopBlock(m, false)}
+    ${p && p.track?.steps.some((st) => st.aspect !== "pending" || st.skipped) ? `<div class="section">${stepTrack(p)}</div>` : ""}
     <div class="cols section">
       <section><h2 class="h2">Evidence</h2>${tabs("stop", entries)}</section>
       <aside><h2 class="h2">Levers <small>Only what the kernel will accept.</small></h2>${renderLevers(levers, { emptyText: "No lever applies. Fix the cause outside buildctl, then come back." })}</aside>
@@ -608,12 +695,14 @@ function viewStop(m) {
 
 function viewPhases(m) {
   const selected = S.route.arg != null ? phaseByNumber(Number(S.route.arg)) : null;
+  const docs = Boolean(m.documentation);
   const rows = m.phases.map((p) => `<tr class="row-link" tabindex="0" data-goto="#/phases/${p.number}" aria-selected="${selected === p}">
       <td class="num mono">${p.number}</td><td>${sig(p.aspect)}</td><td>${esc(p.name)}${p.checkpoint ? ` <span class="tag">checkpoint</span>` : ""}${p.milestones.map((s) => ` <span class="tag">${esc(s)}</span>`).join("")}</td>
       <td class="num mono" data-cell="att-${p.number}">${p.attempts || ""}</td><td class="num mono" data-cell="rev-${p.number}">${p.reviews || ""}</td>
       <td class="num mono" data-cell="rem-${p.number}">${p.remediations || ""}</td><td class="num mono" data-cell="deb-${p.number}">${p.debates || ""}</td>
+      ${docs ? `<td class="num mono${p.documentation === "off" ? " muted" : ""}" data-cell="doc-${p.number}">${p.documentation === "off" ? "off" : p.doc_passes || ""}</td>` : ""}
       <td class="num mono" data-cell="cost-${p.number}">${p.cost_usd ? money(p.cost_usd) : ""}</td><td class="mono">${esc(p.merge_policy)}</td></tr>`).join("");
-  const table = `<div class="table-wrap"><table><thead><tr><th class="num">#</th><th><span class="announce">Aspect</span></th><th>Phase</th><th class="num">Attempts</th><th class="num">Reviews</th><th class="num">Fixes</th><th class="num">Debates</th><th class="num">Cost</th><th>Merge</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const table = `<div class="table-wrap"><table><thead><tr><th class="num">#</th><th><span class="announce">Aspect</span></th><th>Phase</th><th class="num">Attempts</th><th class="num">Reviews</th><th class="num">Fixes</th><th class="num">Debates</th>${docs ? `<th class="num" title="Documenter passes">Docs</th>` : ""}<th class="num">Cost</th><th>Merge</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   let detail = "";
   if (selected) {
     const isCurrent = selected.number === m.state.current_phase;
@@ -624,7 +713,9 @@ function viewPhases(m) {
         <dt>Semantic reviews</dt><dd>${selected.reviews} of ${limits.max_semantic_review_attempts ?? "?"}</dd>
         <dt>Remediation laps</dt><dd>${selected.remediations}</dd><dt>Debates</dt><dd>${selected.debates} of ${limits.max_debate_rounds ?? "?"}</dd>
         <dt>Merge</dt><dd>${esc(selected.merge_policy)}${selected.checkpoint ? " · needs approval before it starts" : ""}</dd></dl>
+      ${selected.track?.steps.some((st) => st.aspect !== "pending") ? `<div class="section">${stepTrack(selected)}</div>` : ""}
       <div class="section">${tabs("phase", [
+        ...(selected.documentation && selected.documentation !== "off" && selected.doc_passes ? [{ id: "docs", label: "Docs", count: selected.doc_passes, render: () => docsPanel(m, selected.number) }] : []),
         { id: "activity", label: "What agents did", render: () => activityPanel(m, selected.number, isCurrent ? m.current?.evidence_flags : null) },
         { id: "operations", label: "Agent calls", count: selected.operations.length, render: () => operationsPanel(selected.operations) },
         ...(isCurrent ? [{ id: "findings", label: "Findings", render: () => findingsPanel(m) }, { id: "artifacts", label: "Artifacts", count: m.current?.artifacts.length || 0, render: () => artifactsPanel(m, m.current?.artifacts) }] : []),
@@ -656,7 +747,12 @@ function planSentence(m) {
   const a = buildAspect(m);
   if (!m.bootstrapped) return "Not set up yet.";
   if (a.aspect === "occupied") return `Running phase ${n}. ${done} of ${total} phases clear.`;
-  if (a.word === "Waiting for you") return `Waiting for you before phase ${n}. ${done} of ${total} phases clear.`;
+  if (a.word === "Waiting for you") {
+    const approval = st.pending_approval;
+    if (approval && approval.checkpoint === "mvp_completion") return `Waiting for your sign-off after phase ${approval.phase}, the MVP milestone. ${done} of ${total} phases clear.`;
+    if (approval && approval.checkpoint.startsWith("merge-")) return `Waiting for your approval to merge phase ${approval.phase}. ${done} of ${total} phases clear.`;
+    return n != null ? `Waiting for you before phase ${n}. ${done} of ${total} phases clear.` : `Waiting for you. ${done} of ${total} phases clear.`;
+  }
   if (a.aspect === "danger") return `Stopped at phase ${n}. ${done} of ${total} phases clear.`;
   if (st.status === "complete") return `Complete. All ${total} phases clear.`;
   return `${done} of ${total} phases clear.`;
@@ -846,6 +942,21 @@ function viewLedger(m) {
       : `<div class="panel"><p class="empty">No events match these filters.</p></div>`}`;
 }
 
+function docSettings(m) {
+  const d = m.documentation;
+  if (!d) return "";
+  const who = (r) => [r?.vendor, r?.model_family, r?.prompt_lineage].filter(Boolean).join(" · ");
+  return `<h2 class="h2 gap">Documentation <small>from build.yaml, ${esc(m.config.source || "")}</small></h2>
+    <dl class="kv panel panel-pad"><dt>Mode</dt><dd>${esc(d.mode)}</dd><dt>Paths</dt><dd>${esc(d.paths.join(" · "))}</dd>
+      ${d.governed_inside.length ? `<dt>Governed inside</dt><dd>${esc(d.governed_inside.join(" · "))} (read-only to every agent)</dd>` : ""}
+      ${d.changelog ? `<dt>Changelog</dt><dd>${esc(d.changelog)} · under "${esc(d.unreleased_heading)}"</dd>` : ""}
+      ${d.forbidden_phrases.length ? `<dt>Forbidden</dt><dd>${esc(d.forbidden_phrases.join(" · "))}</dd>` : ""}
+      <dt>Send-backs</dt><dd>up to ${d.max_attempts} per attempt</dd>
+      <dt>Documenter</dt><dd>${esc(who(d.documenter))}${d.documenter?.derived_from ? " (the implementer's family)" : ""}</dd>
+      <dt>Brief</dt><dd>${esc(d.brief)}</dd></dl>
+    ${d.warnings.map((w) => `<p class="note panel">Warning: ${esc(w)}. Set <code>roles.documenter</code> to another model family and re-trust.</p>`).join("")}`;
+}
+
 function viewSetup(m) {
   const t = m.trust, iso = m.isolation;
   const kernelMatch = t.kernel && t.running_kernel && t.kernel.digest === t.running_kernel.digest;
@@ -869,6 +980,7 @@ function viewSetup(m) {
     <div class="cols section">
       <section><h2 class="h2">Levers</h2>${renderLevers(m.levers.filter((l) => SETUP_LEVERS.includes(l.action)))}</section>
       <aside><h2 class="h2">Before you pin HEAD</h2>${diffBlock}
+        ${docSettings(m)}
         ${t.ok ? `<h2 class="h2 gap">Pinned executables</h2><dl class="kv panel panel-pad">${Object.entries(t.executables || {}).map(([role, e]) => `<dt>${esc(role)}</dt><dd>${esc(e.path)}<br>${esc(short(e.sha256, 24))}</dd>`).join("")}
           <dt>kernel</dt><dd>${kernelMatch ? "matches the running buildctl" : "differs from the running buildctl"}</dd></dl>` : ""}</aside>
     </div>`;
@@ -917,7 +1029,8 @@ async function refresh(force = false) {
     if (S.route.view === "ledger" || S.audit.length === 0 || body.audit.sequence > S.auditSeq) await loadAudit(body.audit.sequence);
     if (S.route.view === "setup") await loadTrustDiff(body);
     const activityChanged = await loadActivity(body);
-    if (changed || activityChanged) render();
+    const docsChanged = await loadDocs(body);
+    if (changed || activityChanged || docsChanged) render();
   } catch (error) {
     if (error.status === 401) {
       $("#main").innerHTML = `<div class="panel"><div class="empty"><p>${sig("danger", "refused")} This tab has no console token.</p><p>Open the link <code>buildctl-ui</code> printed in your terminal. The token in it is what lets this page read the build.</p></div></div>`;
@@ -940,6 +1053,24 @@ async function loadActivity(m) {
   if (key === S.activityKey) return false;
   S.activity = body; S.activityKey = key;
   return true;
+}
+
+async function loadDocs(m) {
+  // Only where a Docs tab can show; each read runs git for every documented file.
+  const number = S.route.view === "stop" || S.route.view === "phases" ? activityPhase(m) : null;
+  const p = number != null ? phaseByNumber(number) : null;
+  if (!p || !p.documentation || p.documentation === "off" || !p.doc_passes) {
+    const had = S.docs != null;
+    S.docs = null; S.docsKey = "";
+    return had;
+  }
+  try {
+    const { body } = await api(`/api/documentation?phase=${number}`);
+    const key = JSON.stringify(body);
+    if (key === S.docsKey) return false;
+    S.docs = body; S.docsKey = key;
+    return true;
+  } catch { return false; }
 }
 
 async function loadAudit(head) {
@@ -967,6 +1098,10 @@ function parseRoute() {
 }
 
 // ---------- events ----------
+document.addEventListener("toggle", (event) => {
+  const key = event.target?.dataset?.docOpen;
+  if (key) S.docOpen[key] = event.target.open;
+}, true);
 document.addEventListener("click", async (event) => {
   if (event.target.closest("[data-dismiss-receipt]")) { S.signed = null; render(); return; }
   if (event.target.closest("[data-fold]")) { S.planOpen = !S.planOpen; render(); $("[data-fold]")?.focus(); return; }

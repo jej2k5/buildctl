@@ -41,6 +41,26 @@ def glyph(aspect: str) -> str:
     return f"[{colour}]{char}[/]"
 
 
+DOC_MODE_WORDS = {"required": "documentation required", "optional": "documentation optional",
+                  "off": "documentation off for this phase"}
+
+
+def steps_text(p: dict[str, Any] | None) -> str:
+    """The phase's step track, one step per row, with the same glyphs as the web console."""
+    track = (p or {}).get("track") or {}
+    steps = track.get("steps") or []
+    if not steps or not any(st["aspect"] != "pending" or st.get("skipped") for st in steps):
+        return ""
+    head = " · ".join(part for part in (f"attempt {track.get('attempt') or 1}",
+                                         DOC_MODE_WORDS.get(track.get("documentation") or "", "")) if part)
+    rows = [f"[b]Phase {p['number']}[/b]  [dim]{escape(head)}[/dim]"]
+    for st in steps:
+        meta = escape(st.get("meta") or "")
+        meta = f"[{DANGER}]{meta}[/]" if st["aspect"] == "danger" else f"[dim]{meta}[/dim]"
+        rows.append(f"  {glyph(st['aspect'])} {st['name']:<10} {meta}")
+    return "\n".join(rows)
+
+
 def ago(iso: str | None) -> str:
     if not iso:
         return "never"
@@ -341,6 +361,10 @@ class BuildctlTUI(App[None]):
         if m["escalation"]:
             widgets.append(self.stop_panel(m, compact=True))
         widgets.append(Static(self.line_text(m), id="line"))
+        current = next((p for p in m["phases"] if p["number"] == m["state"]["current_phase"]), None)
+        track = steps_text(current)
+        if track:
+            widgets.append(Static(track, classes="steps"))
         widgets.append(Static("Next move  [dim]a lever unlocks only when every condition holds[/dim]", classes="h2"))
         widgets.extend(self.lever_widgets(m, PRIMARY, always=("start", "recover")))
         if self.result:
@@ -370,6 +394,10 @@ class BuildctlTUI(App[None]):
                                     "explains the code, shows the evidence, and offers only the levers the kernel will accept.[/dim]"))
             return
         widgets: list[Any] = [self.stop_panel(m, compact=False)]
+        current = next((p for p in m["phases"] if p["number"] == m["state"]["current_phase"]), None)
+        track = steps_text(current)
+        if track:
+            widgets.append(Static(track, classes="steps"))
         approval = m["state"]["pending_approval"]
         if approval:
             widgets.append(Static("What you are signing", classes="h2"))
@@ -421,6 +449,9 @@ class BuildctlTUI(App[None]):
         p = self.model["phases"][row]
         ops = sorted(p["operations"], key=lambda o: o.get("started_at") or "")
         lines = [f"{glyph(p['aspect'])} [b]{p['number']} · {escape(p['name'])}[/b]  [dim]{WORDS[p['aspect']]}[/dim]"]
+        track = steps_text(p)
+        if track:
+            lines += [track, ""]
         status_aspect = {"completed": "clear", "started": "occupied", "unknown": "unknown", "failed": "danger"}
         for op in ops:
             lines.append(f"  {glyph(status_aspect.get(op['status'], 'pending'))} {op['kind']:<14} {op['status']:<10} "

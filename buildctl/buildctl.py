@@ -1117,7 +1117,7 @@ class Supervisor:
             return {name: recorded[name] for name in ("passed", "acceptance", "documentation")}
         if existing and existing.status in {"started", "unknown"}:
             self._escalate(state, "UNKNOWN_EXTERNAL_OPERATION", operation_id)
-        operation = Operation(operation_id, "gate", phase.number, status="started", output_path=str(output),
+        operation = Operation(operation_id, "doc-gate", phase.number, status="started", output_path=str(output),
                               started_at=now())
         state.operations[operation_id] = operation
         self.store.event(state, "operation_started", operation=operation_id)

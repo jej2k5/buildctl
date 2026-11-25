@@ -20,6 +20,8 @@ buildctl-ui tui      # the same in the terminal
 
 Keys `1` to `6` switch views in both surfaces, in rail order. Both open on the Plan.
 
+The current call, the Stop view and each phase's detail show the phase's steps: Implement, Gates, Docs when [documentation](#documentation) is on, Review and Commit, each with its signal shape and what it took. The step where the build stopped is marked, and a documenter sent back is counted there ("pass 2 of 4 · 1 send-back"). A phase with `documentation: false` shows its Docs step as off. When documentation is on, a Docs tab shows the documenter's account, each documentation file's change as a diff, and the documentation gates; on [DOC_SCOPE_VIOLATION](#DOC_SCOPE_VIOLATION) it opens first, leading with the files that were outside the documentation paths. Setup lists the documentation settings, and the Phases table counts documenter passes. The terminal UI shows the steps; the Docs tab is web only for now.
+
 The Plan view reads `docs/ROADMAP.md`, `docs/DISCOVERY_DECISIONS.md` and `docs/DISCOVERY_RISKS.md` at the commit `trust init` pinned, so an agent cannot rewrite your summary of its own phase. The plain lines are optional: a phase's outcome is the indented line under it in `docs/ROADMAP.md`, and a checkpoint's instruction is a line such as `Before phase 6, the operator: Send a real webhook.` buildctl-discover writes both when the interview gives a phase an outcome and a checkpoint a note.
 
 ## Watching a discovery draft
