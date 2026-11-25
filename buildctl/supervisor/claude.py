@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .agents import RoleRunner, TRUSTED_PREAMBLE, untrusted
+from .documentation import REVIEW_CRITERIA, SKIPPED_NOTE
 from .protocol import context_documents, contract, prompt as protocol_prompt
 from .review import (CLEAN_COVERAGE_DISPOSITION, COVERAGE_DISPOSITIONS, COVERAGE_RECORD_KEYS,
                      DELETED_COVERAGE_DISPOSITION, FINDING_COVERAGE_DISPOSITION,
@@ -22,6 +23,10 @@ class ClaudeAdapter:
         policy = protocol_prompt(config, "review", self.snapshot)
         architecture = context_documents(config, self.snapshot)
         prompt = TRUSTED_PREAMBLE + "\n" + policy + "\nReview actual evidence; implementer claims are supplementary."
+        documentation = evidence.get("documentation")
+        if documentation is not None:
+            # Kernel-owned, so the criteria arrive even when the repository overrides review.md.
+            prompt += "\n" + (SKIPPED_NOTE if documentation.get("skipped") else REVIEW_CRITERIA)
         prompt += untrusted("phase_prompt", phase.prompt.read_text())
         prompt += untrusted("architecture_docs", architecture)
         prompt += "\nTRUSTED DELTA BINDING\n" + json.dumps({"protocol_version": REVIEW_PROTOCOL_VERSION,
@@ -49,6 +54,8 @@ class ClaudeAdapter:
         prompt += untrusted("gate_artifacts", json.dumps(evidence["gates"], indent=2))
         prompt += untrusted("relevant_tests", evidence["tests"])
         prompt += untrusted("implementer_claims", json.dumps(phase_result, indent=2))
+        if documentation is not None and not documentation.get("skipped"):
+            prompt += untrusted("doc_result", json.dumps(documentation, indent=2, sort_keys=True))
         if "evidence_discrepancies" in evidence:
             # buildctl's own comparison of what the implementer reported with what changed. File
             # names are agent-controlled, so this is wrapped like every other input.

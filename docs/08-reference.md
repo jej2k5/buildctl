@@ -57,7 +57,15 @@ Accepted with no terminal record means the command is still running, or was inte
 | `limits.max_phase_minutes` | Wall-clock limit for one attempt, before [PHASE_DEADLINE_EXCEEDED](#PHASE_DEADLINE_EXCEEDED). |
 | `limits.max_daily_cost_usd` | The daily budget, in UTC days. |
 | `limits.max_consecutive_failures` | Stops in a row before [MAX_CONSECUTIVE_FAILURES_EXHAUSTED](#MAX_CONSECUTIVE_FAILURES_EXHAUSTED). |
-| `operation_cost_usd` | Estimated cost of each paid call (`implementation`, `review`, `remediation`, `debate`, and `debate_turn` when the arbiter's mode is `debate`), reserved before the call runs. |
+| `operation_cost_usd` | Estimated cost of each paid call (`implementation`, `review`, `remediation`, `debate`, `debate_turn` when the arbiter's mode is `debate`, and `documentation` and `documentation_remediation` when documentation is on), reserved before the call runs. |
+| `documentation.mode` | `off` (the default, and the same as leaving the section out), `optional` or `required`. See [Documentation](#documentation). |
+| `documentation.paths` | The files the documenter may change: exact paths, prefixes ending in `/`, or globs such as `docs/**`. Required when on. They join every phase's allowed paths. Governed files inside them stay read-only; paths that reach `build.yaml`, `prompts/` or `templates/` are refused. |
+| `documentation.changelog` | Optional. The changelog file, inside the documentation paths. A user-visible change needs a new entry under the unreleased heading. |
+| `documentation.unreleased_heading` | The changelog heading new entries go under. Default `Unreleased`. |
+| `documentation.forbidden_phrases` | Phrases a documentation file may not gain, matched without case, for example `production-ready`. |
+| `documentation.max_attempts` | Times the documenter may be sent back in one attempt before [DOCUMENTATION_ATTEMPTS_EXHAUSTED](#DOCUMENTATION_ATTEMPTS_EXHAUSTED). Default 3. |
+| `documentation.brief` | Optional governed file with the docs' structure and voice, given to the documenter. Default `prompts/documentation.md` when it exists. |
+| `roles.documenter` | Optional, and only when documentation is on. Same keys as the other roles. Left out, the documenter runs as the implementer with the lineage `documentation-v1`. `buildctl validate` warns when it shares the reviewer's model family. |
 | `governance_documents` | Files beyond the fixed governed set that `trust init` pins and agents may not modify. Required; may be `[]`. |
 | `git.remote` | The remote phase branches are pushed to when `push` is on. |
 | `git.push` | Push the phase branch instead of fast-forwarding the integration branch locally. |
@@ -90,3 +98,4 @@ Accepted with no terminal record means the command is still running, or was inte
 | `phase_defaults.allowed_paths` | The only paths a phase may change. |
 | `phases` | The ordered list of phases, each with `number`, `name` and `prompt`. |
 | `phases[].acceptance` | Per-phase overrides of any `phase_defaults` key. |
+| `phases[].documentation` | `false` skips the documentation step for that phase, for test-only or tooling changes. Default `true`. |

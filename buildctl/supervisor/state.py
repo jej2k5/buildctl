@@ -107,6 +107,8 @@ class BuildState:
     semantic_review_attempts: dict[str, int] = field(default_factory=dict)
     remediation_attempts: dict[str, int] = field(default_factory=dict)
     debate_attempts: dict[str, int] = field(default_factory=dict)
+    # Documenter passes sent back with feedback (failed documentation gates or docs findings).
+    documentation_attempts: dict[str, int] = field(default_factory=dict)
     consecutive_failures: int = 0
     escalation_code: str | None = None
     escalation_detail: str | None = None

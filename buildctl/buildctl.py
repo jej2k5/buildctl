@@ -31,12 +31,14 @@ from .supervisor.isolation import (FakeIsolationBackend, IsolationBackend, Isola
                                    IsolationError, conformance_record, production_backend,
                                    require_fresh_conformance, verify_backend)
 from .supervisor.phases import ConfigurationError, Phase, load_config, phases_from, resolve_until
-from .supervisor.review import (OPERATOR_ACCEPTED_STATUS, ReviewValidationError, accumulate_findings,
+from .supervisor.review import (NON_BLOCKING_FINDING_STATUSES, OPERATOR_ACCEPTED_STATUS, SEVERITY,
+                                ReviewValidationError, accumulate_findings,
                                 open_finding_obligations, operator_rulings, realign_findings_to_delta,
                                 reduce_review, strategic_findings, validate_review)
-from .supervisor import levers, requests
+from .supervisor import documentation, levers, requests
+from .supervisor.documentation import DocumenterAdapter
 from .supervisor.operations import PaidOperation
-from .supervisor.safety import digest_file, redact
+from .supervisor.safety import digest_file, purge_ephemeral_artifacts, redact
 from .supervisor.state import (ApprovalRequirement, BuildState, DebateDecision, ExtraAttemptGrant, Operation,
                                StateConflict, StateStore, SupervisorLocked, now, request_scope)
 from .supervisor.trust import TrustError, TrustStore
@@ -200,7 +202,8 @@ class Supervisor:
             key = str(number)
             state.completed_phases.remove(number)
             for counters in (state.remediation_attempts, state.semantic_review_attempts,
-                             state.review_format_attempts, state.debate_attempts):
+                             state.review_format_attempts, state.debate_attempts,
+                             state.documentation_attempts):
                 counters.pop(key, None)
             state.status = "idle"
             state.escalation_code = state.escalation_detail = None
@@ -341,13 +344,15 @@ class Supervisor:
             # before its first review, and the first REMEDIATE stopped it again. Attempts stay
             # bounded by max_phase_attempts, and every retry past a ceiling still needs a grant.
             state.remediation_attempts.pop(key, None)
+            state.documentation_attempts.pop(key, None)  # the same, for documenter passes
             # A new attempt clones afresh, so it needs a fresh baseline. `retry` released it, but
             # `reopen` did not: Phase 1 reopened on a newer base compared its delta against the
             # first attempt's tree, and a governance edit to CI showed up as an agent change.
             # Releasing here covers every path into a new attempt.
             self._release_phase_baseline(phase.number)
             grant = state.extra_attempt_grant
-            if (grant and grant.phase == phase.number and grant.ceiling_code == "REMEDIATION_ATTEMPTS_EXHAUSTED"
+            if (grant and grant.phase == phase.number
+                    and grant.ceiling_code in {"REMEDIATION_ATTEMPTS_EXHAUSTED", "DOCUMENTATION_ATTEMPTS_EXHAUSTED"}
                     and grant.authorized and not grant.consumed):
                 grant.consumed = True  # the fresh count is the pass it bought
             self.store.event(state, "phase_started", phase=phase.number, attempt=state.phase_attempts[key])
@@ -376,6 +381,7 @@ class Supervisor:
         role_runner = RoleRunner(self.config, self.backend, context, self.runner, self.evidence)
         codex, claude = CodexAdapter(role_runner, self.snapshot), ClaudeAdapter(role_runner, self.snapshot)
         debate = DebateAdapter(role_runner, self.snapshot, self.config)
+        documenter = DocumenterAdapter(role_runner, self.snapshot)
         paths = self._paths(phase)
         phase_result = self._implementer_result(state, self._agent_operation(
             state, phase, "implement", PaidOperation.IMPLEMENTATION, paths["result"],
@@ -386,6 +392,7 @@ class Supervisor:
         phase_result = self._implementer_result(state, self._consume_debate_decision(
             state, phase, codex, workspace, paths, phase_result))
         gate_runner = MechanicalGates(workspace, self.control_root, self.root, self.backend, self.runner)
+        doc_feedback: str | None = None  # review findings for the documenter, set by a docs-only REMEDIATE
         while True:
             remediation = state.remediation_attempts.get(key, 0)
             round_id = remediation + 1
@@ -401,8 +408,15 @@ class Supervisor:
                     state, phase, f"remediate-{remediation + 1}", PaidOperation.REMEDIATION, remediation_path,
                     lambda timeout, rp=remediation_path, rt=review_text: codex.implement(phase, rp, timeout, review=rt)))
                 continue
+            doc_view = None
+            if documentation.enabled(self.config):
+                doc_view = self._document(state, phase, workspace, baseline, paths, gate_runner, documenter,
+                                          phase_result, gate, round_id, doc_feedback)
+                doc_feedback = None
             delta = self.git.attributed_delta(workspace, baseline, self._allowed_paths(phase, workspace, paths))
             evidence = self.git.review_evidence(workspace, delta, gate)
+            if doc_view is not None:
+                evidence["documentation"] = doc_view
             # Park the findings the reviewer could not adjudicate even if it tried — the
             # validator refuses a citation outside this delta's coverage — and un-park the
             # ones this delta has made citable again. Runs on every lap, and only here,
@@ -477,9 +491,28 @@ class Supervisor:
                              reviewer=review["reviewer"])
             if transition.disposition == "ADVANCE":
                 break
+            if transition.disposition == "REMEDIATE" and doc_view and not doc_view.get("skipped") \
+                    and self._documentation_findings_only(findings):
+                # Every blocking finding is on a documentation path: the code stands, so the
+                # documenter fixes its own work and the implementer is not re-run.
+                passes = state.documentation_attempts.get(key, 0)
+                if passes >= documentation.max_attempts(self.config):
+                    self._ceiling_reached(state, phase, "DOCUMENTATION_ATTEMPTS_EXHAUSTED", transition.rationale)
+                doc_feedback = json.dumps(review)
+                self._save_doc_feedback(paths, state.phase_attempts[key], f"{round_id}-{passes + 1}", doc_feedback)
+                state.documentation_attempts[key] = passes + 1
+                self.store.event(state, "documentation_remediation", phase=phase.number, source="review",
+                                 attempt=passes + 1)
+                continue
             if transition.disposition == "REMEDIATE":
                 if remediation >= phase.max_remediation_attempts:
                     self._ceiling_reached(state, phase, "REMEDIATION_ATTEMPTS_EXHAUSTED", transition.rationale)
+                docs_findings = self._documentation_findings(findings) if doc_view and not doc_view.get("skipped") else []
+                if docs_findings:
+                    # The documenter reruns on the remediated code anyway; give it its own findings.
+                    doc_feedback = json.dumps({"documentation_findings": docs_findings}, indent=2)
+                    self._save_doc_feedback(paths, state.phase_attempts[key], f"{remediation + 2}-{state.documentation_attempts.get(key, 0)}",
+                                            doc_feedback)
                 state.remediation_attempts[key] = remediation + 1
                 remediation_path = paths["result"].with_name(f"PHASE_RESULT-remediation-{remediation + 1}.json")
                 phase_result = self._implementer_result(state, self._agent_operation(
@@ -634,7 +667,9 @@ class Supervisor:
             self._escalate(state, "UNKNOWN_EXTERNAL_OPERATION", operation_id)
         # A debate turn names its speaker: either side may take a turn.
         role_name = role or {PaidOperation.IMPLEMENTATION: "implementer", PaidOperation.REMEDIATION: "implementer",
-                             PaidOperation.REVIEW: "reviewer", PaidOperation.DEBATE: "arbiter"}[paid_operation]
+                             PaidOperation.REVIEW: "reviewer", PaidOperation.DEBATE: "arbiter",
+                             PaidOperation.DOCUMENTATION: "documenter",
+                             PaidOperation.DOCUMENTATION_REMEDIATION: "documenter"}[paid_operation]
         try:
             self._require_authentication(role_name)
         except (AuthenticationRequired, HostAuthUnsupported) as exc:
@@ -732,9 +767,10 @@ class Supervisor:
             return
         if mode == "host_cli":
             result = AuthPreflight(self.runner, self.config).check()
-            if role == "implementer" and not result.get("implementer", {}).get("authenticated"):
+            # The documenter writes like the implementer and uses the same staged Codex login.
+            if role in {"implementer", "documenter"} and not result.get("implementer", {}).get("authenticated"):
                 raise AuthenticationRequired("openai", "codex login")
-            if role == "implementer":
+            if role in {"implementer", "documenter"}:
                 validate_codex_auth()
                 return
             if role == "reviewer":
@@ -850,11 +886,151 @@ class Supervisor:
     def _allowed_paths(self, phase: Phase, workspace: Path, paths: dict[str, Path]) -> tuple[str, ...]:
         relative = f"decisions/ADR-phase-{phase.number}.md"
         target = workspace / relative
+        # With documentation on, documentation paths belong to the phase too.
+        allowed = (*phase.allowed_paths, *(documentation.patterns(self.config)
+                                           if documentation.enabled_for(self.config, phase) else ()))
         if paths["adr_proposal"].is_file() and target.is_file():
             if digest_file(paths["adr_proposal"]) != digest_file(target):
                 raise GitSafetyError("ADR import differs from validated supervisor proposal")
-            return (*phase.allowed_paths, relative)
-        return phase.allowed_paths
+            return (*allowed, relative)
+        return tuple(allowed)
+
+    def _documentation_findings_only(self, findings: list[dict[str, Any]]) -> bool:
+        """True when every finding that blocks the phase cites a documentation path.
+
+        The area is derived here, from the cited path, rather than authored by the reviewer: the
+        finding schema and the review protocol version stay as every governed repository pins them.
+        """
+        blocking = self._blocking(findings)
+        return bool(blocking) and len(self._documentation_findings(blocking)) == len(blocking)
+
+    @staticmethod
+    def _blocking(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [item for item in findings if item.get("status", "open") not in NON_BLOCKING_FINDING_STATUSES
+                and SEVERITY.get(item.get("severity"), 0) >= SEVERITY["HIGH"]]
+
+    def _documentation_findings(self, findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Blocking findings about documentation: filed on a documentation path, or of kind `documentation`
+        (a stale doc the phase did not touch can only be cited against the code that made it stale)."""
+        globs = documentation.patterns(self.config)
+        return [item for item in self._blocking(findings)
+                if item.get("kind") == "documentation" or documentation.matches(str(item.get("path", "")), globs)]
+
+    def _document(self, state: BuildState, phase: Phase, workspace: Path, baseline: dict[str, str],
+                  paths: dict[str, Path], gate_runner: MechanicalGates, documenter: DocumenterAdapter,
+                  phase_result: dict[str, Any], gate: dict[str, Any], round_id: int,
+                  feedback: str | None) -> dict[str, Any]:
+        """Run the documenter on the passing implementation, then its gates, until they pass.
+
+        Operation labels carry the code lap and the documenter pass, so a restart, or a lap the
+        reviewer sent back for a format problem, replays the work already done instead of paying
+        for it twice. Returns what the reviewer is shown.
+        """
+        if not documentation.enabled_for(self.config, phase):
+            return {"skipped": True}
+        key, mode = str(phase.number), documentation.mode(self.config)
+        while True:
+            passes = state.documentation_attempts.get(key, 0)
+            label = f"{round_id}-{passes}"
+            operation_id = f"phase-{phase.number}:document-{label}:{state.phase_attempts[key]}"
+            before_path = paths["result"].with_name(f"DOC_BEFORE-{label}.json")
+            finished = state.operations.get(operation_id)
+            if not (finished and finished.status == "completed" and before_path.is_file()):
+                purge_ephemeral_artifacts(workspace)
+                before_path.write_text(json.dumps(self.git.manifest(workspace), sort_keys=True))
+            before = json.loads(before_path.read_text())
+            output = paths["result"].with_name(f"DOC_RESULT-{label}.json")
+            feedback = feedback or self._doc_feedback(paths, state.phase_attempts[key], label)
+            context: dict[str, Any] = {}
+            if not (finished and finished.status == "completed"):
+                # Before the call is reserved and marked started: a refused delta must not leave
+                # a paid operation behind that no later run can account for.
+                context = self.git.review_evidence(workspace, self.git.attributed_delta(
+                    workspace, baseline, self._allowed_paths(phase, workspace, paths)), gate)
+                context["phase_result"] = phase_result
+
+            def write(timeout: float, output: Path = output, feedback: str | None = feedback,
+                      context: dict[str, Any] = context) -> dict[str, Any]:
+                return documenter.document(phase, context, output, timeout, feedback=feedback)
+
+            operation = PaidOperation.DOCUMENTATION_REMEDIATION if feedback else PaidOperation.DOCUMENTATION
+            result = self._agent_operation(state, phase, f"document-{label}", operation, output, write)
+            purge_ephemeral_artifacts(workspace)
+            outside = documentation.scope_violations(before, self.git.manifest(workspace), self.config)
+            if outside:
+                self.store.event(state, "documentation_scope_violation", phase=phase.number, paths=outside[:20])
+                self._escalate(state, "DOC_SCOPE_VIOLATION", ", ".join(outside))
+            checked = self._doc_gate_operation(state, phase, gate_runner, baseline, result,
+                                               paths["gate"].with_name(f"DOC_GATE_RESULT-{label}.json"),
+                                               f"doc-gate-{label}")
+            view = {"mode": mode, "result": result, "gates": checked}
+            if checked["passed"]:
+                return view
+            if mode == "optional" and checked["acceptance"]["passed"]:
+                # Optional never stops a phase on documentation gates. The failures go to the
+                # reviewer and the audit trail instead.
+                self.store.event(state, "documentation_gates_failed", phase=phase.number,
+                                 gates=[item["gate"] for item in checked["documentation"]["failures"]])
+                return view
+            if passes >= documentation.max_attempts(self.config):
+                self._ceiling_reached(state, phase, "DOCUMENTATION_ATTEMPTS_EXHAUSTED", "documentation gate ceiling")
+            feedback = json.dumps({"failed_gates": checked["documentation"]["failures"],
+                                   "acceptance_failures": [] if checked["acceptance"]["passed"]
+                                   else checked["acceptance"]["details"]}, indent=2)
+            self._save_doc_feedback(paths, state.phase_attempts[key], f"{round_id}-{passes + 1}", feedback)
+            state.documentation_attempts[key] = passes + 1
+            self.store.event(state, "documentation_remediation", phase=phase.number, source="gates",
+                             attempt=passes + 1)
+
+    @staticmethod
+    def _doc_feedback(paths: dict[str, Path], attempt: int, label: str) -> str | None:
+        target = paths["result"].with_name(f"DOC_FEEDBACK-{attempt}-{label}.json")
+        return target.read_text() if target.is_file() else None
+
+    @staticmethod
+    def _save_doc_feedback(paths: dict[str, Path], attempt: int, label: str, text: str) -> None:
+        """Feedback for the documenter's next pass, kept on disk so a restart still hands it over.
+        Keyed by attempt too: a fresh attempt must never inherit an earlier attempt's feedback."""
+        paths["result"].with_name(f"DOC_FEEDBACK-{attempt}-{label}.json").write_text(text)
+
+    def _doc_gate_operation(self, state: BuildState, phase: Phase, gate_runner: MechanicalGates,
+                            baseline: dict[str, str], result: dict[str, Any], output: Path,
+                            kind: str) -> dict[str, Any]:
+        """The acceptance commands again (docs can break tests that read them), then the doc gates."""
+        operation_id = f"phase-{phase.number}:{kind}:{state.phase_attempts[str(phase.number)]}"
+        existing = state.operations.get(operation_id)
+        if existing and existing.status == "completed":
+            recorded = json.loads(Path(existing.output_path or output).read_text())
+            return {name: recorded[name] for name in ("passed", "acceptance", "documentation")}
+        if existing and existing.status in {"started", "unknown"}:
+            self._escalate(state, "UNKNOWN_EXTERNAL_OPERATION", operation_id)
+        operation = Operation(operation_id, "gate", phase.number, status="started", output_path=str(output),
+                              started_at=now())
+        state.operations[operation_id] = operation
+        self.store.event(state, "operation_started", operation=operation_id)
+        workspace = Path(state.workspace or "")
+        acceptance = gate_runner.run(phase, self._remaining_seconds(state))
+        after = self.git.manifest(workspace)
+        changed = sorted({path for path, digest in after.items() if baseline.get(path) != digest}
+                         | {path for path in baseline if path not in after})
+        base = state.base_sha or ""
+
+        def base_text(path: str) -> str | None:
+            try:
+                shown = self.git._git("show", f"{base}:{path}", check=False)
+            except UnicodeDecodeError:
+                return None  # binary: no phrases to compare
+            return shown.stdout if shown.returncode == 0 else None
+
+        docs = documentation.run_gates(workspace, self.config, result, changed, base_text)
+        value = {"passed": acceptance.passed and docs["passed"],
+                 "acceptance": {"passed": acceptance.passed, "details": acceptance.details},
+                 "documentation": docs}
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps({**self._metadata(state), **value}, indent=2, sort_keys=True) + "\n")
+        operation.status, operation.output_digest, operation.completed_at = "completed", digest_file(output), now()
+        self.store.event(state, "operation_completed", operation=operation_id)
+        return value
 
     def verify_isolation(self) -> dict[str, Any]:
         if self.dry_run:
@@ -1169,6 +1345,8 @@ def dispatch(args: argparse.Namespace, root: Path, control_root: Path) -> int:
         else:
             config = load_config(root / "build.yaml"); source = "untrusted worktree (trust not initialized)"
         print(f"build.yaml: valid ({len(config['phases'])} phases; {source})")
+        for warning in documentation.warnings(config):
+            print(f"warning: {warning}")
         return 0
     if args.command == "inspect":
         print(json.dumps(inspect_build(root, control_root), indent=2, sort_keys=True)); return 0

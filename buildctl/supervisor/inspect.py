@@ -66,6 +66,10 @@ ESCALATIONS: dict[str, tuple[str, str]] = {
                                    "Investigate before retrying. This should never happen."),
     "STALE_DEBATE_RESULT": ("The debate result was written for a different phase or base.",
                             "Re-run the debate for the current request, then retry."),
+    "DOC_SCOPE_VIOLATION": ("The documenter changed files outside the documentation paths. Nothing was "
+                            "reviewed or committed.",
+                            "Check the detail for the paths, then retry. If they should count as documentation, "
+                            "add them to documentation.paths and run trust init."),
     "AGENT_RECORD_INCOMPLETE": ("Part of the phase went unrecorded, so buildctl will not commit it.",
                                 "Fix the cause in the detail, such as a full disk, then retry. A retry starts a fresh attempt."),
     "UNEXPECTED_FAILURE": ("The supervisor hit an error it does not classify.",

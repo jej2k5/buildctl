@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import os
 import shutil
@@ -116,8 +117,7 @@ class GitManager:
         for path in all_changes:
             if is_governance_path(path, governance_documents(self.config)):
                 raise GitSafetyError(f"agent modified governance path: {path}")
-            if not any(path.startswith(prefix) if prefix.endswith("/") else path == prefix
-                       for prefix in allowed_paths):
+            if not path_allowed(path, allowed_paths):
                 raise GitSafetyError(f"phase changed unattributed path: {path}")
             target = ensure_safe_relative(workspace, path)
             if target.is_symlink() or secret_shaped(path):
@@ -276,6 +276,19 @@ class GitManager:
                 raise GitSafetyError("PR merge request failed")
             return "auto_merge_requested"
         return "pr_created"
+
+
+def path_allowed(path: str, allowed_paths: tuple[str, ...]) -> bool:
+    """A prefix ending in `/`, an exact path, or a glob (`docs/**`, `*.md`) from documentation paths."""
+    for prefix in allowed_paths:
+        if any(char in prefix for char in "*?["):
+            if prefix.endswith("/**") and path.startswith(prefix[:-2]):
+                return True
+            if fnmatch.fnmatchcase(path, prefix):
+                return True
+        elif path.startswith(prefix) if prefix.endswith("/") else path == prefix:
+            return True
+    return False
 
 
 def json_like(value: Any) -> str:
