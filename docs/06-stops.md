@@ -14,6 +14,12 @@ A phase in `checkpoints.before_phases`, a `merge_policy: human` merge, or the MV
 
 **Clear it:** review the evidence, then approve. `buildctl approve --nonce <n>`, with the nonce from `status`. In the console, the Approve lever asks you to type the first 7 characters of the tree hash you reviewed. An approval made against state that has since moved is refused.
 
+**If you committed while it waited:** the checkpoint is bound to the tree it was issued on, so approve refuses it. Run `buildctl retry`: it reissues the same checkpoint for the repository as it is now, with a new nonce, and you approve that. Nothing else changes, and no attempt is spent. A before-phase checkpoint also takes the current trust anchor, so a re-trust at a checkpoint asks for a fresh signature.
+
+**If a phase waiting to merge should not land:** `buildctl reject --phase <n> --confirm <n>` discards its commit without merging and the next run builds a fresh attempt from the integration branch. Use it when the work is wrong, or when the integration branch moved and the fast-forward merge refuses.
+
+The phase's clock, base commit and trust anchor are set when work starts, after a before-phase checkpoint clears, so a long wait at a checkpoint costs no phase time.
+
 #### DEBATE_REQUIRES_HUMAN {#DEBATE_REQUIRES_HUMAN signal=caution}
 
 With `roles.arbiter.mode: interactive`, the review routed the phase to a debate, and the debate is yours to run. buildctl wrote `DEBATE_REQUEST.json`: the strategic findings, the evidence digest, the exact output format and the `output_path` to write the result to. The status detail is the request's path, in the phase's `artifacts/phase-N/` directory.

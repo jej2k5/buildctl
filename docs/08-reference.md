@@ -15,8 +15,9 @@ Global flags: `--repo <path>` (must be the repository toplevel), `--dry-run`, an
 | `resume` | Allow it again. |
 | `approve --nonce <n>` | Approve the pending checkpoint. The nonce comes from `status`. |
 | `debate decide --nonce <n> --answer <answer>` | Settle a debate the agents could not, at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION). The answer is `finding-stands`, `code-stands` or `own`; `--text` carries your ruling (required for `own`) or a note. The nonce comes from `status`. The same attempt resumes. |
-| `retry` | Try again after an ordinary failure. Starts a fresh attempt. `--authorize-extra-attempt --nonce <n>` buys exactly one more pass past an exhausted ceiling. |
+| `retry` | Try again after an ordinary failure. Starts a fresh attempt. `--authorize-extra-attempt --nonce <n>` buys exactly one more pass past an exhausted ceiling. At a checkpoint the repository has moved under, it reissues the checkpoint for the current tree instead; see [CHECKPOINT_REQUIRED](#CHECKPOINT_REQUIRED). |
 | `reconcile --operation <id> --action <action>` | Settle an agent call whose outcome is unknown. The action is `accept-output` (keep what it left) or `authorize-retry` (discard it and pay for a new call). |
+| `reject --phase <n> --confirm <n>` | Discard a committed phase that has not merged, such as one waiting at a `merge_policy: human` checkpoint. Its branch is renamed `build/phase-<n>-rejected-<attempt>`, not deleted, so its receipt stays verifiable. The next run builds a fresh attempt from the integration branch. `--reason` goes in the audit log. Refused once the phase is on the integration branch; use `reopen` then. |
 | `reopen --phase <n> --confirm <n>` | Take a completed phase back so a fresh attempt redoes it, for a phase recorded as done that was not. Nothing is reverted: the next attempt starts from the integration branch. Refused while later phases are complete or the build is not idle. |
 | `trust init --to <sha> --confirm <sha>` | Pin the governed files at that commit, this buildctl, and both agent executables. |
 | `trust show` | Show what is pinned. |
@@ -33,7 +34,7 @@ Global flags: `--repo <path>` (must be the repository toplevel), `--dry-run`, an
 
 ### Request identity {#request-identity}
 
-An orchestrator that runs buildctl for you needs to know what its command did, even if its own process dies mid-call. Pass `--request-id <id>` (1 to 128 letters, digits, `.`, `_`, `:` or `-`) to any command that changes build state: `start`, `run`, `phase`, `pause`, `resume`, `retry`, `approve`, `debate decide`, `reconcile`, `reopen` and `evidence prune`. Other commands refuse the flag rather than ignore it, and the build must be bootstrapped first.
+An orchestrator that runs buildctl for you needs to know what its command did, even if its own process dies mid-call. Pass `--request-id <id>` (1 to 128 letters, digits, `.`, `_`, `:` or `-`) to any command that changes build state: `start`, `run`, `phase`, `pause`, `resume`, `retry`, `approve`, `debate decide`, `reconcile`, `reopen`, `reject` and `evidence prune`. Other commands refuse the flag rather than ignore it, and the build must be bootstrapped first.
 
 1. `request_accepted` is written under the state lock before the command does anything. No record means it never took effect, and resending the same id is safe.
 2. Every audit event the command causes carries `request_id`.

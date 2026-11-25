@@ -135,8 +135,13 @@ class Supervisor:
     def retry(self, authorize_extra_attempt: bool = False, nonce: str | None = None) -> None:
         with self.store.lock():
             state = self.store.load()
+            if state.pending_approval and levers.is_stopped(state) and state.escalation_code == "CHECKPOINT_REQUIRED" \
+                    and levers.checkpoint_is_stale(state, self.git.tree_hash()):
+                self._reissue_checkpoint(state)
+                return
             if not levers.is_stopped(state) or state.pending_approval:
-                raise RuntimeError("retry requires a non-checkpoint escalation")
+                raise RuntimeError("retry requires a non-checkpoint escalation; a checkpoint that still "
+                                   "matches the repository needs approve")
             if levers.unknown_operations(state):
                 raise RuntimeError("unknown operation requires reconcile, not retry")
             if levers.is_ceiling(state):
@@ -179,6 +184,81 @@ class Supervisor:
                 self._release_phase_baseline(retried_phase)
             self.store.event(state, "retry_authorized", extra_attempt=authorize_extra_attempt,
                              phase=retried_phase)
+
+    def _reissue_checkpoint(self, state: BuildState) -> None:
+        """Re-bind a checkpoint whose repository moved under it, so it can be signed.
+
+        An approval is bound to the tree it was issued on. An operator commit while it waited
+        (replcrm's SystemModstamp fix during a checkpoint) used to leave `approve` refused with no
+        lever to issue a new one. The checkpoint itself is unchanged: same phase, same attempt, same
+        thing to sign. Only its binding moves to the tree as it is now, with a new nonce, and the
+        operator signs again having seen what changed. A before-phase checkpoint has no work behind
+        it yet, so it also takes the current trust anchor; a merge checkpoint keeps the governance
+        the phase was built and reviewed under.
+        """
+        old = state.pending_approval
+        governance = state.governance_sha or ""
+        if state.phase_step != "committed" and not state.workspace and getattr(self, "anchor", None):
+            state.governance_sha = governance = self.anchor["governance_sha"]
+            state.snapshot_digest = self.anchor["snapshot_digest"]
+        state.pending_approval = ApprovalRequirement(
+            old.checkpoint, old.phase, state.phase_attempts.get(str(old.phase), old.phase_attempt),
+            self.git.tree_hash(), governance, state.generation, secrets.token_hex(16))
+        state.escalation_code, state.status = "CHECKPOINT_REQUIRED", "human_escalation"
+        state.escalation_detail = old.checkpoint
+        self.store.event(state, "checkpoint_reissued", checkpoint=old.checkpoint, phase=old.phase,
+                         previous_tree=old.tree_hash, tree=state.pending_approval.tree_hash)
+
+    def reject(self, number: int, reason: str = "") -> None:
+        """Discard a committed phase that has not been integrated, and let a fresh attempt redo it.
+
+        Once a phase reached `committed`, `retry` only replayed publication, and a merge refused as
+        "main has commits that build/phase-N does not" looped forever (wyrit phases 6 and 13). The
+        phase branch is renamed, not deleted, so its commit and the receipt that names it stay
+        verifiable. The next run starts a new attempt from the integration branch as it is now.
+        """
+        with self.store.lock():
+            state = self.store.load()
+            if state.status == "running":
+                raise RuntimeError("reject needs the build stopped, not running")
+            if state.current_phase != number or state.phase_step != "committed":
+                raise RuntimeError(f"phase {number} is not a committed phase waiting to merge; "
+                                   "for a completed phase use reopen, for a failed one use retry")
+            if self.config["git"].get("push"):
+                # The branch may already be on the remote, with a pull request, and the next
+                # attempt's push of the same name would be refused there.
+                raise RuntimeError("reject is not available when git.push is on; close the pull request "
+                                   "and delete the remote branch by hand, then reopen")
+            branch = state.active_branch or f"build/phase-{number}"
+            integration = self.git.integration_branch()
+            commit = self.git._git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False).stdout.strip()
+            if commit and self.git._git("merge-base", "--is-ancestor", commit, f"refs/heads/{integration}",
+                                        check=False).returncode == 0:
+                raise RuntimeError(f"{branch} is already on {integration}; use reopen after it completes")
+            if self.git._git("status", "--porcelain=v1", "--untracked-files=all").stdout.strip():
+                raise RuntimeError("the repository has uncommitted changes; commit or remove them, then reject")
+            # The commit step leaves the repository on the phase branch. Step off it first, so the
+            # next attempt's base is the integration branch, not the work being rejected.
+            current = self.git._git("symbolic-ref", "--quiet", "--short", "HEAD", check=False).stdout.strip()
+            if current != integration:
+                self.git._git("switch", integration)
+            attempt = state.phase_attempts.get(str(number), 0)
+            archived = f"build/phase-{number}-rejected-{attempt}"
+            if commit:
+                self.git._git("branch", "-m", branch, archived)
+            state.pending_approval = None
+            state.pending_debate = None
+            state.current_phase, state.phase_step, state.workspace, state.active_branch = None, "pending", None, None
+            state.deadline_at = None
+            state.status = "idle"
+            state.escalation_code = state.escalation_detail = None
+            grant = state.extra_attempt_grant
+            if grant and grant.phase == number:
+                state.extra_attempt_grant = None
+            self._release_phase_baseline(number)
+            self.store.event(state, "phase_rejected", phase=number, attempt=attempt,
+                             archived_branch=archived if commit else None, commit=commit or None,
+                             reason=redact(reason, limit=500))
 
     def reopen(self, number: int) -> None:
         """Take a phase back out of `completed_phases`, so a fresh attempt can redo it.
@@ -364,6 +444,15 @@ class Supervisor:
                 self._require_approval(state, phase, f"merge-phase-{phase.number}")
             self._finish_phase(state, phase, state.active_branch or f"build/phase-{phase.number}")
             return
+        if not state.workspace:
+            # No work has started yet: bind the attempt to the repository, the trust anchor and the
+            # clock as they are now. These used to be stamped once, when the phase became current,
+            # before its checkpoint waited for a human. ReplCRM waited six hours at a checkpoint and
+            # died PHASE_DEADLINE_EXCEEDED the moment it was approved; MCPxy fixed a brief at its
+            # checkpoint and failed "repository moved from pinned base SHA". Refreshing governance
+            # before the checkpoint check also means an approval given under an earlier trust
+            # anchor no longer counts, so a re-trust asks for a fresh signature.
+            self._bind_attempt(state)
         self._checkpoint(state, phase)
         if not state.workspace:
             workspace = Path(tempfile.mkdtemp(prefix=f"buildctl-phase-{phase.number}-")) / "workspace"
@@ -566,6 +655,14 @@ class Supervisor:
         if phase.merge_policy == "human":
             self._require_approval(state, phase, f"merge-phase-{phase.number}")
         self._finish_phase(state, phase, branch)
+
+    def _bind_attempt(self, state: BuildState) -> None:
+        state.base_sha = self.git.current_sha()
+        anchor = getattr(self, "anchor", None)
+        if anchor:
+            state.governance_sha = anchor["governance_sha"]
+            state.snapshot_digest = anchor["snapshot_digest"]
+        state.deadline_at = self._phase_deadline()
 
     def _implementer_result(self, state: BuildState, result: dict[str, Any]) -> dict[str, Any]:
         """Act on the status the implementer reported, before anything reviews or merges it.
@@ -1195,6 +1292,10 @@ def parser() -> argparse.ArgumentParser:
     phase = commands.add_parser("phase"); phase.add_argument("number", type=int)
     approve = commands.add_parser("approve"); approve.add_argument("--nonce", required=True)
     reconcile = commands.add_parser("reconcile"); reconcile.add_argument("--operation", required=True)
+    reject = commands.add_parser("reject", help="discard a committed phase that has not merged; a fresh attempt redoes it")
+    reject.add_argument("--phase", type=int, required=True)
+    reject.add_argument("--confirm", type=int, required=True, help="type the phase number again")
+    reject.add_argument("--reason", default="", help="why, for the audit log")
     reopen = commands.add_parser("reopen", help="take a completed phase back for a fresh attempt")
     reopen.add_argument("--phase", type=int, required=True)
     reopen.add_argument("--confirm", type=int, required=True, help="type the phase number again")
@@ -1335,7 +1436,15 @@ def main(argv: list[str] | None = None) -> int:
 def dispatch(args: argparse.Namespace, root: Path, control_root: Path) -> int:
     if args.command == "trust":
         trust = TrustStore(root, control_root)
-        if args.trust_command == "init": print(json.dumps(trust.initialize(args.to, args.confirm), indent=2))
+        if args.trust_command == "init":
+            print(json.dumps(trust.initialize(args.to, args.confirm), indent=2))
+            store = StateStore(control_root)
+            pending = store.load().pending_approval if store.path.exists() else None
+            if pending:
+                # Seams 1 and 7: a re-trust while a checkpoint waits used to wedge it.
+                print(f"buildctl: warning: {pending.checkpoint} for phase {pending.phase} is waiting for approval. "
+                      "If this commit changed the repository, run `buildctl retry` to reissue it, then approve; "
+                      "for a merge checkpoint whose phase should not land, `buildctl reject`.", file=sys.stderr)
         else: print(json.dumps(trust.load(), indent=2))
         return 0
     if args.command == "validate":
@@ -1382,6 +1491,10 @@ def dispatch(args: argparse.Namespace, root: Path, control_root: Path) -> int:
     elif args.command == "approve": supervisor.approve(args.nonce)
     elif args.command == "debate": supervisor.decide_debate(args.answer, args.text, args.nonce)
     elif args.command == "reconcile": supervisor.reconcile(args.operation, args.action)
+    elif args.command == "reject":
+        if args.phase != args.confirm:
+            raise ValueError("--confirm must repeat the phase number")
+        supervisor.reject(args.phase, args.reason)
     elif args.command == "reopen":
         if args.phase != args.confirm:
             raise ValueError("--confirm must repeat the phase number")

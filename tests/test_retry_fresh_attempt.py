@@ -47,6 +47,9 @@ class StubGit:
     def current_sha(self):
         return self.sha
 
+    def tree_hash(self):
+        return "tree"
+
     def create_isolated_clone(self, base_sha, destination):
         Path(destination).mkdir(parents=True)
         self.clones.append(Path(destination))
@@ -268,6 +271,7 @@ class PreservedStateTests(unittest.TestCase):
 
 class RetrySafetyTests(unittest.TestCase):
     def test_a_pending_checkpoint_still_cannot_be_retried(self):
+        """One that still matches the repository. A stale one is reissued: see test_checkpoint_seams."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             state = failed_phase_one_state(str(root / "stale"))

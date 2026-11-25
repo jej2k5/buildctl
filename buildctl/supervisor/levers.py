@@ -19,7 +19,7 @@ from .state import BuildState
 # Start and its stale-run form share a lever; so do the two forms of retry.
 LEVER_NUMBERS = {"start": 1, "recover": 1, "pause": 2, "resume": 3, "approve": 4, "retry": 5, "grant": 5,
                  "reconcile-accept": 6, "reconcile-retry": 7, "trust": 8, "isolation": 9, "auth": 10,
-                 "bootstrap": 11, "decide": 12}
+                 "bootstrap": 11, "decide": 12, "reject": 13}
 
 STOPPED_STATUSES = frozenset({"human_escalation", "failed"})
 # Stops that wait for a human by design. They are not failures: they show at caution, not
@@ -90,6 +90,18 @@ def approval_scope_holds(state: BuildState, tree_hash: str | None) -> bool:
         return False
     attempt = state.phase_attempts.get(str(requirement.phase), 0)
     return attempt == requirement.phase_attempt and tree_hash == requirement.tree_hash
+
+
+def checkpoint_is_stale(state: BuildState, tree_hash: str | None) -> bool:
+    """A pending checkpoint that approve would refuse: the repository moved under it, or the state
+    generation did (another command saved state while it waited). `retry` reissues it."""
+    return bool(state.pending_approval) and (not approval_scope_holds(state, tree_hash)
+                                             or not approval_is_current(state))
+
+
+def can_reject(state: BuildState) -> bool:
+    """A committed phase that has not integrated, with the build stopped."""
+    return state.phase_step == "committed" and state.current_phase is not None and is_stopped(state)
 
 
 def _condition(identifier: str, label: str, held: bool | None, detail: str = "") -> dict[str, Any]:
@@ -194,6 +206,13 @@ def levers(state: BuildState, facts: dict[str, Any]) -> list[dict[str, Any]]:
             ], confirm={"kind": "phase", "value": str(state.current_phase), "length": None,
                         "prompt": "Type the phase number to buy exactly one more pass"},
             spends=True, summary="Buy exactly one more pass past the ceiling. The grant is spent on use."))
+    elif requirement and is_stopped(state) and checkpoint_is_stale(state, facts.get("tree_hash")):
+        result.append(_lever("retry", "Reissue checkpoint", ["retry"], [
+            lock_condition,
+            _condition("stale", "The repository moved since this checkpoint was issued", True,
+                       f"issued on {requirement.tree_hash[:12]}, now {(facts.get('tree_hash') or 'unknown')[:12]}"),
+        ], summary="Bind the checkpoint to the repository as it is now, with a new nonce. Then review "
+                   "what changed and approve."))
     else:
         result.append(_lever("retry", "Retry", ["retry"], [
             lock_condition,
@@ -202,6 +221,16 @@ def levers(state: BuildState, facts: dict[str, Any]) -> list[dict[str, Any]]:
             _condition("reconciled", "No operation awaits reconciliation", not unknown,
                        f"{len(unknown)} unknown" if unknown else ""),
         ], summary="Start a fresh attempt of the stopped phase."))
+    if can_reject(state):
+        number = state.current_phase
+        result.append(_lever("reject", "Reject phase", ["reject", "--phase", str(number), "--confirm", str(number)], [
+            lock_condition,
+            _condition("committed", "The phase is committed and has not merged", True,
+                       state.active_branch or f"build/phase-{number}"),
+        ], confirm={"kind": "phase", "value": str(number), "length": None,
+                    "prompt": "Type the phase number to discard its commit and start a fresh attempt"},
+            spends=True, summary="Discard this phase's commit without merging it. The branch is kept under a "
+                                 "-rejected name, and the next run builds a fresh attempt from the integration branch."))
 
     for operation_id in unknown:
         operation = state.operations[operation_id]
