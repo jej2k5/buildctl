@@ -25,7 +25,7 @@ from buildctl.supervisor.state import (ApprovalRequirement, BuildState, DebateDe
                                        StateStore)
 from buildctl.supervisor.trust import TrustError, TrustStore
 
-SCENARIOS = ("blocked", "checkpoint", "ceiling", "unknown", "running", "debate", "docs", "fresh")
+SCENARIOS = ("blocked", "checkpoint", "ceiling", "unknown", "running", "debate", "docs", "drafts", "fresh")
 FIXTURE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "target"
 COST = {"implement": 2.0, "remediate": 2.0, "review": 2.0, "debate": 5.0}
 
@@ -149,7 +149,7 @@ def build(root: Path, scenario: str = "blocked") -> tuple[Path, Path]:
                            isolation_backend="macos-sandbox-exec", status="running")
         store.save(state)
         state.started_at = clock()
-        stop_at = 12 if scenario != "checkpoint" else 15
+        stop_at = 15 if scenario in ("checkpoint", "drafts") else 12
         laps_for = {3: 2, 7: 3, 9: 2, 11: 2}
         for phase in config["phases"]:
             number = phase["number"]
@@ -161,7 +161,11 @@ def build(root: Path, scenario: str = "blocked") -> tuple[Path, Path]:
                 clock.value = now - timedelta(hours=6, minutes=40)
             _phase(store, state, clock, costs, number, laps_for.get(number, 1), complete=True)
 
-        if scenario == "checkpoint":
+        if scenario == "drafts":
+            state.status, state.current_phase = "paused", stop_at
+            store.save(state)
+            _drafts(control, head, now)
+        elif scenario == "checkpoint":
             clock.value = now - timedelta(minutes=9)
             state.current_phase, state.phase_step = stop_at, "pending"
             state.phase_attempts[str(stop_at)] = 1
@@ -368,6 +372,121 @@ def _documentation(store: StateStore, state: BuildState, clock: Clock, costs: li
             store.event(state, "documentation_remediation", phase=12, source="gates", attempt=1)
     store.event(state, "documentation_scope_violation", phase=12, paths=["src/relay/replay.py"])
     _escalate(store, state, "DOC_SCOPE_VIOLATION", "src/relay/replay.py")
+
+
+def _claim(text: str, kind: str, ref: str, quote: str | None = None, line: int | None = None) -> dict:
+    return {"text": text, "source": {"kind": kind, "ref": ref, "line": line, "quote": quote}}
+
+
+THESIS = "docs/PRODUCT_THESIS.md"
+ROADMAP = "docs/ROADMAP.md"
+DEMO_DRAFTS = {
+    "release-notes": {
+        "title": "Relay MVP release notes",
+        "body": "## Delivery you can trust\n\nRelay accepts an event once and delivers it to every subscriber. "
+                "Accepted events survive a restart. Each payload is signed, so a receiver can verify it came "
+                "from Relay.\n\n## When a receiver fails\n\nFailed deliveries retry with backoff. Events that "
+                "never deliver land in a dead-letter queue you can inspect.\n\n## Operating it\n\nOne noisy "
+                "endpoint can no longer slow everyone else down. Each tenant sees only its own endpoints and "
+                "events. Delivery logs show what was delivered, when, and how long it took.",
+        "claims": [
+            _claim("Relay accepts an event once and delivers it to every subscriber.", "file", THESIS,
+                   "a team sends an event once and gets reliable, inspectable delivery to every subscriber", 3),
+            _claim("Accepted events survive a restart.", "file", ROADMAP, "Accepted events survive a restart and are never lost.", 12),
+            _claim("Receivers can verify each payload came from Relay.", "file", ROADMAP,
+                   "Receivers can verify that each payload really came from Relay.", 14),
+            _claim("Failed deliveries retry with backoff.", "file", ROADMAP,
+                   "Failed deliveries retry with backoff instead of hammering a receiver.", 18),
+            _claim("Undeliverable events land in an inspectable dead-letter queue.", "file", ROADMAP,
+                   "Events that never deliver land in a dead-letter queue you can inspect.", 20),
+            _claim("One noisy endpoint no longer slows everyone else.", "file", ROADMAP,
+                   "One noisy endpoint can no longer slow down everyone else.", 22),
+            _claim("Each tenant sees only its own endpoints and events.", "file", ROADMAP,
+                   "Each tenant sees and touches only its own endpoints and events.", 24),
+            _claim("Delivery logs show what was delivered, when and how long it took.", "file", ROADMAP,
+                   "You can see what was delivered, when, and how long it took.", 26),
+        ],
+        "known_limits": ["Replaying past events is not in this release."],
+    },
+    "positioning": {
+        "title": "Relay positioning",
+        "body": "Relay is a self-hosted webhook delivery service. Teams that send webhooks rebuild the same "
+                "machinery: retries, signing, dead letters, replay and logs. Relay is that machinery as one "
+                "service, so a team sends an event once and can see whether each subscriber got it.",
+        "claims": [
+            _claim("Relay is one self-hosted service for webhook delivery.", "file", THESIS,
+                   "Relay is that machinery as one self-hosted service", 3),
+            _claim("Teams that send webhooks rebuild retries, signing, dead letters, replay and logs.", "file", THESIS,
+                   "Teams that send webhooks rebuild the same delivery machinery: retries, signing, dead letters, replay and logs.", 3),
+        ],
+        "known_limits": [],
+        "fields": {"description": "Self-hosted webhook delivery: retries, signing, dead letters and delivery logs in one service.",
+                   "topics": ["webhooks", "webhook-delivery", "self-hosted", "retries", "dead-letter-queue"]},
+    },
+    "launch-post": {
+        "title": "Relay: send a webhook once, know it arrived",
+        "body": "Did this subscriber get this event, and if not, why? Most teams cannot answer that in under a "
+                "minute.\n\nRelay is a self-hosted service that handles webhook delivery end to end. It "
+                "retries with backoff, signs every payload, and keeps a dead-letter queue you can inspect. "
+                "Relay is already used in production by three teams.\n\n## What it does not do yet\n\n"
+                "Replay is not in this release.",
+        "claims": [
+            _claim("Teams want to answer whether a subscriber got an event in under a minute.", "file", THESIS,
+                   "did this subscriber get this event, and if not, why?", 5),
+            _claim("Relay retries failed deliveries with backoff.", "file", ROADMAP,
+                   "Failed deliveries retry with backoff instead of hammering a receiver.", 18),
+            _claim("Relay signs every payload.", "file", ROADMAP, "Receivers can verify that each payload really came from Relay.", 14),
+            _claim("Relay keeps a dead-letter queue you can inspect.", "file", ROADMAP,
+                   "Events that never deliver land in a dead-letter queue you can inspect.", 20),
+            _claim("Relay is used in production by three teams.", "file", "docs/CUSTOMERS.md", "three teams", None),
+        ],
+        "known_limits": ["Replaying past events is not in this release."],
+    },
+    "demo-script": {
+        "title": "Relay demo script",
+        "body": "About three minutes.\n\n1. **Register an endpoint.** On screen: the endpoint registry. Say: "
+                "\"Tenants register, update and remove their webhook endpoints.\"\n2. **Break the receiver.** "
+                "On screen: delivery attempts backing off. Say: \"Failed deliveries retry with backoff instead of "
+                "hammering a receiver.\"\n3. **Open the dead-letter queue.** Say: \"Events that never deliver "
+                "land here, where you can inspect them.\"",
+        "claims": [
+            _claim("Tenants can register, update and remove endpoints.", "file", ROADMAP,
+                   "Tenants can register, update and remove webhook endpoints.", 10),
+            _claim("Failed deliveries retry with backoff.", "file", ROADMAP,
+                   "Failed deliveries retry with backoff instead of hammering a receiver.", 18),
+            _claim("Undeliverable events land in an inspectable dead-letter queue.", "file", ROADMAP,
+                   "Events that never deliver land in a dead-letter queue you can inspect.", 20),
+        ],
+        "known_limits": [],
+    },
+}
+
+
+def _drafts(control: Path, head: str, now: datetime) -> None:
+    """One buildctl-drafts run for the MVP milestone: drafts in every state the console shows."""
+    stamp = now - timedelta(minutes=42)
+    run = stamp.strftime("%Y%m%d-%H%M%S")
+    directory = control / "drafts" / run
+    directory.mkdir(parents=True, mode=0o700)
+    costs, events = [], []
+    for kind, draft in DEMO_DRAFTS.items():
+        draft = {"fields": {}, **draft}
+        unbacked, lint = [], []
+        if kind == "launch-post":
+            unbacked = [{"claim": 5, "text": draft["claims"][4]["text"], "why": "docs/CUSTOMERS.md does not exist at the milestone's commit"}]
+        passed = not unbacked and not lint
+        record = {"kind": kind, "title": kind.replace("-", " ").capitalize(), "label": "mvp", "since": None,
+                  "until": head, "commits": 15, "voice": "plain (no voice file)", "attempts": 2 if unbacked else 1,
+                  "draft": draft, "checks": {"passed": passed, "contract": [], "unbacked": unbacked, "lint": lint,
+                                             "claims": len(draft["claims"])}}
+        (directory / f"{kind}.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+        (directory / f"{kind}.md").write_text(f"# {draft['title']}\n\n{draft['body']}\n")
+        for attempt in range(record["attempts"]):
+            costs.append({"at": (stamp + timedelta(seconds=40 * len(costs))).isoformat(), "operation": "release_draft",
+                          "draft": f"{run}/{kind}", "cost_usd": 2.0})
+    events.append({"at": (now - timedelta(minutes=20)).isoformat(), "event": "approved", "draft": f"{run}/positioning"})
+    (control / "drafts" / "costs.jsonl").write_text("".join(json.dumps(item, sort_keys=True) + "\n" for item in costs))
+    (control / "drafts" / "events.jsonl").write_text("".join(json.dumps(item, sort_keys=True) + "\n" for item in events))
 
 
 def _escalate(store: StateStore, state: BuildState, code: str, detail: str) -> None:

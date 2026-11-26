@@ -24,6 +24,14 @@ The current call, the Stop view and each phase's detail show the phase's steps: 
 
 The Plan view reads `docs/ROADMAP.md`, `docs/DISCOVERY_DECISIONS.md` and `docs/DISCOVERY_RISKS.md` at the commit `trust init` pinned, so an agent cannot rewrite your summary of its own phase. The plain lines are optional: a phase's outcome is the indented line under it in `docs/ROADMAP.md`, and a checkpoint's instruction is a line such as `Before phase 6, the operator: Send a real webhook.` buildctl-discover writes both when the interview gives a phase an outcome and a checkpoint a note.
 
+### Drafts in the console {#console-drafts}
+
+Release drafts (key 7) shows what [buildctl-drafts](#drafts) wrote, one run at a time. Each draft is a tab, marked by its state: a caution diamond while it waits for you, a danger square if it failed a check, a clear circle once approved. A draft you discard leaves the tabs and is listed under them. The claims ledger sits at the left, with any unbacked claim first and why it failed; open a claim to see the text it quotes. The draft reads at the right, and your decision comes after its last line.
+
+Approving is signed: the checks prove each claim cites a source that exists, not that the source supports it, and that read is yours. **Review and sign** shows what you are signing, lists any check the draft failed, and asks for the first 7 characters of the draft's digest. If the draft changed since the page showed it, the console refuses. Discard records without a signature. Neither one posts anything.
+
+**Write drafts** starts a paid run. Its conditions are the ones `buildctl-drafts make` checks: the package is installed in the console's Python, the build is trusted, the sandbox was checked in the last 24 hours, a milestone is complete, and the run fits today's cap counting both the build's spend and earlier drafts. It names the ceiling (about $2 per draft, each may be rewritten once), asks you to type the milestone's name, and runs detached.
+
 ## Watching a discovery draft
 
 `buildctl-ui --session NAME` opens a buildctl-discover session before it is finalized, read-only, in the web console. The rail shows only the Plan, and the bar says DRAFT. The page shows what the gate (`buildctl-discover check`) still counts against the draft: your open calls, open review findings and other failures. It also shows the proposed phases with their outcome lines, the checkpoint notes, the decisions so far, and a feed of what the interviewer records, newest first, refreshing every two seconds. It ends on the next command to run, `buildctl-discover --session NAME check` while the gate fails and `buildctl-discover --session NAME finalize --confirm <digest>` once it passes. The console never finalizes, accepts a risk or answers a call: those stay terminal acts. Nothing in a draft is governed until it is finalized and trusted.

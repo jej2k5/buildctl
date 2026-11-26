@@ -29,6 +29,8 @@ from buildctl.supervisor.phaseview import documentation_detail
 from buildctl.supervisor.state import BuildState, StateStore
 from buildctl.supervisor.trust import TrustStore
 
+from . import drafts as drafts_view
+
 
 class Refused(Exception):
     """The lever was not pulled. The message says why, in the operator's terms."""
@@ -91,6 +93,7 @@ class Job:
     detached: bool
     returncode: int | None = None
     output: str = ""
+    program: str = "buildctl"
 
 
 @dataclass
@@ -109,6 +112,7 @@ class Build:
         value["demo"] = self.demo
         value["plan"] = self.plan(self.trusted_sha(value))
         value["jobs"] = [self._job_view(job) for job in self.jobs[-8:]]
+        value["drafts_waiting"] = drafts_view.waiting(self.control_root)
         return value
 
     def trusted_sha(self, model: dict[str, Any]) -> str | None:
@@ -164,6 +168,44 @@ class Build:
             except Exception:
                 config = None
         return documentation_detail(self.repo, self.control_root, state, phase, config)
+
+    def drafts(self) -> dict[str, Any]:
+        """Release drafts: every run, newest first, and the paid lever's conditions. Read-only."""
+        return drafts_view.view(self.control_root, inspect(self.repo, self.control_root))
+
+    def draft_pull(self, action: str, *, draft: str = "", confirm: str = "", digest: str = "") -> Job:
+        """Sign or discard a draft (records an event), or write a new run (paid, detached).
+
+        Approving is the operator's read of the draft, so it is signed: the console sends the digest it
+        rendered, and the operator types its prefix. A draft rewritten since is refused, not approved."""
+        if action in {"approve", "discard"}:
+            if not drafts_view.installed():
+                raise Refused("buildctl-drafts is not installed in the console's Python")
+            known = {item["id"]: item for run in drafts_view.view(self.control_root, {})["runs"] for item in run["drafts"]}
+            if draft not in known:
+                raise Refused("no such draft; reload and try again", 404)
+            if action == "approve":
+                current = known[draft]["digest"]
+                if digest != current:
+                    raise Refused("the draft changed since you read it; reload and read it again")
+                if confirm.strip().lower() != current[:drafts_view.DIGEST_PREFIX]:
+                    raise Refused("the confirmation does not match the draft's digest", 422)
+            return self._run_drafts([action, draft], detached=False)
+        if action != "make":
+            raise Refused(f"unknown drafts action {action}", 400)
+        lever = drafts_view.lever(self.control_root, inspect(self.repo, self.control_root))
+        if not lever["enabled"]:
+            raise Refused("locked: " + "; ".join(item["label"] for item in lever["conditions"] if not item["held"]))
+        milestone = confirm.strip().lower()
+        if milestone not in lever["milestones"]:
+            raise Refused("type the name of a completed milestone: " + ", ".join(lever["milestones"]), 422)
+        argv = ["make", "--milestone", milestone, "--only", ",".join(lever["kinds"])]
+        if self.demo:
+            raise Refused("demo build: this would run `buildctl-drafts " + " ".join(argv) + "`", 403)
+        return self._run_drafts(argv, detached=True)
+
+    def _run_drafts(self, argv: list[str], *, detached: bool) -> Job:
+        return self._run(argv, detached=detached, program="buildctl_drafts")
 
     def activity(self, phase: int, operation: str | None = None) -> dict[str, Any]:
         """What agents reported doing in a phase, and what buildctl saw. Read-only."""
@@ -222,15 +264,15 @@ class Build:
             raise Refused("demo build: this would run `buildctl " + " ".join(_display(argv)) + "`", 403)
         return self._run(argv, detached=lever["detached"])
 
-    def _command(self, argv: list[str]) -> list[str]:
-        return [sys.executable, "-m", "buildctl", "--repo", str(self.repo), *argv]
+    def _command(self, argv: list[str], program: str = "buildctl") -> list[str]:
+        return [sys.executable, "-m", program, "--repo", str(self.repo), *argv]
 
     def _environment(self) -> dict[str, str]:
         environment = dict(os.environ)
         environment["BUILDCTL_STATE_DIR"] = str(self.control_root)
         return environment
 
-    def _run(self, argv: list[str], *, detached: bool) -> Job:
+    def _run(self, argv: list[str], *, detached: bool, program: str = "buildctl") -> Job:
         identity = hashlib.sha256(f"{time.time()}{argv}".encode()).hexdigest()[:10]
         log_dir = Path(tempfile.gettempdir()) / "buildctl-ui"
         log_dir.mkdir(exist_ok=True, mode=0o700)
@@ -238,15 +280,15 @@ class Build:
         if detached:
             # A new session: the run outlives the console, and closing the console never signals it.
             with log.open("w") as stream:
-                process = subprocess.Popen(self._command(argv), stdout=stream, stderr=subprocess.STDOUT,
+                process = subprocess.Popen(self._command(argv, program), stdout=stream, stderr=subprocess.STDOUT,
                                            stdin=subprocess.DEVNULL, env=self._environment(), start_new_session=True)
-            job = Job(identity, argv, process.pid, str(log), time.time(), True)
+            job = Job(identity, argv, process.pid, str(log), time.time(), True, program=program)
         else:
-            result = subprocess.run(self._command(argv), text=True, capture_output=True, env=self._environment(),
+            result = subprocess.run(self._command(argv, program), text=True, capture_output=True, env=self._environment(),
                                     timeout=600)
             output = (result.stdout + result.stderr).strip()
             log.write_text(output)
-            job = Job(identity, argv, 0, str(log), time.time(), False, result.returncode, output)
+            job = Job(identity, argv, 0, str(log), time.time(), False, result.returncode, output, program=program)
         self.jobs.append(job)
         return job
 
@@ -262,7 +304,7 @@ class Build:
                 job.output = Path(job.log).read_text(errors="replace")[-4000:]
             except OSError:
                 pass
-        return {"id": job.id, "command": "buildctl " + " ".join(_display(job.argv)), "pid": job.pid,
+        return {"id": job.id, "command": job.program.replace("_", "-") + " " + " ".join(_display(job.argv)), "pid": job.pid,
                 "detached": job.detached, "returncode": job.returncode, "output": job.output[-4000:],
                 "started_at": job.started_at}
 
