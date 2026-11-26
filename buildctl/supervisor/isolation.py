@@ -5,6 +5,7 @@ import platform
 import shutil
 import subprocess
 import tempfile
+import time
 import json
 import sys
 import hashlib
@@ -36,6 +37,11 @@ class IsolationContext:
     # Host-session roles keep the operator's real HOME so an interactive provider login
     # resolves. They remain OS-sandboxed under a distinct, more restrictive profile.
     host_session: bool = False
+    # A demo listens on loopback for a recorder and reaches nothing. macOS has no private
+    # loopback, so the profile allows binding and accepting on localhost and no outbound at all;
+    # Linux already gives the sandbox its own network namespace, whose loopback nothing outside
+    # can reach. Off for every agent role.
+    loopback: bool = False
 
     def canonical(self) -> "IsolationContext":
         return IsolationContext(self.role, self.workspace.resolve(), self.control_root.resolve(),
@@ -43,7 +49,7 @@ class IsolationContext:
                                 self.output_dir.resolve() if self.output_dir else None,
                                 self.home_dir.resolve() if self.home_dir else None,
                                 self.network_allowed, self.host_home.resolve() if self.host_home else None,
-                                self.host_session)
+                                self.host_session, self.loopback)
 
 
 class IsolationBackend:
@@ -155,8 +161,16 @@ class MacOSSandboxBackend(IsolationBackend):
             rules.append(f"(deny file-read* file-write* (subpath {literal(context.host_home)}))")
         if context.network_allowed:
             rules.append("(allow network-outbound)")
+        elif context.loopback:
+            rules.extend(LOOPBACK_LISTEN_RULES)
         profile = " ".join(rules)
         return ["/usr/bin/sandbox-exec", "-p", profile, *argv]
+
+
+# Listen and accept on localhost, nothing else: no outbound, so neither the host's loopback
+# services nor the internet. A spike on macOS 26 confirmed both refusals with these rules.
+LOOPBACK_LISTEN_RULES = ('(allow network-bind (local ip "localhost:*"))',
+                         '(allow network-inbound (local ip "localhost:*"))')
 
 
 # Classic BPF for seccomp, as bwrap --seccomp reads it: an array of struct sock_filter.
@@ -544,6 +558,8 @@ def verify_backend(backend: IsolationBackend, control_root: Path, authoritative_
             if observed != expected:
                 raise IsolationError(f"isolation backend is nonconformant for {role}: {observed}; {diagnostics}")
             results["roles"][role] = observed
+        results["loopback"] = _probe_loopback(backend, runner, workspace, control_root, authoritative_repo,
+                                              runtime, home, sentinel, network_port, unix_connect)
         listener.close(); unix_listener.close(); shutil.rmtree(socket_dir)
         if probe.exists():
             raise IsolationError("isolation probe modified the authoritative repository")
@@ -555,6 +571,66 @@ def verify_backend(backend: IsolationBackend, control_root: Path, authoritative_
     except FileNotFoundError:
         pass
     return results
+
+
+LOOPBACK_SERVER = ("import socket,sys\n"
+                   "s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n"
+                   "s.bind(('127.0.0.1', int(sys.argv[1]))); s.listen(1); s.settimeout(8)\n"
+                   "c,_=s.accept(); c.sendall(b'demo'); c.close()\n")
+LOOPBACK_SELF_TEST = ("import socket,threading\n"
+                      "s=socket.socket(); s.bind(('127.0.0.1',0)); s.listen(1); p=s.getsockname()[1]\n"
+                      "threading.Thread(target=lambda: s.accept()[0].sendall(b'x'), daemon=True).start()\n"
+                      "c=socket.create_connection(('127.0.0.1',p),timeout=3); assert c.recv(1)==b'x'\n")
+
+
+def _probe_loopback(backend: IsolationBackend, runner: Any, workspace: Path, control_root: Path,
+                    authoritative_repo: Path, runtime: Path, home: Path, sentinel: Path, network_port: int,
+                    unix_connect: list[str]) -> dict[str, Any]:
+    """The demo role: it may serve on loopback; it must reach nothing and read no state.
+
+    On macOS the host reaches the demo's listener (the recorder's browser is outside the
+    sandbox). On Linux the listener lives in the sandbox's own network namespace, so the host
+    cannot reach it and the recorder runs inside the same sandbox instead, where a server and
+    client must still talk. On macOS even that is refused: the profile allows no outbound."""
+    output = runtime / "demo-output"; output.mkdir()
+    context = IsolationContext("demo", workspace, control_root, authoritative_repo, True, output, output,
+                               False, home, loopback=True)
+    environment = sanitized_environment("demo", home=output)
+    def succeeds(argv: list[str]) -> bool:
+        return runner(backend.command(argv, context), cwd=workspace, text=True, capture_output=True, timeout=15,
+                      env=environment).returncode == 0
+    probe = socket.socket(); probe.bind(("127.0.0.1", 0)); port = probe.getsockname()[1]; probe.close()
+    server = subprocess.Popen(backend.command(["/usr/bin/python3", "-c", LOOPBACK_SERVER, str(port)], context),
+                              cwd=workspace, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    reached = False
+    try:
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline and not reached:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1) as client:
+                    reached = client.recv(4) == b"demo"
+            except OSError:
+                time.sleep(0.2)
+    finally:
+        server.kill(); server.wait()
+    observed = {
+        "loopback_served_to_host": reached,
+        "loopback_inside": succeeds(["/usr/bin/python3", "-c", LOOPBACK_SELF_TEST]),
+        "host_loopback_reached": succeeds(["/usr/bin/nc", "-z", "-w", "1", "127.0.0.1", str(network_port)]),
+        "unix_socket_connect": succeeds(unix_connect),
+        "control_read": succeeds(["/bin/cat", str(sentinel)]),
+        "workspace_write": succeeds(["/usr/bin/touch", str(workspace / "demo-write")]),
+        "output_write": succeeds(["/usr/bin/touch", str(output / "result")]),
+    }
+    linux = isinstance(backend, LinuxBubblewrapBackend)
+    # macOS allows no outbound at all, so a demo cannot call even its own listener; Linux's
+    # private namespace lets it, and only it.
+    expected = {"loopback_served_to_host": not linux,
+                "loopback_inside": linux, "host_loopback_reached": False, "unix_socket_connect": False,
+                "control_read": False, "workspace_write": False, "output_write": True}
+    if observed != expected:
+        raise IsolationError(f"isolation backend is nonconformant for the demo role: {observed}")
+    return observed
 
 
 def sanitized_environment(role: str, credentials: dict[str, str] | None = None,

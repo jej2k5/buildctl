@@ -1,0 +1,11 @@
+{
+  "title": "Release drafts: read the ledger, sign a draft",
+  "steps": [
+    {"name": "Open the release drafts", "open": "#/drafts", "expect": "Release drafts", "hold": 2},
+    {"name": "A draft whose claims all cite a source", "click": "Release notes", "expect": "8 of 8 claims cite a source that exists", "hold": 2},
+    {"name": "A draft that failed a check, unbacked claim first", "click": "Launch post", "expect": "does not exist at the milestone's commit", "hold": 3},
+    {"name": "Open the signature", "click": "Release notes", "expect": "Review and sign", "hold": 1},
+    {"name": "What you are signing", "click": "Review and sign", "expect": "What you are signing", "hold": 3},
+    {"name": "The paid lever, locked by its conditions", "click": "Cancel", "expect": "Write drafts", "hold": 2}
+  ]
+}

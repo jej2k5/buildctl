@@ -26,6 +26,10 @@ def parser() -> argparse.ArgumentParser:
     make_.add_argument("--only", help=f"comma-separated draft types (default all: {', '.join(TYPES)})")
     make_.add_argument("--cost", type=float, default=DEFAULT_COST_USD,
                        help=f"estimated cost of one writer call, booked as release_draft (default {DEFAULT_COST_USD})")
+    record = commands.add_parser("record", help="record the committed demo scenario at a milestone (free, no model call)")
+    span = record.add_mutually_exclusive_group(required=True)
+    span.add_argument("--milestone", help="a milestone named in build.yaml")
+    span.add_argument("--until", help="a commit to record from")
     commands.add_parser("list", help="every draft, newest last")
     for name, text in (("show", "print a draft with its claims ledger"), ("approve", "mark a draft approved"),
                        ("discard", "mark a draft discarded")):
@@ -48,6 +52,14 @@ def main(argv: list[str] | None = None) -> int:
                           milestone=args.milestone, cost=args.cost)
             print(f"Drafts are in {control_root / 'drafts' / result['run']}. Nothing was committed or published.")
             return 0
+        if args.command == "record":
+            from .make import record_demo
+            result = record_demo(repo, control_root, milestone=args.milestone, until=args.until or "HEAD")
+            for item in result["summary"]["steps"]:
+                print(f"  {'ok  ' if item['ok'] else 'FAIL'} {item['step']:>2}. {item['name']}"
+                      + ("" if item["ok"] else f"  ({item['problem']})"))
+            print(f"Recording in {result['directory']}. Nothing was committed or published.")
+            return 0 if result["summary"]["passed"] else 1
         if args.command == "list":
             for item in store.all():
                 checks = item["checks"]
@@ -62,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         store.record(item["id"], "approved" if args.command == "approve" else "discarded")
         print(f"{item['id']} {'approved' if args.command == 'approve' else 'discarded'}. Recorded, not published.")
         return 0
-    except (ContextError, StoreError, ValueError) as exc:
+    except (ContextError, StoreError, ValueError) as exc:  # RecordError arrives as StoreError
         print(f"buildctl-drafts: {exc}", file=sys.stderr)
         return 2
 

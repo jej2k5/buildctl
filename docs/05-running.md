@@ -138,4 +138,19 @@ buildctl-drafts approve release-notes       # or discard
 - **Voices:** release notes, positioning, the launch post and the demo script use the product voice, `docs/VOICE.md` in the repository, plus `documentation.forbidden_phrases`. A social post uses your own voice, `~/.config/buildctl/voice.md`, which is never committed; without it, social drafts are skipped. A voice file's `## Rules` bullets are enforced: `Banned: a, b`, `No em dashes`, `Max words: N` and `Max words for <type>: N`.
 - **Where drafts live:** in the build's state folder, under `drafts/`, as Markdown with the ledger at the end. Approving or discarding records an event and nothing more.
 - **Cost:** each writer call is booked as `release_draft` in `drafts/costs.jsonl`, at `--cost` dollars (default 2). A run is refused when today's build spend, plus today's drafts, plus the run's estimate, would pass `limits.max_daily_cost_usd`.
-- **Not yet:** recorded demos. They need a sandbox mode that lets a local browser reach the demo with nothing else outbound, which is a kernel change. The console has no Drafts panel yet.
+- **In the console:** the Drafts view reads, signs and discards drafts, and starts a paid run; see [Drafts in the console](#console-drafts).
+
+#### Recorded demos {#demos}
+
+`buildctl-drafts record --milestone mvp` records the product working, from a scenario committed in the repository. It calls no model, so it costs nothing.
+
+```sh
+buildctl-drafts record --milestone mvp      # or --until <ref>
+```
+
+- **What it needs:** a [`demo` section](#config) in `build.yaml`, naming a command that starts the product on fictional data and serves on the loopback port `{port}`, and the scenario file it names (default `docs/demo/scenario.json`) at the milestone's commit.
+- **The scenario:** a title and steps, each with one action (`open` a path, `click` visible text or `css:selector`, `type` into a field, `wait_for` text, `pause`), the text the screen must then show (`expect`), and how many seconds to `hold`. A step that never shows its text fails, and the recording says which.
+- **How it runs:** the demo command runs in a throwaway copy of the milestone's commit, under buildctl's sandbox in loopback mode: it may serve on loopback and reaches nothing else, with an environment that carries no credential. On macOS, which has no private loopback, a headless Chrome on your machine drives it, locked by a dead proxy to the demo's address, so the demo's own page cannot reach your other local services or the internet either. On Linux the sandbox has its own network namespace, so Chrome runs inside it with the demo. `isolation verify` checks the loopback mode with the other roles.
+- **What you get:** a frame per step, a GIF of the whole (with `ffmpeg` installed), and `recording.json`, under the build's state folder in `drafts/<run>/demo/`. The recording appears in `buildctl-drafts list` as `demo-recording`, and a failed step marks it "needs you".
+- **For a project's own docs:** `python -m buildctl_drafts.recorder --demo demo.json --scenario scenario.json --out DIR` records from a working tree, still sandboxed with loopback only, but not from a governed milestone. buildctl's own console vignettes are made this way, from `docs/demo/`.
+- **Not yet:** an agent-written scenario (today you write and commit it), an agent check of each frame, and recordings in the console's Drafts view.

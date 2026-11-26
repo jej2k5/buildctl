@@ -34,5 +34,6 @@ On macOS the sandbox is `sandbox-exec`. On Linux it is bubblewrap, and the recor
 
 - Agents work in a disposable clone with no remote.
 - Gate commands run with no network. Without network, nothing in the sandbox can reach a Unix socket on the host either, such as the Docker daemon or an SSH agent.
+- A [recorded demo](#demos) runs in loopback mode: it may serve on a loopback port for the recorder and reaches nothing, neither your machine's other local services nor the internet. `isolation verify` probes this mode too.
 - Agent output is checked before a single byte reaches your repository: only allowed, non-governed paths are copied, and the copy must match what the reviewer saw.
 - The canonical state, audit log and cost ledger live outside your repository, where agents cannot read them.

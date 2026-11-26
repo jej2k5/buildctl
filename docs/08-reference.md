@@ -71,6 +71,12 @@ Accepted with no terminal record means the command is still running, or was inte
 | `python.extras` | Optional. Names of `[project.optional-dependencies]` groups `{python}` gates also install, such as `["dev"]` for pytest. Same bound rules as the main dependencies. |
 | `python.constraints` | Optional. A governed constraints file (list it in `governance_documents`). A requirement it bounds from above may be unbounded in `pyproject.toml`. Passed to pip as `-c`. |
 | `python.direct_references` | Optional. Exact `name @ https://...whl#sha256=<hash>` entries a manifest may use: pre-built wheels pinned by hash. Git and source URLs are refused. |
+| `demo.command` | Optional. The argv that starts the product on fictional data for a [recorded demo](#demos), serving on `{port}`; `{python}` is the drafts tool's Python. It runs in a copy of the milestone's commit, sandboxed with loopback only and no credentials. |
+| `demo.url` | The page to open, `http://127.0.0.1:{port}/...` or `http://localhost:{port}/...`. Default `http://127.0.0.1:{port}/`. |
+| `demo.ready_pattern` | Optional. A regex whose first group is the URL to open, read from the command's output, for a URL with a token. Without it, the recorder waits for the port to accept. |
+| `demo.scenario` | The committed scenario to record. Default `docs/demo/scenario.json`. |
+| `demo.timeout_seconds` | How long the demo may take to start serving, 10 to 900. Default 120. |
+| `demo.viewport` | `[width, height]` of the recording, 320 to 3840. Default `[1280, 800]`. |
 | `governance_documents` | Files beyond the fixed governed set that `trust init` pins and agents may not modify. Required; may be `[]`. |
 | `git.remote` | The remote phase branches are pushed to when `push` is on. |
 | `git.push` | Push the phase branch instead of fast-forwarding the integration branch locally. |
