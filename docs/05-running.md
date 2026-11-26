@@ -119,3 +119,23 @@ A debate interrupted mid-way, by a crash you then reconcile, resumes at its next
 
 **What it records.** Every turn is a recorded agent call: it shows in the feed, and the commit's receipt lists it with its actions, cost and record hash. Arguments stay in the full records on your machine. Your ruling is in the receipt as `DEBATE_DECISION-<n>.json`, labelled `operator`. Each debate also writes one `debate_outcome` event to the audit chain: `findings_upheld`, `findings_changed`, `findings_dropped` or `operator_decided`. Those tell you, after a few debates, whether they change anything the reviewer asked for, and so whether they are worth their cost.
 
+
+### Release drafts {#drafts}
+
+`buildctl-drafts` is an optional companion, like the console: it lives in `drafts/` as its own package, outside what `trust init` pins, so changing it never needs a re-trust. When a milestone is done, it writes release material from what the build recorded, checks that every factual claim cites a source that exists, and leaves the result for you to read against that ledger. It never commits, never pushes and never posts.
+
+```sh
+buildctl-drafts make --milestone mvp        # or --since v0.4.0 [--until <ref>]
+buildctl-drafts list
+buildctl-drafts show release-notes          # a type means its newest draft
+buildctl-drafts approve release-notes       # or discard
+```
+
+- **What it writes:** release notes, positioning (a README opening, a repository description and topics), a launch post, a demo script and a social post. `--only` picks some.
+- **What it reads:** the milestone's commits, the changelog, the README and docs, the phase handoffs and the open findings, all at the milestone's commit, never your working tree. Open findings become a "known limits" list, so a draft says what does not work yet.
+- **Who writes:** the build's reviewer command, read-only, in buildctl's sandbox, in a throwaway copy of the milestone's commit. Like a phase, a run needs the trust record and a sandbox verified in the last 24 hours. A launch problem (a logged-out or updated CLI) stops the run rather than being paid for once per draft.
+- **Claims ledger:** every factual statement cites a commit in the range, a file (with line and exact quote) at the milestone's commit, a changelog line, or an open finding. buildctl checks that each source exists and each quote is really there; whether the source supports the claim is your read, with the ledger beside the draft. A draft with no claims, an unbacked claim or a voice problem is rewritten once with what failed; if it still fails, it is kept and marked "needs you", with each unbacked claim named.
+- **Voices:** release notes, positioning, the launch post and the demo script use the product voice, `docs/VOICE.md` in the repository, plus `documentation.forbidden_phrases`. A social post uses your own voice, `~/.config/buildctl/voice.md`, which is never committed; without it, social drafts are skipped. A voice file's `## Rules` bullets are enforced: `Banned: a, b`, `No em dashes`, `Max words: N` and `Max words for <type>: N`.
+- **Where drafts live:** in the build's state folder, under `drafts/`, as Markdown with the ledger at the end. Approving or discarding records an event and nothing more.
+- **Cost:** each writer call is booked as `release_draft` in `drafts/costs.jsonl`, at `--cost` dollars (default 2). A run is refused when today's build spend, plus today's drafts, plus the run's estimate, would pass `limits.max_daily_cost_usd`.
+- **Not yet:** recorded demos. They need a sandbox mode that lets a local browser reach the demo with nothing else outbound, which is a kernel change. The console has no Drafts panel yet.
