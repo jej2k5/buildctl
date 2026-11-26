@@ -60,6 +60,8 @@ A roadmap is `build.yaml` plus one prompt file per phase. `build.yaml` is JSON, 
 
 Every key is described in [Configuration](#config). The implementer's `--dangerously-bypass-approvals-and-sandbox` turns off Codex's own sandbox and approval prompts: buildctl already runs Codex inside its own sandbox, and an unattended run has no one to answer a prompt. See [Trust and the sandbox](#trust) for what that sandbox holds. Codex's `--json` and Claude's `--output-format stream-json --verbose` make each agent emit the event stream that [recording](#evidence) reads. Without them buildctl refuses the configuration, unless you add `"evidence": {"recording": "off"}`.
 
+Three optional parts are left out. A phase may set `"documentation": false` to skip the documentation step. A `demo` section names how to start the product for a [recorded demo](#demos). With `roles.arbiter.mode: debate`, `limits.max_debate_turns` caps each [debate](#debates) and `operation_cost_usd.debate_turn` prices each turn. All three are in [Configuration](#config).
+
 The example is a macOS config. On Linux, set each role's `auth_mode` to `environment` and name its API key in `credential_env`: `host_cli` is refused there. See [Running on Linux](#linux).
 
 ### Phase prompts {#phase-prompts}
@@ -80,6 +82,8 @@ Prompts are governed files: an agent cannot change them, and a change you make t
 
 ### Prompts buildctl provides {#protocol}
 
-buildctl ships the output formats agents must return (`PHASE_RESULT`, `REVIEW_RESULT`, `DEBATE_RESULT`) and the default review and remediation prompts. They live in the package and are pinned with it. The formats cannot be overridden, because the code that validates them lives in buildctl too.
+buildctl ships the output formats agents must return (`PHASE_RESULT`, `REVIEW_RESULT`, `DEBATE_RESULT`, `DEBATE_TURN`, `DOC_RESULT`) and the default review, remediation and documentation prompts. They live in the package and are pinned with it. The formats cannot be overridden, because the code that validates them lives in buildctl too.
 
 To tailor a prompt for one project, point `roles.reviewer.review_prompt` or `roles.implementer.remediation_prompt` at your own governed file. A review prompt adds to the built-in one: buildctl appends it under "Project review policy", so the verdict, coverage and finding rules the validator enforces always reach the reviewer. A remediation prompt replaces the built-in one.
+
+`documentation.brief` names a governed file with your docs' structure and voice, by default `prompts/documentation.md` when it exists. The documenter gets it as a brief alongside the built-in documentation prompt, which it does not replace.

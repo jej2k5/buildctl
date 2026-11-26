@@ -30,6 +30,9 @@ HEADING = re.compile(r"^(#{1,4})\s+(.*?)\s*(?:\{([^}]*)\})?\s*$")
 ATTRS = re.compile(r"^\{([^}]*)\}\s*$")
 
 
+FIGURE = re.compile(r"^!\[([^\]]+)\]\((media/[a-z0-9-]+\.(?:gif|png))\)$")
+
+
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "-", text.lower()).strip("-")
 
@@ -226,6 +229,15 @@ def render(sources: list[Path]) -> tuple[str, list[tuple[str, str]], str]:
             while i < len(lines) and lines[i].startswith("|"):
                 block.append(lines[i]); i += 1
             out.append(table(block, pending_attrs)); pending_attrs = {}
+            continue
+        figure = FIGURE.match(line)
+        if figure:
+            # A recorded vignette: committed under the manual's media/, captioned by its alt text
+            flush()
+            alt, src = figure.group(1), figure.group(2)
+            out.append(f'<figure class="vignette"><img src="{html.escape(src)}" alt="{html.escape(alt)}" loading="lazy">'
+                       f'<figcaption>{inline(alt)}</figcaption></figure>')
+            i += 1
             continue
         if re.match(r"^(- |\d+\. )", line):
             flush()

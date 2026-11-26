@@ -1,0 +1,8 @@
+{
+  "title": "The documentation role: a scope stop and the documenter's evidence",
+  "steps": [
+    {"name": "The step track stops at Docs", "open": "#/stop", "expect": "DOC_SCOPE_VIOLATION", "hold": 3},
+    {"name": "The Docs tab leads with the file outside the docs", "click": "Docs", "expect": "src/relay/replay.py", "hold": 3},
+    {"name": "Each documentation change opens to its diff", "click": "README.md", "expect": "scopes by tenant", "hold": 3.5}
+  ]
+}

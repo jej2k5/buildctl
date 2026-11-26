@@ -1,0 +1,154 @@
+<!doctype html>
+<!-- The README banner. Render it to banner.png at 2056x765:
+     node or any headless Chrome: screenshot this file at a 2056x765 viewport, device scale 1. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>buildctl banner</title>
+<style>
+:root {
+  --bg: #0a1020; --panel: #0e1629; --line: #22304d; --ink: #e8eefc; --ink-2: #a9b6d3; --ink-3: #7b89a8;
+  --cyan: #22b8f0; --red: #ff5a5f; --green: #2fd58a; --purple: #a259ff; --amber: #f5a524; --blue: #3b82f6;
+  --mono: "SF Mono", Menlo, Consolas, monospace; --sans: "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 2056px; height: 765px; overflow: hidden; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans); position: relative;
+  background-image: linear-gradient(rgba(120,150,210,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(120,150,210,.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.ico { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.box { position: absolute; border: 1.5px solid var(--line); border-radius: 10px; background: rgba(14,22,41,.86); }
+.label { font: 600 15px/1 var(--sans); letter-spacing: .22em; color: var(--ink-2); }
+
+/* brand */
+.logo { position: absolute; left: 44px; top: 72px; width: 134px; height: 126px; border-radius: 22px; padding: 7px;
+  background: linear-gradient(135deg, var(--cyan), var(--purple)); }
+.logo div { width: 100%; height: 100%; border-radius: 16px; background: var(--bg); display: grid; place-items: center; }
+.word { position: absolute; left: 198px; top: 62px; font: 900 138px/1 var(--sans); letter-spacing: -.035em; }
+.word span { background: linear-gradient(90deg, var(--cyan), var(--purple)); -webkit-background-clip: text; color: transparent; }
+.tag { position: absolute; left: 204px; top: 206px; font: 600 14.5px/1 var(--sans); letter-spacing: .27em; color: var(--ink-2); }
+.motto { position: absolute; left: 44px; top: 252px; font: 800 47px/1 var(--sans); letter-spacing: -.02em; }
+.lede { position: absolute; left: 44px; top: 318px; width: 640px; font: 400 22px/1.42 var(--sans); color: var(--ink); }
+
+/* agents */
+.agents { left: 746px; top: 38px; width: 334px; height: 336px; }
+.agents .label { position: absolute; left: 18px; top: 16px; }
+.agent { position: absolute; left: 16px; width: 300px; height: 86px; border: 1.5px solid var(--line); border-radius: 8px;
+  display: grid; grid-template-columns: 70px 1fr; align-items: center; background: #0c1426; }
+.agent b { display: block; font: 700 19px/1.2 var(--sans); }
+.agent span { display: block; font: 400 15px/1.3 var(--sans); color: var(--ink-2); }
+.agent svg { width: 44px; height: 44px; margin-left: 14px; }
+
+/* supervisor + decide */
+.sup { left: 1127px; top: 78px; width: 270px; height: 298px; border-color: var(--purple); box-shadow: 0 0 0 1px rgba(162,89,255,.25), 0 0 28px rgba(162,89,255,.18); }
+.sup h3 { text-align: center; font: 700 17px/1 var(--sans); letter-spacing: .14em; margin-top: 70px; }
+.sup ul { margin: 16px 18px 0 30px; font: 400 15.5px/1.32 var(--sans); }
+.sup li { margin-bottom: 7px; }
+.sup svg { position: absolute; left: 115px; top: 14px; width: 40px; height: 40px; color: var(--purple); }
+.decide { left: 1435px; top: 80px; width: 203px; height: 296px; }
+.decide h3 { font: 700 16px/1 var(--sans); letter-spacing: .14em; position: absolute; left: 92px; top: 26px; }
+.decide > svg { position: absolute; left: 50px; top: 16px; width: 34px; height: 34px; color: var(--blue); }
+.opt { position: absolute; left: 10px; width: 182px; height: 70px; border: 1.5px solid var(--line); border-radius: 7px;
+  display: grid; grid-template-columns: 50px 1fr; align-items: center; background: #0c1426; }
+.opt svg { width: 28px; height: 28px; margin-left: 12px; }
+.opt b { display: block; font: 700 15px/1.2 var(--sans); }
+.opt span { display: block; font: 400 13.5px/1.25 var(--sans); color: var(--ink-2); }
+
+/* repo */
+.repo { left: 1658px; top: 38px; width: 311px; height: 350px; }
+.repo .label { position: absolute; left: 16px; top: 16px; }
+.repo .sub { position: absolute; left: 16px; top: 196px; font: 600 12px/1 var(--sans); letter-spacing: .05em; color: var(--ink-2); }
+.repo hr { position: absolute; left: 16px; right: 16px; border: 0; border-top: 1.5px solid var(--line); }
+.file { position: absolute; left: 22px; display: grid; grid-template-columns: 56px 1fr; align-items: center; }
+.file svg { width: 32px; height: 32px; color: #8fb0ff; }
+.file code { display: block; font: 500 16px/1.25 var(--mono); }
+.file span { display: block; font: 400 15px/1.3 var(--sans); color: var(--ink-2); }
+
+/* pipeline */
+.pipe { position: absolute; left: 734px; top: 398px; width: 1236px; height: 108px; border: 1.5px dashed #2c4a75; border-radius: 10px; }
+.pipe .label { position: absolute; left: 22px; top: 12px; font-size: 14px; }
+.steps { position: absolute; left: 18px; top: 34px; display: flex; gap: 7px; align-items: center; }
+.step { height: 50px; border: 1.5px solid #2c5b8e; border-radius: 7px; display: flex; align-items: center; gap: 9px; padding: 0 11px 0 8px;
+  font: 500 15.5px/1 var(--mono); background: #0b1730; white-space: nowrap; }
+.step i { width: 28px; height: 28px; border-radius: 50%; background: #1d4f8f; color: #fff; display: grid; place-items: center; font: 700 14px/1 var(--sans); font-style: normal; }
+.step.opt-step { border-style: dashed; border-color: #3a6ea8; color: var(--ink-2); }
+.step.opt-step i { background: transparent; border: 1.5px dashed #5b8fd0; color: var(--ink-2); }
+.step.opt-step small { font: 500 12px/1 var(--sans); color: var(--ink-3); letter-spacing: .02em; }
+.step.purple { border-color: var(--purple); background: #160f2e; }
+.step.purple i { background: #6d33d6; }
+.arrow { color: var(--cyan); font: 700 16px/1 var(--sans); }
+
+/* tiles */
+.tile { position: absolute; top: 527px; width: 314px; height: 138px; border: 1.5px solid var(--line); border-radius: 8px;
+  background: rgba(14,22,41,.86); display: grid; grid-template-columns: 82px 1fr; padding-top: 26px; }
+.tile svg { width: 52px; height: 52px; margin-left: 20px; }
+.tile b { display: block; font: 700 19px/1.25 var(--sans); margin-bottom: 8px; }
+.tile span { display: block; font: 400 17px/1.35 var(--sans); color: var(--ink-2); padding-right: 14px; }
+
+.foot { position: absolute; left: 22px; right: 76px; top: 684px; border-top: 1.5px solid var(--line); padding: 16px 22px 0;
+  font: 400 19px/1 var(--sans); color: var(--ink); }
+.foot em { font-style: normal; color: var(--ink-3); margin: 0 10px; }
+.flow { position: absolute; color: var(--cyan); }
+</style>
+</head>
+<body>
+<div class="logo"><div><svg class="ico" width="74" height="60" viewBox="0 0 74 60" style="stroke:#fff;stroke-width:7"><path d="M8 10 L30 30 L8 50 M38 52 H66"/></svg></div></div>
+<div class="word">build<span>ctl</span></div>
+<div class="tag">A SUPERVISOR FOR AGENT-BUILT SOFTWARE</div>
+<div class="motto"><span style="color:var(--cyan)">Build.</span> <span style="color:var(--red)">Review.</span> <span style="color:var(--green)">Prove.</span> <span style="color:var(--purple)">Commit.</span></div>
+<p class="lede">Codex builds each phase. Claude reviews the work with a critical eye. Acceptance checks run in a sandbox with no network access. Nothing reaches your repo until it's been reviewed.</p>
+
+<div class="box agents"><div class="label">AGENTS</div>
+  <div class="agent" style="top:46px;border-color:#1f6aa5"><svg class="ico" viewBox="0 0 44 44" style="color:var(--cyan)"><rect x="7" y="13" width="30" height="22" rx="6"/><path d="M22 6v7M15 22h0M29 22h0M16 29h12M3 22v6M41 22v6"/><circle cx="15.5" cy="22.5" r="2" fill="currentColor"/><circle cx="28.5" cy="22.5" r="2" fill="currentColor"/></svg><div><b>Codex</b><span>Implementer</span><span>Builds the phase</span></div></div>
+  <div class="agent" style="top:140px;border-color:#8a2b35"><svg class="ico" viewBox="0 0 44 44" style="color:var(--red)"><rect x="7" y="13" width="30" height="22" rx="6"/><path d="M22 6v7M16 29h12M3 22v6M41 22v6"/><circle cx="15.5" cy="22.5" r="2" fill="currentColor"/><circle cx="28.5" cy="22.5" r="2" fill="currentColor"/></svg><div><b>Claude</b><span>Reviewer (read-only)</span><span>Tries to find what's wrong</span></div></div>
+  <div class="agent" style="top:234px;border-color:#7a5617"><svg class="ico" viewBox="0 0 44 44" style="color:var(--amber)"><path d="M22 6v30M12 38h20M8 12h28M8 12l-5 12h10zM36 12l-5 12h10zM3 24a5 4 0 0 0 10 0M31 24a5 4 0 0 0 10 0"/></svg><div><b>Arbiter</b><span>Steps in when</span><span>the agents disagree</span></div></div>
+</div>
+
+<svg class="flow" width="60" height="320" style="left:1066px;top:100px" viewBox="0 0 60 320"><g class="ico" stroke-width="2.5"><path d="M0 24 H40 Q52 24 54 34"/><path d="M48 28 l7 7 l2-9"/><path d="M0 116 H52"/><path d="M45 109 l7 7 l-7 7"/><path d="M0 210 H38 Q52 210 54 196"/><path d="M48 202 l7-6 l1 9"/></g></svg>
+
+<div class="box sup"><svg class="ico" viewBox="0 0 40 40"><circle cx="20" cy="20" r="6" fill="currentColor" stroke="none"/><path d="M20 4v6M20 30v6M4 20h6M30 20h6M8.7 8.7l4.2 4.2M27.1 27.1l4.2 4.2M8.7 31.3l4.2-4.2M27.1 12.9l4.2-4.2"/></svg>
+  <h3>SUPERVISOR</h3>
+  <ul><li>Owns the state, git history, and budget</li><li>Checks every change before it moves forward</li><li>Makes sure every finding gets handled</li><li>Stops when you told it to stop</li><li>Only commits reviewed work</li></ul>
+</div>
+
+<svg class="flow" width="44" height="240" style="left:1396px;top:150px" viewBox="0 0 44 240"><g class="ico" stroke-width="2.5"><path d="M2 40 Q20 40 22 20 Q24 4 38 4"/><path d="M32 -1 l7 5 l-6 6"/><path d="M2 96 H36"/><path d="M30 90 l7 6 l-7 6"/><path d="M2 140 Q20 140 22 160 Q24 180 38 182"/><path d="M31 176 l7 6 l-7 6"/></g></svg>
+
+<div class="box decide"><svg class="ico" viewBox="0 0 34 34"><path d="M17 3l14 14-14 14L3 17z"/><path d="M17 10l7 7-7 7-7-7z" fill="currentColor" stroke="none"/></svg><h3>DECIDE</h3>
+  <div class="opt" style="top:60px;border-color:#1f6b4c"><svg class="ico" viewBox="0 0 28 28" style="color:var(--green)"><path d="M21 7a10 10 0 1 1-7-3"/><path d="M14 4v6"/></svg><div><b>Remediate</b><span>Fix it and review it again</span></div></div>
+  <div class="opt" style="top:136px"><svg class="ico" viewBox="0 0 28 28" style="color:var(--cyan)"><circle cx="14" cy="14" r="10" stroke-dasharray="3 3.5"/></svg><div><b>Debate</b><span>Work through the disagreement</span></div></div>
+  <div class="opt" style="top:212px;border-color:#7a2a2e"><svg class="ico" viewBox="0 0 28 28" style="color:var(--red)"><rect x="5" y="5" width="18" height="18" rx="3"/></svg><div><b>Stop for you</b><span>You make the call</span></div></div>
+</div>
+
+<div class="box repo"><div class="label">IN YOUR REPO</div>
+  <div class="file" style="top:52px"><svg class="ico" viewBox="0 0 32 32"><circle cx="9" cy="6" r="3"/><circle cx="9" cy="26" r="3"/><circle cx="23" cy="12" r="3"/><path d="M9 9v14M23 15c0 6-8 4-12 9"/></svg><div><code>build/phase-N</code><span>Phase commits</span></div></div>
+  <div class="file" style="top:116px"><svg class="ico" viewBox="0 0 32 32"><path d="M8 3h11l6 6v20H8z"/><path d="M19 3v6h6M12 16h9M12 21h9"/></svg><div><code>decisions/</code><span>ADRs and the docs it keeps true</span></div></div>
+  <hr style="top:180px"><div class="sub">OUTSIDE IT, WHERE AGENTS CAN'T REACH</div>
+  <div class="file" style="top:228px"><svg class="ico" viewBox="0 0 32 32"><path d="M16 3l11 6v14l-11 6-11-6V9z"/><path d="M5 9l11 6 11-6M16 15v14"/></svg><div><code>artifacts/phase-N/</code><span>Review reports</span></div></div>
+  <div class="file" style="top:290px"><svg class="ico" viewBox="0 0 32 32"><path d="M8 3h11l6 6v20H8z"/><path d="M19 3v6h6M12 16h9M12 21h9"/></svg><div><code>audit.jsonl</code><span>Hash-chained audit log</span></div></div>
+</div>
+
+<div class="pipe"><div class="label">ONE PHASE, END TO END</div>
+  <div class="steps">
+    <div class="step"><i>1</i>Clone</div><span class="arrow">→</span>
+    <div class="step"><i>2</i>Implement</div><span class="arrow">→</span>
+    <div class="step"><i>3</i>Gate</div><span class="arrow">→</span>
+    <div class="step opt-step"><i>+</i><span>Docs<br><small>when on</small></span></div><span class="arrow">→</span>
+    <div class="step"><i>4</i>Review</div><span class="arrow">→</span>
+    <div class="step"><i>5</i>Decide</div><span class="arrow">→</span>
+    <div class="step purple"><i>6</i>Commit</div><span class="arrow">→</span>
+    <div class="step purple"><i>7</i>Integrate <svg class="ico" width="26" height="26" viewBox="0 0 26 26" style="color:var(--purple);margin-left:4px"><path d="M13 3a10 10 0 0 1 10 10M3 13a10 10 0 0 1 6-9M13 7a6 6 0 0 1 6 6v3M7 13a6 6 0 0 1 3-5M13 11a2 2 0 0 1 2 2v6M11 13v7M7 17v3M19 19v2"/></svg></div>
+  </div>
+</div>
+
+<div class="tile" style="left:44px"><svg class="ico" viewBox="0 0 52 52" style="color:var(--purple)"><path d="M26 6l20 10-20 10L6 16z"/><path d="M6 26l20 10 20-10M6 36l20 10 20-10"/></svg><div><b>Phase-driven builds</b><span>Build one defined phase at a time.</span></div></div>
+<div class="tile" style="left:372px"><svg class="ico" viewBox="0 0 52 52" style="color:var(--green)"><path d="M26 4l18 7v13c0 12-8 20-18 24C16 44 8 36 8 24V11z"/><path d="M17 26l6 6 12-13"/></svg><div><b>Acceptance contracts</b><span>Define what "done" actually means.</span></div></div>
+<div class="tile" style="left:700px"><svg class="ico" viewBox="0 0 52 52" style="color:var(--red)"><path d="M8 8l14 14M44 8L30 22M8 44l8-8M44 44l-8-8M16 36L36 16M36 36L16 16"/></svg><div><b>Adversarial review</b><span>A second agent looks for what the first one missed.</span></div></div>
+<div class="tile" style="left:1028px"><svg class="ico" viewBox="0 0 52 52" style="color:var(--amber)"><path d="M6 8h26v18H18l-8 7v-7H6z"/><path d="M38 18h8v18h-4v7l-8-7H22v-6"/></svg><div><b>Debates &amp; ADRs</b><span>Disagreements get resolved and recorded.</span></div></div>
+<div class="tile" style="left:1356px"><svg class="ico" viewBox="0 0 52 52" style="color:var(--purple)"><circle cx="26" cy="17" r="9"/><path d="M8 46c2-10 9-15 18-15s16 5 18 15"/></svg><div><b>Human checkpoints</b><span>You decide where the machine stops.</span></div></div>
+<div class="tile" style="left:1684px"><svg class="ico" viewBox="0 0 52 52" style="color:var(--cyan)"><path d="M26 6a20 20 0 0 1 20 20M6 26a20 20 0 0 1 12-18M26 13a13 13 0 0 1 13 13v6M13 26a13 13 0 0 1 6-11M26 20a6 6 0 0 1 6 6v14M20 26v16M13 33v8M39 39v5"/></svg><div><b>Tamper-evident audit</b><span>Every action leaves a verifiable trail.</span></div></div>
+
+<div class="foot">macOS and Linux<em>•</em>Codex + Claude<em>•</em>You sign what matters.</div>
+</body>
+</html>

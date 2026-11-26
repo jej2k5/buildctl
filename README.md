@@ -21,6 +21,7 @@ buildctl owns the state, the git history and the budget. Agents never touch any 
 pip install -e /path/to/buildctl            # the supervisor
 pip install -e '/path/to/buildctl/ui[tui]'  # optional: the console and terminal UI
 pip install -e /path/to/buildctl/discover   # optional: discovery that drafts the roadmap
+pip install -e /path/to/buildctl/drafts     # optional: release drafts and recorded demos
 ```
 
 ## Quick start
@@ -49,11 +50,34 @@ Without them, buildctl refuses to validate, trust or run, with `role implementer
 
 When the reviewer raises a design dispute, `"arbiter": {"mode": "debate"}` has Codex argue for the code and Claude for the findings, inside the build, recorded like any other agent work. If they don't agree within `limits.max_debate_turns`, the build waits at `DEBATE_AWAITING_DECISION` and you rule in the console or with `buildctl debate decide`. Each turn reserves `operation_cost_usd.debate_turn`. See [Debates](https://jej2k5.github.io/buildctl/#debates).
 
+### Keeping the docs true
+
+With `"documentation": {"mode": "required", ...}` in `build.yaml`, a documenter updates the README, the docs and the changelog after each phase's gates pass, inside the paths you list. Its own gates check links, the changelog entry and forbidden phrases, and send it back with what failed; the reviewer then reviews the code and the docs together. Editing outside the documentation paths stops the phase at `DOC_SCOPE_VIOLATION`. `optional` mode records documentation failures without stopping. See [Documentation](https://jej2k5.github.io/buildctl/#documentation).
+
 Writing `build.yaml` and phase prompts is covered in the manual's [Writing a roadmap](https://jej2k5.github.io/buildctl/#roadmap). When a build stops, `buildctl status` names the code; the manual's [When it stops](https://jej2k5.github.io/buildctl/#stops) says what clears it.
 
 ## The console
 
-`buildctl-ui` opens a local web console over your build, and `buildctl-ui tui` the same in the terminal. `buildctl-ui --demo` shows a synthetic build without spending anything.
+`buildctl-ui` opens a local web console over your build, and `buildctl-ui tui` the same in the terminal. It shows the plan, the phase line, every stop with its evidence and remedy, the phases, the audit ledger and setup, and offers only the actions the kernel will accept, with a typed confirmation where they pin or approve something. `buildctl-ui --demo` shows a synthetic build without spending anything; `--demo` takes a scenario: `blocked` (the default), `checkpoint`, `ceiling`, `unknown`, `running`, `debate`, `docs`, `drafts` or `fresh`.
+
+![A stop in the console: the plan names what waits on you, the Stop view gives the code, the remedy and the findings, and only the levers the kernel accepts.](ui/buildctl_ui/web/docs/media/stop.gif)
+
+These recordings come from the console's demo builds, made with `buildctl-drafts`' own recorder (see below).
+
+## Release drafts
+
+`buildctl-drafts` writes release material for a finished milestone: release notes, positioning, a launch post, a demo script and a social post in your own voice. Every factual claim must cite a source that exists in the milestone (a commit, an exact quote from a file or the changelog, or an open finding), and plain code checks each one. Nothing is ever posted: you read each draft beside its claims ledger, then sign or discard it in the terminal or in the console's Drafts view. Writer calls count against the build's daily cap.
+
+```sh
+buildctl-drafts make --milestone mvp
+buildctl-drafts list
+buildctl-drafts approve release-notes      # or discard
+buildctl-drafts record --milestone mvp     # record the committed demo scenario; free
+```
+
+`record` starts the product from the milestone's commit on fictional data, sandboxed with loopback only so it reaches nothing, and drives a headless Chrome through a scenario you commit, capturing a frame per step and a GIF. Recording works on macOS for now. See [Release drafts](https://jej2k5.github.io/buildctl/#drafts) and [Recorded demos](https://jej2k5.github.io/buildctl/#demos).
+
+![Release drafts in the console: a draft whose claims all cite a source, a draft with an unbacked claim shown first, and the signature that approving needs.](ui/buildctl_ui/web/docs/media/drafts.gif)
 
 
 ## Discovery
@@ -75,17 +99,19 @@ Point the agent at the server. For Claude Code, in `.mcp.json` or with `--mcp-co
 ```
 
 `serve` runs as the requirements owner; `serve --role operator` also allows accepting risks. The agent should load the server's `discovery_interview` prompt first. The design and its reasoning are in [`docs/planning/discovery-scope.md`](docs/planning/discovery-scope.md).
+
 ## Development
 
 ```sh
 python3 -m unittest discover -s tests -t .
-PYTHONPATH=ui python3 -m unittest discover -s ui/uitests -t ui   # the console and the manual
+PYTHONPATH=.:ui:drafts python3 -m unittest discover -s ui/uitests -t ui   # the console and the manual (needs rich)
 PYTHONPATH=.:discover python3 -m unittest discover -s discover/discovertests -t discover   # buildctl-discover
+PYTHONPATH=.:drafts python3 -m unittest discover -s drafts/draftstests -t drafts         # buildctl-drafts
 python3 docs/build.py                                            # after editing docs/*.md
 ```
 
-The kernel suite needs only the standard library. Tests that need the real `codex` CLI or `pytest` skip when those are absent. `tests/fixtures/target/` is a complete configuration for Relay, a fictional webhook delivery service, used to check that a full configuration validates and to drive the console's demo builds.
+The kernel suite needs only the standard library. Tests that need the real `codex` CLI, `pytest` or Google Chrome skip when those are absent. `tests/fixtures/target/` is a complete configuration for Relay, a fictional webhook delivery service, used to check that a full configuration validates and to drive the console's demo builds.
 
 ## License
 
-buildctl is open source under the [Apache License 2.0](LICENSE). Copyright 2026 John Joseph; see [NOTICE](NOTICE). The `ui/` and `discover/` packages carry their own copies of both files so each ships its license.
+buildctl is open source under the [Apache License 2.0](LICENSE). Copyright 2026 John Joseph; see [NOTICE](NOTICE). The `ui/`, `discover/` and `drafts/` packages carry their own copies of both files so each ships its license.
