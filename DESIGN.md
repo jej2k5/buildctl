@@ -273,7 +273,7 @@ Signal-plan paper and ink, four signal aspects, and two reserved single-meaning 
 
 **The One Stamp Rule.** Stamp violet appears only where a human signs or has signed. No other control, link, chart or highlight uses it.
 
-**The Waiting For You Rule.** Amber means the build is waiting on the operator. It is not a generic warning tint.
+**The Waiting For You Rule.** Amber means something is waiting on the operator: the build at a stop or checkpoint, or a release draft awaiting signature. It is not a generic warning tint.
 
 ## Typography
 
@@ -368,7 +368,7 @@ Standard controls, ink on paper.
 
 ### Navigation
 - **Top bar:** `bar` mass carrying, left to right, the lowercase mono wordmark `buildctl`, repository and branch@commit, the build aspect between two `bar-rule` hairlines (large glyph, word, code in mono), then facts: spend versus cap meter (4px bar, `bar-ink` fill, danger above 95% of cap), sandbox age, trust digest, lock holder.
-- **Rail:** `paper-2` column with 18px stroked line icons, labels at 500 weight in `ink-2`, and kbd hints 1–7, Plan first, which is also the view the console opens on. Hover fills `rule`; the current page sits on `surface` with an inset hairline and a 3px ink bar on its left edge. The Stop item carries a small danger square, or caution diamond, when there is a stop.
+- **Rail:** `paper-2` column with 18px stroked line icons, labels at 500 weight in `ink-2`, and kbd hints 1–7, Plan first, which is also the view the console opens on. Two hairlines split it: the kernel's views (Plan to Setup, keys 1–6, shared with the terminal UI), then Drafts (key 7, the companion buildctl-drafts package, outside the trust digest), then Manual, which leaves the console for a new tab. Below 820px, where the rail runs as a strip, the hairlines turn vertical. Hover fills `rule`; the current page sits on `surface` with an inset hairline and a 3px ink bar on its left edge. The Stop item carries a small danger square, or caution diamond, when there is a stop. The Drafts item carries a caution diamond while any draft is undecided, and the Plan's status panel repeats it as its last row, since a draft never holds up the build.
 - **Tabs:** sans 500 0.8125rem, `ink-2`, 2px ink underline and 600 weight when selected, counts in mono `ink-3`. The tab panel continues the tab bar's rule with no top border.
 
 ### The Interlocking Table (signature)
@@ -463,7 +463,7 @@ Under the title, mono 0.8125rem `ink-3`: "For buildctl 0.1.0", read from `buildc
 - **Don't** convey state by colour alone, or reuse a filled signal shape for another meaning (hollow station squares on the line are the one native exception).
 - **Don't** use occupancy blue for links, focus, selection, charts or completed work.
 - **Don't** use stamp violet anywhere a human is not signing.
-- **Don't** use amber as a general warning tint; amber means the build is waiting for the operator.
+- **Don't** use amber as a general warning tint; amber means something is waiting for the operator.
 - **Don't** load web fonts or introduce a display face.
 - **Don't** add rounded corners, drop shadows or gradients.
 - **Don't** add decorative icons; icons are stroked line drawings for navigation and the lock, and status is drawn only with the signal shapes.

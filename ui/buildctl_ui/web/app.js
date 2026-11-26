@@ -743,6 +743,9 @@ function planNeeds(m) {
   }
   if (m.bootstrapped && m.trust && m.trust.ok === false)
     items.push({ aspect: "caution", text: `Trust needs renewing: ${m.trust.error || "the trust anchor no longer matches"}`, link: "#/setup", linkText: "Open setup" });
+  // Drafts never hold up the build, so they come last; the rail flag can scroll out of view on a narrow screen.
+  if (m.drafts_waiting)
+    items.push({ aspect: "caution", text: `${m.drafts_waiting === 1 ? "1 release draft waits" : `${m.drafts_waiting} release drafts wait`} for your signature or discard. The build does not wait on them.`, link: "#/drafts", linkText: "Open drafts" });
   return items;
 }
 

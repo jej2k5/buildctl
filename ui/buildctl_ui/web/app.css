@@ -141,7 +141,9 @@ p { margin: 0; }
 .rail a:hover { color: var(--ink); background: var(--rule); }
 .rail a[aria-current="page"] { color: var(--ink); background: var(--surface); box-shadow: inset 0 0 0 1px var(--rule); }
 .rail a[aria-current="page"]::before { content: ""; position: absolute; left: -8px; top: 6px; bottom: 6px; width: 3px; background: var(--ink); }
-.rail .rail-manual { margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--rule); }
+/* Hairlines: the kernel's views above, the companion drafts package below, then the manual, which leaves the console. */
+.rail .rail-manual, .rail .rail-group { margin-top: var(--s3); }
+.rail .rail-manual::after, .rail .rail-group::after { content: ""; position: absolute; left: 0; right: 0; top: calc(-1 * var(--s2) + 1px); border-top: 1px solid var(--rule); }
 .rail kbd { margin-left: auto; font-size: var(--t-xs); color: var(--ink-3); }
 .rail-flag { width: 8px; height: 8px; background: var(--danger); }
 .rail-flag.caution { background: var(--caution); transform: rotate(45deg) scale(.9); }
@@ -392,6 +394,8 @@ pre.file { margin: 0; padding: var(--s3) var(--s4); font: var(--t-xs)/1.55 var(-
   .rail a { padding: var(--s2); }
   .rail a[aria-current="page"]::before { left: 6px; right: 6px; top: auto; bottom: -4px; width: auto; height: 3px; }
   .rail kbd, .rail-foot { display: none; }
+  .rail .rail-manual, .rail .rail-group { margin: 0 0 0 var(--s3); }
+  .rail .rail-manual::after, .rail .rail-group::after { inset: 6px auto 6px calc(-1 * var(--s2) + 1px); border-top: 0; border-left: 1px solid var(--rule); }
   main { padding: var(--s4) var(--s4) var(--s7); }
   .stop { grid-template-columns: auto 1fr; padding: var(--s4); }
   .stop-where { grid-column: 1 / -1; text-align: left; }
