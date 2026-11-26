@@ -1,0 +1,8 @@
+{
+  "title": "A checkpoint: review the evidence and sign",
+  "steps": [
+    {"name": "The line waits at a checkpoint", "open": "#/line", "expect": "Waiting for you", "hold": 2.5},
+    {"name": "The stop holds the approval", "open": "#/stop", "expect": "CHECKPOINT_REQUIRED", "hold": 2.5},
+    {"name": "Signing asks for the tree hash you reviewed", "click": "Review and sign", "expect": "Tree hash under review", "hold": 3.5}
+  ]
+}

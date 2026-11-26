@@ -2,6 +2,8 @@
 
 buildctl stops with an escalation code whenever it cannot continue safely. `buildctl status` and the console's Stop view show the code and, where relevant, the nonce the fix needs. Each code below says what happened and what clears it.
 
+`retry`, `approve`, `reconcile` and `debate decide` only re-arm the build: they clear the stop and leave it idle. Nothing runs until you then run `buildctl start` (or `run` or `phase`), or pull Start in the console.
+
 The signal shapes match the console. A diamond is a wait buildctl planned for: nothing failed. A square is a stop: something failed, or a limit was hit and needs your grant. A dashed circle is an outcome nobody knows yet.
 
 {.stop-index}
@@ -38,7 +40,7 @@ With `roles.arbiter.mode: debate`, Codex and Claude [debated](#debates) the find
 - `code-stands`: the code stands. The findings close as `operator_accepted`, and the phase is reviewed once more before it commits.
 - `own`, with `--text "<your ruling>"`: Codex implements your ruling.
 
-The same attempt resumes, with a fresh phase deadline, and nothing is re-trusted. A ruling becomes an ADR marked `Decided by: operator`, never presented as an agent agreement. `retry` instead discards the debate along with the attempt.
+Then run `buildctl start`. The same attempt resumes, with a fresh phase deadline, and nothing is re-trusted. A ruling becomes an ADR marked `Decided by: operator`, never presented as an agent agreement. `retry` instead discards the debate along with the attempt.
 
 This stop is a wait, not a failure: it does not count toward `max_consecutive_failures`.
 
@@ -54,13 +56,13 @@ This stop is a wait, not a failure: it does not count toward `max_consecutive_fa
 
 #### REVIEW_BLOCKED {#REVIEW_BLOCKED signal=danger}
 
-The reviewer could not clear the phase.
+The reviewer could not clear the phase. That is one of: a `CRITICAL` finding; a strategic finding once `limits.max_debate_rounds` debates are used, or with `debate_on_architecture_disagreement` false; a fixable `HIGH` once the phase's `max_remediation_attempts` laps are used; or a verdict that does not match the findings, such as `PASS` with a blocking finding open.
 
 **Clear it:** read the findings in `artifacts/phase-N/REVIEW_RESULT-<n>.json` in the [state directory](#state), or in the console's Stop view. Adjust the phase prompt or decide the question, then `buildctl retry`.
 
 #### UNREVIEWABLE_DELTA {#UNREVIEWABLE_DELTA signal=danger}
 
-The change has files the reviewer cannot read: a binary file, a new text file over `limits.max_review_file_bytes`, or an edit to a large file whose diff is itself over that limit. An edit to an existing large text file is shown to the reviewer as its diff, so it does not stop here.
+With `claude_review_required` true, the change has files the reviewer cannot read: a binary file, a new text file over `limits.max_review_file_bytes`, or an edit to a large file whose diff is itself over that limit. An edit to an existing large text file is shown to the reviewer as its diff, so it does not stop here.
 
 **Clear it:** adjust the phase so its output is reviewable, or raise `limits.max_review_file_bytes` in a reviewed governance commit, then `buildctl retry`.
 
@@ -181,7 +183,7 @@ An agent call timed out, so its outcome is unknown.
 
 The last run died with agent calls in flight.
 
-**Clear it:** reconcile each unknown call with `buildctl reconcile --operation <id> --action <accept-output or authorize-retry>`, then `buildctl retry`.
+**Clear it:** reconcile each unknown call with `buildctl reconcile --operation <id> --action <accept-output or authorize-retry>`, then `buildctl start`.
 
 ### Ceilings {#stops-ceilings}
 
@@ -195,7 +197,7 @@ A new attempt would exceed `max_phase_attempts`.
 
 #### REMEDIATION_ATTEMPTS_EXHAUSTED {#REMEDIATION_ATTEMPTS_EXHAUSTED signal=danger}
 
-Another remediation lap would exceed the phase's `max_remediation_attempts` for this attempt.
+Another remediation lap would exceed the phase's `max_remediation_attempts` for this attempt, after a failed gate or to build an agreed debate decision. When review findings use up the laps, the phase stops at [REVIEW_BLOCKED](#REVIEW_BLOCKED) instead.
 
 **Clear it:** `buildctl retry --authorize-extra-attempt --nonce <n>`, with the nonce from `status`. The retry is a fresh attempt, and each attempt counts its own remediation laps, so it gets the full allowance. Or fix the cause first.
 
@@ -219,6 +221,6 @@ The reviewer's report was rejected as malformed `max_review_format_attempts` tim
 
 #### MAX_CONSECUTIVE_FAILURES_EXHAUSTED {#MAX_CONSECUTIVE_FAILURES_EXHAUSTED signal=danger}
 
-The build stopped `max_consecutive_failures` times in a row.
+The build stopped `max_consecutive_failures` times in a row. The streak counts across phases, and resets when a phase finishes or the grant is bought. Waits do not count. This code replaces the code and detail of the stop that ended the streak, so read `buildctl audit` for the earlier stops in the streak.
 
 **Clear it:** fix what keeps failing, then `buildctl retry --authorize-extra-attempt --nonce <n>`, with the nonce from `status`. Authorizing it also resets the streak.

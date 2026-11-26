@@ -390,6 +390,22 @@ class ReviewPromptTests(unittest.TestCase):
         self.assertIn(documentation.REVIEW_CRITERIA, text)
         self.assertIn('label="doc_result"', text)
 
+    def test_the_reviewer_sees_the_operators_rules_as_trusted(self):
+        # Found in the 2026-11-26 trial: a documenter that obeyed a forbidden phrase was taken for one
+        # that skipped the work, because the reviewer had no way to see the rule.
+        self.config["documentation"] = {"mode": "required", "paths": ["README.md", "docs/**"],
+                                        "forbidden_phrases": ["--exclude", " "], "changelog": "CHANGELOG.md"}
+        text = self.prompt({"mode": "required", "result": UPDATED, "gates": {"passed": True}})
+        binding = text.split("TRUSTED DELTA BINDING\n", 1)[1].split("\n", 1)[0]
+        rules = json.loads(binding)["documentation_rules"]
+        self.assertEqual(rules["forbidden_phrases"], ["--exclude"])
+        self.assertEqual((rules["changelog"], rules["mode"]), ("CHANGELOG.md", "required"))
+        self.assertIn("`treatment` set to `human`", text)
+
+    def test_a_skipped_phase_has_no_rules_in_the_binding(self):
+        self.config["documentation"] = {"mode": "required", "paths": ["docs/**"]}
+        self.assertNotIn("documentation_rules", self.prompt({"skipped": True}))
+
     def test_a_skipped_phase_tells_the_reviewer_why(self):
         text = self.prompt({"skipped": True})
         self.assertIn(documentation.SKIPPED_NOTE, text)

@@ -2,7 +2,9 @@
 
 ### Commands {#commands}
 
-Global flags: `--repo <path>` (must be the repository toplevel), `--dry-run`, and `--request-id <id>` for a caller that needs to know what its command did. See [Request identity](#request-identity).
+Global flags: `--repo <path>` (must be the repository toplevel), `--dry-run`, and `--request-id <id>` for a caller that needs to know what its command did. See [Request identity](#request-identity). `--dry-run` makes `bootstrap` do nothing and refuses `start`, `run` and `phase`.
+
+`start`, `run` and `phase` create the build state first if it does not exist, as `bootstrap` does. `retry`, `approve`, `reconcile` and `debate decide` only re-arm the build: nothing runs until the next `start`, `run` or `phase`.
 
 {.wide .anchors prefix=cmd-}
 | Command | What it does |
@@ -11,17 +13,17 @@ Global flags: `--repo <path>` (must be the repository toplevel), `--dry-run`, an
 | `run --until <N or milestone>` | Run up to phase N, or a milestone named in `build.yaml`. |
 | `phase <N>` | Run one phase. Refused if it is already complete. |
 | `status` | State, current phase, any pending approval or grant (with its nonce), and today's spend. |
-| `pause` | Stop starting new work. |
+| `pause` | Stop starting new work. Refused while a run holds the state lock, so it takes effect between runs. |
 | `resume` | Allow it again. |
 | `approve --nonce <n>` | Approve the pending checkpoint. The nonce comes from `status`. |
-| `debate decide --nonce <n> --answer <answer>` | Settle a debate the agents could not, at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION). The answer is `finding-stands`, `code-stands` or `own`; `--text` carries your ruling (required for `own`) or a note. The nonce comes from `status`. The same attempt resumes. |
+| `debate decide --nonce <n> --answer <answer>` | Settle a debate the agents could not, at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION). The answer is `finding-stands`, `code-stands` or `own`; `--text` carries your ruling (required for `own`) or a note. The nonce comes from `status`. The next `start` resumes the same attempt. |
 | `retry` | Try again after an ordinary failure. Starts a fresh attempt. `--authorize-extra-attempt --nonce <n>` buys exactly one more pass past an exhausted ceiling. At a checkpoint the repository has moved under, it reissues the checkpoint for the current tree instead; see [CHECKPOINT_REQUIRED](#CHECKPOINT_REQUIRED). |
 | `reconcile --operation <id> --action <action>` | Settle an agent call whose outcome is unknown. The action is `accept-output` (keep what it left) or `authorize-retry` (discard it and pay for a new call). |
 | `reject --phase <n> --confirm <n>` | Discard a committed phase that has not merged, such as one waiting at a `merge_policy: human` checkpoint. Its branch is renamed `build/phase-<n>-rejected-<attempt>`, not deleted, so its receipt stays verifiable. The next run builds a fresh attempt from the integration branch. `--reason` goes in the audit log. Refused once the phase is on the integration branch; use `reopen` then. |
 | `reopen --phase <n> --confirm <n>` | Take a completed phase back so a fresh attempt redoes it, for a phase recorded as done that was not. Nothing is reverted: the next attempt starts from the integration branch. Refused while later phases are complete or the build is not idle. |
-| `trust init --to <sha> --confirm <sha>` | Pin the governed files at that commit, this buildctl, and both agent executables. |
+| `trust init --to <sha> --confirm <sha>` | Pin the governed files at that commit, this buildctl, and each role's executable. |
 | `trust show` | Show what is pinned. |
-| `isolation verify` | Probe the sandbox and record that it passed. Runs refuse to start once that record is over 24 hours old. |
+| `isolation verify` | Probe the sandbox and record that it passed. The record is bound to the trusted snapshot, this host and the sandbox policy. Runs, `bootstrap` and `buildctl-drafts` refuse to start once it is over 24 hours old or its binding no longer holds. |
 | `auth check` | Confirm both agent CLIs are logged in. |
 | `bootstrap` | Create the build state. Requires fresh isolation conformance. |
 | `validate` | Check `build.yaml`. |
@@ -34,7 +36,7 @@ Global flags: `--repo <path>` (must be the repository toplevel), `--dry-run`, an
 
 ### Request identity {#request-identity}
 
-An orchestrator that runs buildctl for you needs to know what its command did, even if its own process dies mid-call. Pass `--request-id <id>` (1 to 128 letters, digits, `.`, `_`, `:` or `-`) to any command that changes build state: `start`, `run`, `phase`, `pause`, `resume`, `retry`, `approve`, `debate decide`, `reconcile`, `reopen`, `reject` and `evidence prune`. Other commands refuse the flag rather than ignore it, and the build must be bootstrapped first.
+An orchestrator that runs buildctl for you needs to know what its command did, even if its own process dies mid-call. Pass `--request-id <id>` (1 to 128 letters, digits, `.`, `_`, `:` or `-`, starting with a letter or digit) to any command that changes build state: `start`, `run`, `phase`, `pause`, `resume`, `retry`, `approve`, `debate decide`, `reconcile`, `reopen`, `reject` and `evidence prune`. Other commands refuse the flag rather than ignore it, and so does `--dry-run`. The build must be bootstrapped first.
 
 1. `request_accepted` is written under the state lock before the command does anything. No record means it never took effect, and resending the same id is safe.
 2. Every audit event the command causes carries `request_id`.
@@ -53,9 +55,9 @@ Accepted with no terminal record means the command is still running, or was inte
 | `limits.max_phase_attempts` | Attempts a phase may start before [PHASE_ATTEMPTS_EXHAUSTED](#PHASE_ATTEMPTS_EXHAUSTED). |
 | `limits.max_review_format_attempts` | Malformed review reports tolerated before [REVIEW_FORMAT_ATTEMPTS_EXHAUSTED](#REVIEW_FORMAT_ATTEMPTS_EXHAUSTED). |
 | `limits.max_semantic_review_attempts` | Reviews of one phase before [SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED](#SEMANTIC_REVIEW_ATTEMPTS_EXHAUSTED). |
-| `limits.max_debate_rounds` | Debates one phase may hold. |
+| `limits.max_debate_rounds` | Debates one phase may hold. A strategic finding after the last one stops at [REVIEW_BLOCKED](#REVIEW_BLOCKED). |
 | `limits.max_debate_turns` | Turns in one debate when `roles.arbiter.mode` is `debate`, both sides together. Optional; default 6, at least 2. |
-| `limits.max_review_file_bytes` | Largest changed text file the reviewer is shown whole. Optional; default 100000. A larger changed file is shown as its diff against the phase base instead; only a larger new file, or a diff over the limit, is [UNREVIEWABLE_DELTA](#UNREVIEWABLE_DELTA). |
+| `limits.max_review_file_bytes` | Largest changed text file the reviewer is shown whole. Optional; default 100000, at least 1000. A larger changed file is shown as its diff against the phase base instead; only a larger new file, or a diff over the limit, is [UNREVIEWABLE_DELTA](#UNREVIEWABLE_DELTA). |
 | `limits.max_phase_minutes` | Wall-clock limit for one attempt, before [PHASE_DEADLINE_EXCEEDED](#PHASE_DEADLINE_EXCEEDED). |
 | `limits.max_daily_cost_usd` | The daily budget, in UTC days. |
 | `limits.max_consecutive_failures` | Stops in a row before [MAX_CONSECUTIVE_FAILURES_EXHAUSTED](#MAX_CONSECUTIVE_FAILURES_EXHAUSTED). |
@@ -71,13 +73,19 @@ Accepted with no terminal record means the command is still running, or was inte
 | `python.extras` | Optional. Names of `[project.optional-dependencies]` groups `{python}` gates also install, such as `["dev"]` for pytest. Same bound rules as the main dependencies. |
 | `python.constraints` | Optional. A governed constraints file (list it in `governance_documents`). A requirement it bounds from above may be unbounded in `pyproject.toml`. Passed to pip as `-c`. |
 | `python.direct_references` | Optional. Exact `name @ https://...whl#sha256=<hash>` entries a manifest may use: pre-built wheels pinned by hash. Git and source URLs are refused. |
+| `demo.command` | Optional. The argv that starts the product on fictional data for a [recorded demo](#demos), serving on `{port}`; `{python}` is the drafts tool's Python. It runs in a copy of the milestone's commit, sandboxed with loopback only and no credentials. |
+| `demo.url` | The page to open, `http://127.0.0.1:{port}/...` or `http://localhost:{port}/...`. Default `http://127.0.0.1:{port}/`. |
+| `demo.ready_pattern` | Optional. A regex whose first group is the URL to open, read from the command's output, for a URL with a token. Without it, the recorder waits for the port to accept. |
+| `demo.scenario` | The committed scenario to record. Default `docs/demo/scenario.json`. |
+| `demo.timeout_seconds` | How long the demo may take to start serving, 10 to 900. Default 120. |
+| `demo.viewport` | `[width, height]` of the recording, 320 to 3840. Default `[1280, 800]`. |
 | `governance_documents` | Files beyond the fixed governed set that `trust init` pins and agents may not modify. Required; may be `[]`. |
 | `git.remote` | The remote phase branches are pushed to when `push` is on. |
-| `git.push` | Push the phase branch instead of fast-forwarding the integration branch locally. |
+| `git.push` | Push the phase branch instead of fast-forwarding the integration branch locally. `push`, `create_pr` and `merge` are required, and each must be `true` or `false`. |
 | `git.create_pr` | Open a pull request for the pushed phase branch, with the `gh` CLI. |
 | `git.merge` | Request a squash auto-merge of that pull request, for phases whose `merge_policy` is `auto`. |
 | `git.integration_branch` | The branch fast-forwarded after each phase. Default `main`. Fast-forward only: if it has commits the phase lacks, buildctl stops instead of merging. |
-| `roles.*.command` | The argv for each agent. `{prompt}` and `{output}` are substituted. While recording is on, `codex` needs `--json` and `claude` needs `--output-format stream-json --verbose`; see [Setting it up](#evidence). |
+| `roles.*.command` | The argv for each agent. `{prompt}` and `{output}` are substituted. With `auth_mode: host_cli`, the implementer's and documenter's commands need `--ignore-user-config`, and the reviewer's needs `--no-session-persistence` and `--tools`, with no mutation tool such as `Bash`, `Edit` or `Write`. While recording is on, `codex` needs `--json` and `claude` needs `--output-format stream-json --verbose`; see [Setting it up](#evidence). |
 | `roles.*.network` | Whether the agent has network access in the sandbox. Must be `true` with `auth_mode: host_cli`, because the CLI calls its provider's API. |
 | `roles.*.auth_mode` | How the agent authenticates: `host_cli` (your CLI login; macOS only), `environment` (the named variables) or `none`. |
 | `roles.*.credential_env` | The `*_API_KEY` or `*_TOKEN` variables an `environment` agent receives. Must be empty otherwise. |
@@ -92,13 +100,13 @@ Accepted with no terminal record means the command is still running, or was inte
 | `milestones` | Names for `run --until`. |
 | `checkpoints.before_phases` | Phases that need your approval before they start. |
 | `checkpoints.mvp_completion` | The phase after which the build stops for your sign-off. |
-| `phase_defaults.required_files` | Files that must exist after the implementer finishes. |
+| `phase_defaults.required_files` | Files that must exist after the implementer finishes. `{phase}` becomes the phase number, here and in `allowed_paths`. |
 | `phase_defaults.commands` | Acceptance commands, each an argv array run sandboxed with no network. |
 | `phase_defaults.invariants` | Named rules the reviewer checks every change against. |
 | `evidence.recording` | `"on"` (the default) or `"off"`. On records every agent call and seals a receipt for each commit, and needs the event flags in each role's command (`--json` for `codex`; `--output-format stream-json --verbose` for `claude`). Off turns all of that off. See [What agents did](#evidence). |
 | `phase_defaults.claude_review_required` | Whether the phase must pass review. |
 | `phase_defaults.debate_on_architecture_disagreement` | Whether architectural findings go to a debate. |
-| `phase_defaults.max_remediation_attempts` | Remediation laps per attempt before [REMEDIATION_ATTEMPTS_EXHAUSTED](#REMEDIATION_ATTEMPTS_EXHAUSTED). |
+| `phase_defaults.max_remediation_attempts` | Remediation laps per attempt. Past it, a failed gate or an agreed debate decision stops at [REMEDIATION_ATTEMPTS_EXHAUSTED](#REMEDIATION_ATTEMPTS_EXHAUSTED), and a review finding at [REVIEW_BLOCKED](#REVIEW_BLOCKED). |
 | `phase_defaults.merge_policy` | `auto`, or `human` to wait for approval before integrating. |
 | `phase_defaults.allowed_paths` | The only paths a phase may change. |
 | `phases` | The ordered list of phases, each with `number`, `name` and `prompt`. |

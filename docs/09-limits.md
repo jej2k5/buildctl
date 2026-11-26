@@ -22,6 +22,7 @@
 - Receipts are not signed. `evidence verify` shows a receipt matches its commit, not that nobody with your machine rewrote it first.
 - "I ran the tests" stays agent-reported. buildctl does not trace processes inside the sandbox, so it can only check an agent's reported writes against what changed.
 - The feed of what agents did is not in the terminal UI yet.
+- [Recorded demos](#demos) have limits of their own. Recording works on macOS only for now; Linux refuses, because Chrome cannot run inside the offline sandbox. On macOS, Chrome runs on your machine, held to the demo by a dead proxy rather than a sandbox. The demo itself runs sandboxed with loopback only, and `isolation verify` checks that mode. You write each scenario by hand, no agent checks the frames, and recording needs a local Chrome, plus `ffmpeg` for the GIF.
 - A role with network access reaches the whole network, on macOS and Linux alike. There is no per-host allowlist yet.
 - The implementer is assumed to be Codex and the reviewer Claude. `auth check`, credential staging and parts of config validation are written for those two CLIs.
 - Dependency provisioning for acceptance commands covers Python (`pyproject.toml`, `{python}`) and Node with npm lockfiles (`package-lock.json`, `{node}`/`{npm}`/`{npx}`). Yarn and pnpm lockfiles are not supported. Node installs run with network on, so a package's install script can reach the network, though not your home folder.

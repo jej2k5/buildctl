@@ -1,0 +1,9 @@
+{
+  "title": "A stop: why it halted, the evidence, the levers it will accept",
+  "steps": [
+    {"name": "The plan says what waits on you", "open": "#/plan", "expect": "REVIEW_BLOCKED", "hold": 2.5},
+    {"name": "The stop names the code and the remedy", "open": "#/stop", "expect": "REVIEW_BLOCKED", "hold": 3},
+    {"name": "The findings that blocked review", "click": "Findings", "expect": "replay-bypasses-delivery-path", "hold": 3},
+    {"name": "Only the levers the kernel will accept", "wait_for": "Levers", "hold": 2.5}
+  ]
+}

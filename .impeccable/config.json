@@ -1,0 +1,44 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          ".github/banner.html"
+        ],
+        "createdAt": "2026-11-26T17:40:47.973Z",
+        "reason": "assistant decision: .github/banner.html reproduces the incumbent README banner (.github/banner.png), whose gradient wordmark, supervisor glow and display face are its identity; refinement preserves them"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          ".github/banner.html"
+        ],
+        "createdAt": "2026-11-26T17:40:47.990Z",
+        "reason": "assistant decision: .github/banner.html reproduces the incumbent README banner (.github/banner.png), whose gradient wordmark, supervisor glow and display face are its identity; refinement preserves them"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "sf pro display",
+        "files": [
+          ".github/banner.html"
+        ],
+        "createdAt": "2026-11-26T17:40:48.006Z",
+        "reason": "assistant decision: .github/banner.html reproduces the incumbent README banner (.github/banner.png), whose gradient wordmark, supervisor glow and display face are its identity; refinement preserves them"
+      },
+      {
+        "rule": "tight-leading",
+        "value": "*",
+        "files": [
+          ".github/banner.html"
+        ],
+        "createdAt": "2026-11-26T17:45:31.531Z",
+        "reason": "assistant decision: two-line labels in a raster banner set like the incumbent .github/banner.png, not running body text"
+      }
+    ]
+  }
+}

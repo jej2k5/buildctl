@@ -226,6 +226,9 @@ class LinuxConformanceTests(unittest.TestCase):
             root = Path(directory).resolve(); control = root / "control"; repo = root / "repo"; repo.mkdir()
             result = verify_backend(LinuxBubblewrapBackend(), control, repo)
             self.assertEqual(set(result["roles"]), {"implementer", "reviewer", "gate"})
+            # The demo role serves on loopback inside its own namespace and reaches nothing.
+            self.assertEqual(result["loopback"]["loopback_served_to_host"], False)
+            self.assertFalse(result["loopback"]["host_loopback_reached"])
             for observed in result["roles"].values():
                 self.assertFalse(observed["unix_socket_connect"])
                 self.assertFalse(observed["nested_userns"])

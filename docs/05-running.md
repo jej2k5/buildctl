@@ -14,7 +14,7 @@ The console shows the same information live: the phase line, the call in flight 
 
 ### Pausing {#pausing}
 
-`buildctl pause` stops buildctl starting new work. A call already in flight finishes. `buildctl resume` allows new work again. Both take the state lock, so they cannot interrupt a run that is holding it.
+`buildctl pause` stops buildctl starting new work. `buildctl resume` allows new work again. Both take the state lock, and a running `start`, `run` or `phase` holds it until it returns, so `pause` is refused while one runs. It takes effect between runs.
 
 ### The budget {#budget}
 
@@ -24,7 +24,7 @@ The ledger records estimates you configured, not your provider's bill.
 
 ### Where state lives {#state}
 
-Canonical state, the hash-chained audit log, the cost ledger, the trusted snapshot and every agent artifact live outside your repository, in `$XDG_STATE_HOME/buildctl/<hash of repo path>` (by default `~/.local/state/buildctl/...`). Set `BUILDCTL_STATE_DIR` to put it elsewhere.
+Canonical state, the hash-chained audit log, the cost ledger, the trusted snapshot and every agent artifact live outside your repository, in `$XDG_STATE_HOME/buildctl/<hash of repo path>` (by default `~/.local/state/buildctl/...`). Set `BUILDCTL_STATE_DIR` to put it elsewhere. That folder replaces the per-repository one, so it is meant for one repository.
 
 | File | What it holds |
 |---|---|
@@ -35,6 +35,8 @@ Canonical state, the hash-chained audit log, the cost ledger, the trusted snapsh
 | `isolation-conformance.json` | The last sandbox verification. |
 | `artifacts/phase-N/` | Agent results, review reports, gate results, debate turns, requests and decisions, and ADR proposals. |
 | `records/phase-N/` | The full record of each agent call, kept until you [prune it](#evidence). |
+| `repo.json` | The path of the repository this folder belongs to. |
+| `drafts/` | [Release drafts](#drafts) and demo recordings, one folder per run, with `costs.jsonl` for their spend and `events.jsonl` for approvals and discards. |
 
 ### What agents did {#evidence}
 
@@ -113,7 +115,7 @@ When a review raises an architectural finding, or a `HIGH` finding that keeps co
 
 **How it ends.** Any turn may carry a proposal: a full decision that names every debated finding as upheld, changed or dropped. The debate closes when the other side accepts that exact proposal, by its hash, on the next turn. That decision becomes an ADR marked `Decided by: agents`, and Codex implements it, as after any agreement.
 
-A debate interrupted mid-way, by a crash you then reconcile, resumes at its next turn; turns already taken are not paid for again. If `max_debate_turns` pass without a close, the build stops at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION) and the decision is yours. The console's Stop view shows the findings and the debate turn by turn, with three answers: the finding stands, the code stands, or your own ruling. The same attempt resumes with it.
+A debate interrupted mid-way, by a crash you then reconcile, resumes at its next turn; turns already taken are not paid for again. If `max_debate_turns` pass without a close, the build stops at [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION) and the decision is yours. The console's Stop view shows the findings and the debate turn by turn, with three answers: the finding stands, the code stands, or your own ruling. Deciding re-arms the build. Then run `buildctl start`, or pull Start in the console, and the same attempt resumes with your ruling.
 
 **What it costs.** Each turn reserves `operation_cost_usd.debate_turn`, so a debate costs up to `max_debate_turns` times that: $12 at the values above. Each turn also spends the phase's wall-clock time.
 
@@ -138,4 +140,20 @@ buildctl-drafts approve release-notes       # or discard
 - **Voices:** release notes, positioning, the launch post and the demo script use the product voice, `docs/VOICE.md` in the repository, plus `documentation.forbidden_phrases`. A social post uses your own voice, `~/.config/buildctl/voice.md`, which is never committed; without it, social drafts are skipped. A voice file's `## Rules` bullets are enforced: `Banned: a, b`, `No em dashes`, `Max words: N` and `Max words for <type>: N`.
 - **Where drafts live:** in the build's state folder, under `drafts/`, as Markdown with the ledger at the end. Approving or discarding records an event and nothing more.
 - **Cost:** each writer call is booked as `release_draft` in `drafts/costs.jsonl`, at `--cost` dollars (default 2). A run is refused when today's build spend, plus today's drafts, plus the run's estimate, would pass `limits.max_daily_cost_usd`.
-- **Not yet:** recorded demos. They need a sandbox mode that lets a local browser reach the demo with nothing else outbound, which is a kernel change. The console has no Drafts panel yet.
+- **In the console:** the Drafts view reads, signs and discards drafts, and starts a paid run; see [Drafts in the console](#console-drafts).
+
+#### Recorded demos {#demos}
+
+`buildctl-drafts record --milestone mvp` records the product working, from a scenario committed in the repository. It calls no model, so it costs nothing.
+
+```sh
+buildctl-drafts record --milestone mvp      # or --until <ref>
+```
+
+- **What it needs:** the trust record, a sandbox verified in the last 24 hours, a [`demo` section](#config) in `build.yaml`, naming a command that starts the product on fictional data and serves on the loopback port `{port}`, and the scenario file it names (default `docs/demo/scenario.json`) at the milestone's commit.
+- **The scenario:** a title and steps, each with one action (`open` a path, `click` visible text or `css:selector`, `type` into a field, `wait_for` text, `pause`), the text the screen must then show (`expect`), and how many seconds to `hold`. A step that never shows its text fails, and the recording says which.
+- **How it runs:** the demo command runs in a throwaway copy of the milestone's commit, under buildctl's sandbox in loopback mode: it may serve on loopback and reaches nothing else, with an environment that carries no credential. On macOS, which has no private loopback, a headless Chrome on your machine drives it, locked by a dead proxy to the demo's address, so the demo's own page cannot reach your other local services or the internet either. On Linux, recording refuses for now: the demo would have to be reached inside the sandbox's own network namespace, and Chrome cannot run there because the sandbox refuses Unix sockets to keep host sockets out of reach. Record on macOS. `isolation verify` checks the loopback mode with the other roles on both.
+- **What you get:** a frame per step, a GIF of the whole (with `ffmpeg` installed), and `recording.json`, under the build's state folder in `drafts/<run>/demo/`. The recording appears in `buildctl-drafts list` as `demo-recording`, and a failed step marks it "needs you".
+- **For a project's own docs:** `python -m buildctl_drafts.recorder --demo demo.json --scenario scenario.json --out DIR` records from a working tree, still sandboxed with loopback only, but not from a governed milestone. buildctl's own console vignettes are made this way, from `docs/demo/`.
+- **In the console:** the Drafts view shows a recording as its list of steps, to sign or discard like a draft. It does not show the frames or the GIF yet.
+- **Not yet:** an agent-written scenario (today you write and commit it), and an agent check of each frame.

@@ -34,6 +34,9 @@ class ProductionIsolationConformanceTests(unittest.TestCase):
             alias=root/"repo-alias"; alias.symlink_to(repo, target_is_directory=True)
             result = verify_backend(MacOSSandboxBackend(),control,alias)
             self.assertEqual(set(result["roles"]), {"implementer", "reviewer", "gate"})
+            # The demo role serves on loopback to the host and reaches nothing.
+            self.assertEqual(result["loopback"]["loopback_served_to_host"], True)
+            self.assertFalse(result["loopback"]["host_loopback_reached"])
             for role, observed in result["roles"].items():
                 self.assertTrue(observed["devnull_functional"])
                 self.assertTrue(observed["git_version"])

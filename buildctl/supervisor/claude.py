@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .agents import RoleRunner, TRUSTED_PREAMBLE, untrusted
-from .documentation import REVIEW_CRITERIA, SKIPPED_NOTE
+from .documentation import REVIEW_CRITERIA, SKIPPED_NOTE, review_rules
 from .protocol import context_documents, contract, prompt as protocol_prompt
 from .review import (CLEAN_COVERAGE_DISPOSITION, COVERAGE_DISPOSITIONS, COVERAGE_RECORD_KEYS,
                      DELETED_COVERAGE_DISPOSITION, FINDING_COVERAGE_DISPOSITION,
@@ -48,7 +48,11 @@ class ClaudeAdapter:
                     "open_finding_obligations": evidence.get("open_findings", []),
                     # Claims the operator ruled on after a debate: the code stands. They are
                     # closed, and a finding restating one cannot block this phase.
-                    "operator_rulings": evidence.get("operator_rulings", [])}, sort_keys=True)
+                    "operator_rulings": evidence.get("operator_rulings", []),
+                    # The operator's documentation rules, so a documenter that leaves something out
+                    # because a rule forbids it can be told apart from one that skipped the work.
+                    **({"documentation_rules": review_rules(config)}
+                       if documentation is not None and not documentation.get("skipped") else {})}, sort_keys=True)
         prompt += ("\nA changed_files entry whose content_encoding is `unified_diff` is a file too large to show "
                    "whole: its content is the diff against the phase base, with 40 lines of context. Review it "
                    "like any other path; you may Read the full file in the workspace.")

@@ -173,6 +173,7 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
         raise ConfigurationError("; ".join(evidence_problems))
     validate_governed_inputs(config, root)
     validate_python(config, root)
+    validate_demo(config, root)
     costs = config.get("operation_cost_usd")
     # Only a build whose arbiter runs debates pays per turn, so only it must price one; only a
     # build with documentation on pays for documentation.
@@ -223,6 +224,53 @@ def validate_governed_inputs(config: dict[str, Any], root: Path) -> None:
     for role, key in (("reviewer", "review_prompt"), ("implementer", "remediation_prompt")):
         if key in config["roles"][role]:
             _governed_file(root, config["roles"][role][key], documents, f"roles.{role}.{key}")
+
+
+DEMO_KEYS = {"command", "url", "ready_pattern", "scenario", "timeout_seconds", "viewport"}
+DEMO_HOSTS = ("http://127.0.0.1:{port}", "http://localhost:{port}")
+
+
+def validate_demo(config: dict[str, Any], root: Path) -> None:
+    """The optional `demo` section: how buildctl-drafts starts the product on fictional data for a recording.
+
+    The command runs in a disposable copy of a milestone's commit, sandboxed with loopback only and a
+    sanitized environment, so it never sees a credential. `{port}` is the loopback port it must serve
+    on; `ready_pattern`, when set, is a regex whose first group is the URL to open (for a URL with a
+    token), read from the command's output."""
+    if "demo" not in config:
+        return
+    section = config["demo"]
+    if not isinstance(section, dict) or set(section) - DEMO_KEYS:
+        raise ConfigurationError(f"demo may set only {', '.join(sorted(DEMO_KEYS))}")
+    command = section.get("command")
+    if not isinstance(command, list) or not command or not all(isinstance(part, str) and part for part in command):
+        raise ConfigurationError("demo command must be a non-empty argv array")
+    if not any("{port}" in part for part in command):
+        raise ConfigurationError("demo command must take its port as {port}")
+    url = section.get("url", DEMO_HOSTS[0] + "/")
+    if not isinstance(url, str) or not url.startswith(DEMO_HOSTS):
+        raise ConfigurationError("demo url must be http://127.0.0.1:{port}/... or http://localhost:{port}/...")
+    pattern = section.get("ready_pattern")
+    if pattern is not None:
+        try:
+            if not isinstance(pattern, str) or re.compile(pattern).groups < 1:
+                raise ConfigurationError("demo ready_pattern must be a regex with one group, the URL")
+        except re.error as exc:
+            raise ConfigurationError(f"demo ready_pattern is not a valid regex: {exc}") from exc
+    scenario = section.get("scenario", "docs/demo/scenario.json")
+    if not isinstance(scenario, str):
+        raise ConfigurationError("demo scenario must be a path in the repository")
+    try:
+        ensure_safe_relative(root, scenario)
+    except ValueError as exc:
+        raise ConfigurationError(f"demo scenario must stay inside the repository: {exc}") from exc
+    timeout = section.get("timeout_seconds", 120)
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or not 10 <= timeout <= 900:
+        raise ConfigurationError("demo timeout_seconds must be a whole number from 10 to 900")
+    viewport = section.get("viewport", [1280, 800])
+    if (not isinstance(viewport, list) or len(viewport) != 2
+            or not all(isinstance(n, int) and not isinstance(n, bool) and 320 <= n <= 3840 for n in viewport)):
+        raise ConfigurationError("demo viewport must be [width, height] in pixels, 320 to 3840")
 
 
 def validate_python(config: dict[str, Any], root: Path) -> None:

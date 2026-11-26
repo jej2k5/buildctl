@@ -121,3 +121,48 @@ def summary_line(item: dict[str, Any]) -> str:
         detail += f", {item['lint']} voice problem{'s' if item['lint'] > 1 else ''}"
     tries = " after a rewrite" if item["attempts"] > 1 else ""
     return f"  {item['kind']:<14} {state:<10} {detail}{tries}   {item['id']}"
+
+
+def record_demo(repo: Path, control_root: Path, *, milestone: str | None = None, until: str = "HEAD",
+                since: str | None = None) -> dict[str, Any]:
+    """Record the milestone's committed demo scenario. Free: no model call. Needs the build's `demo` section.
+
+    The demo runs from a disposable copy of the milestone's commit, sandboxed with loopback only, and
+    the scenario is the committed file at that commit, so a recording is reproducible."""
+    from .recorder import Demo, RecordError, load_scenario, record
+
+    config, anchor = trusted(repo, control_root)
+    section = config.get("demo")
+    if not section:
+        raise StoreError("build.yaml has no demo section; demos need a command that starts the product on "
+                         "fictional data (see Release drafts in the manual)")
+    try:
+        require_fresh_conformance(control_root, production_backend(), anchor["snapshot_digest"])
+    except IsolationError as exc:
+        raise StoreError(f"{exc}. Run buildctl isolation verify first.") from exc
+    context = gather(repo, control_root, since=since, until=until, milestone=milestone)
+    store = DraftStore(control_root)
+    run = store.new_run()
+    out = store.root / run / "demo"
+    with tempfile.TemporaryDirectory(prefix="buildctl-demo-") as scratch:
+        workspace = clone_at(context.repo, context.until, Path(scratch) / "milestone")
+        scenario_path = section.get("scenario", "docs/demo/scenario.json")
+        if not (workspace / scenario_path).is_file():
+            raise StoreError(f"{scenario_path} is not in the milestone's commit; commit an approved scenario first")
+        try:
+            scenario = load_scenario(workspace / scenario_path)
+            summary = record(Demo.from_config(section), scenario, workspace, out, control_root=control_root, repo=repo)
+        except RecordError as exc:
+            raise StoreError(str(exc)) from exc
+    failed = [item for item in summary["steps"] if not item["ok"]]
+    body = "\n".join(f"{item['step']}. {'' if item['ok'] else '**Failed:** '}{item['name']}"
+                     + (f" ({item['problem']})" if not item["ok"] else "") for item in summary["steps"])
+    record_ = {"kind": "demo-recording", "title": "Demo recording", "label": context.label, "since": context.since,
+               "until": context.until, "commits": len(context.commits), "voice": None, "attempts": 1,
+               "recording": {**summary, "scenario": scenario_path, "directory": "demo"},
+               "draft": {"title": scenario["title"], "body": body, "claims": [], "known_limits": [], "fields": {}},
+               "checks": {"passed": not failed, "contract": [], "lint": [],
+                          "unbacked": [{"claim": item["step"], "text": item["name"], "why": item["problem"]} for item in failed],
+                          "claims": 0}}
+    store.save(run, "demo-recording", record_, f"# {scenario['title']}\n\n{body}\n\nGIF: demo/{summary['gif'] or '(no ffmpeg)'}\n")
+    return {"run": run, "summary": summary, "directory": str(out)}

@@ -1,0 +1,7 @@
+{
+  "command": ["{python}", "docs/demo/serve.py", "drafts", "{port}"],
+  "url": "http://127.0.0.1:{port}/",
+  "ready_pattern": "(http://127\\.0\\.0\\.1:\\d+/#token=[\\w-]+)",
+  "timeout_seconds": 90,
+  "viewport": [1440, 900]
+}

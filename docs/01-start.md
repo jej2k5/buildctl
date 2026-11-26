@@ -85,4 +85,4 @@ buildctl-ui --demo running      # a phase in flight
 buildctl-ui tui --demo ceiling  # the same, in the terminal
 ```
 
-The other scenarios are `unknown` and `fresh`. Demo builds refuse anything that would pin trust or spend money.
+The other scenarios are `unknown`, `debate` (a debate waiting for your decision), `docs` (a documenter that went out of scope), `drafts` (release drafts to read and sign) and `fresh`. Without a name, `--demo` opens `blocked`. Demo builds refuse anything that would pin trust or spend money.
