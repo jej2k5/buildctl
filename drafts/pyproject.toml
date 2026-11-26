@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77"]  # PEP 639 license metadata
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "buildctl-drafts"
+version = "0.1.0"
+description = "Release drafts from a finished buildctl milestone, every claim citing a source that exists, for the operator to approve"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "John Joseph"}]
+# The kernel only. Drafts never commit, never publish, and live in the build's state folder.
+dependencies = ["buildctl"]
+
+[project.scripts]
+buildctl-drafts = "buildctl_drafts.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["buildctl_drafts", "buildctl_drafts.*"]
