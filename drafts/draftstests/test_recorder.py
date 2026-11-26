@@ -1,8 +1,8 @@
 """The demo recorder: scenarios, Chrome's lockdown, and a real recording when Chrome is installed.
 
 The end-to-end test serves a tiny page from a sandboxed demo (loopback only). The page tries to fetch a
-service on the host's loopback; the recording must show that the fetch was refused. On macOS that
-proves Chrome's proxy lockdown; on Linux it proves Chrome runs inside the demo's own network namespace.
+service on the host's loopback; the recording must show that the fetch was refused, which proves Chrome's
+proxy lockdown on macOS. On Linux, recording refuses: Chrome cannot run inside the offline sandbox.
 """
 import json
 import platform
@@ -54,11 +54,6 @@ class ChromeArgumentTests(unittest.TestCase):
         self.assertIn("--proxy-bypass-list=<-loopback>;127.0.0.1:5000", args)
         self.assertIn("--force-webrtc-ip-handling-policy=disable_non_proxied_udp", args)
         self.assertNotIn("--no-sandbox", args)
-
-    def test_inside_the_sandbox_chrome_drops_its_own(self):
-        args = chrome_args("chrome", Path("/tmp/p"), (1280, 800), None, sandboxed=True)
-        self.assertIn("--no-sandbox", args)
-        self.assertFalse(any(item.startswith("--proxy") for item in args))
 
 
 PAGE = """<!doctype html><title>demo</title><body><h1>Wordtally demo</h1>
@@ -120,12 +115,12 @@ class RecordingTests(unittest.TestCase):
             {"name": "Its page cannot reach the host", "wait_for": "Host service sealed off", "hold": 0.5},
             {"name": "Count", "click": "Count", "expect": "Counted 3 words", "hold": 0.5}]}
         out = self.root / "out"
-        try:
-            summary = record(demo, scenario, workspace, out, control_root=control, repo=repo)
-        except RecordError as exc:
-            if platform.system() == "Linux":
-                self.fail(f"Chrome could not record inside the Linux sandbox: {exc}")
-            raise
+        if platform.system() == "Linux":
+            with self.assertRaises(RecordError) as caught:
+                record(demo, scenario, workspace, out, control_root=control, repo=repo)
+            self.assertIn("not supported on Linux", str(caught.exception))
+            return
+        summary = record(demo, scenario, workspace, out, control_root=control, repo=repo)
         self.assertTrue(summary["passed"], json.dumps(summary["steps"], indent=1))
         self.assertTrue((out / summary["steps"][2]["frame"]).is_file())
         self.assertFalse((out / "home").exists())

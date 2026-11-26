@@ -7,8 +7,8 @@ loopback port and reaches nothing else, with a sanitized environment that carrie
 - macOS has no private loopback, so Chrome runs on the host. It is locked to the demo's address by a
   dead proxy with only that address bypassed, so the demo's own page cannot reach the host's other
   loopback services or the internet either.
-- Linux gives the sandbox its own network namespace, which a host browser cannot reach. The recorder
-  then runs inside the same sandbox as the demo (`--inner`), Chrome included.
+- Linux gives the sandbox its own network namespace, which a host browser cannot reach, and Chrome
+  cannot run inside it (see LINUX_UNSUPPORTED), so Linux refuses to record for now.
 
 Chrome is driven over its DevTools pipe with the standard library; nothing is installed.
 """
@@ -35,6 +35,11 @@ CHROME_CANDIDATES = ("/Applications/Google Chrome.app/Contents/MacOS/Google Chro
                      "google-chrome", "google-chrome-stable", "chromium", "chromium-browser")
 ACTIONS = ("open", "click", "type", "wait_for", "pause")
 FRAME_INTERVAL = 0.25
+# Found in CI (ubuntu-24.04, Chrome stable): inside the sandbox, Chrome's first socket() fails, because
+# the offline seccomp filter refuses Unix sockets. That filter is what keeps host sockets (the Docker
+# daemon, an SSH agent) out of reach, so it stays; Linux recording waits for another way to drive Chrome.
+LINUX_UNSUPPORTED = ("recording demos is not supported on Linux yet: Chrome needs Unix sockets, which "
+                     "buildctl's offline sandbox refuses so that host sockets stay out of reach. Record on macOS.")
 
 
 class RecordError(RuntimeError):
@@ -91,31 +96,25 @@ def find_chrome() -> str:
     raise RecordError("no Chrome or Chromium found; install Google Chrome to record demos")
 
 
-def chrome_args(executable: str, profile: Path, viewport: tuple[int, int], allow: list[str] | None,
-                sandboxed: bool = False) -> list[str]:
+def chrome_args(executable: str, profile: Path, viewport: tuple[int, int], allow: list[str]) -> list[str]:
     args = [executable, "--headless=new", "--remote-debugging-pipe", "--no-first-run", "--no-default-browser-check",
             f"--user-data-dir={profile}", f"--window-size={viewport[0]},{viewport[1]}", "--hide-scrollbars",
             "--disable-extensions", "--disable-background-networking", "--disable-sync",
             "--disable-component-update", "--disable-default-apps", "--mute-audio",
             "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]
-    if allow is not None:
-        # Everything goes to a dead proxy except the demo's own address; `<-loopback>` removes
-        # Chrome's implicit bypass for localhost, so other loopback ports are refused too.
-        args += ["--proxy-server=http://127.0.0.1:9", "--proxy-bypass-list=" + ";".join(["<-loopback>", *allow])]
-    if sandboxed:
-        # Inside buildctl's sandbox Chrome cannot build its own; the outer one bounds it.
-        args += ["--no-sandbox", "--no-zygote", "--disable-dev-shm-usage", "--disable-gpu"]
+    # Everything goes to a dead proxy except the demo's own address; `<-loopback>` removes Chrome's
+    # implicit bypass for localhost, so other loopback ports are refused too.
+    args += ["--proxy-server=http://127.0.0.1:9", "--proxy-bypass-list=" + ";".join(["<-loopback>", *allow])]
     return [*args, "about:blank"]
 
 
 class Chrome:
     """A headless Chrome on --remote-debugging-pipe: requests on fd 3, replies on fd 4, NUL-terminated JSON."""
 
-    def __init__(self, executable: str, profile: Path, viewport: tuple[int, int], allow: list[str] | None,
-                 sandboxed: bool = False):
+    def __init__(self, executable: str, profile: Path, viewport: tuple[int, int], allow: list[str]):
         to_chrome_r, self._to_chrome = os.pipe()
         self._from_chrome, from_chrome_w = os.pipe()
-        args = chrome_args(executable, profile, viewport, allow, sandboxed)
+        args = chrome_args(executable, profile, viewport, allow)
 
         def wire() -> None:
             # Chrome reads fd 3 and writes fd 4. Copy first so a pipe end already at 3 or 4 is not
@@ -366,52 +365,26 @@ def record(demo: Demo, scenario: dict[str, Any], workspace: Path, out: Path, *, 
     home = out / "home"; home.mkdir(exist_ok=True)
     context = IsolationContext("demo", workspace, control_root, repo, True, out, home, False, loopback=True)
     env = sanitized_environment("demo", home=home)
-    linux = platform.system() == "Linux"
+    if platform.system() == "Linux":
+        raise RecordError(LINUX_UNSUPPORTED)
     started = time.time()
-    if linux:
-        # The browser has to live in the demo's own network namespace: run this module inside it.
-        inner = [sys.executable, "-m", "buildctl_drafts.recorder", "--inner", "--out", str(out),
-                 "--demo", json.dumps({"command": demo.command, "url": demo.url, "ready_pattern": demo.ready_pattern,
-                                       "timeout_seconds": demo.timeout_seconds, "viewport": list(demo.viewport)}),
-                 "--scenario", json.dumps(scenario)]
-        env = dict(env, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
-        result = subprocess.run(backend.command(inner, context), cwd=workspace, env=env, capture_output=True,
-                                text=True, timeout=demo.timeout_seconds + 120)
-        if result.returncode:
-            raise RecordError(f"the sandboxed recorder failed: {(result.stderr or result.stdout).strip()[-600:]}")
-        steps = json.loads((out / "steps.json").read_text())
-    else:
-        port = free_port()
-        process, url = start_demo(demo, port, workspace, lambda argv: backend.command(argv, context), env,
-                                  out / "demo.log")
-        profile = Path(tempfile.mkdtemp(prefix="buildctl-recorder-"))
-        chrome = Chrome(find_chrome(), profile, demo.viewport, [f"127.0.0.1:{port}", f"localhost:{port}"])
-        try:
-            steps = drive(chrome, url, scenario, out, demo.viewport)
-        finally:
-            chrome.close(); stop(process); shutil.rmtree(profile, ignore_errors=True)
+    port = free_port()
+    process, url = start_demo(demo, port, workspace, lambda argv: backend.command(argv, context), env,
+                              out / "demo.log")
+    profile = Path(tempfile.mkdtemp(prefix="buildctl-recorder-"))
+    chrome = Chrome(find_chrome(), profile, demo.viewport, [f"127.0.0.1:{port}", f"localhost:{port}"])
+    try:
+        steps = drive(chrome, url, scenario, out, demo.viewport)
+    finally:
+        chrome.close(); stop(process); shutil.rmtree(profile, ignore_errors=True)
     shutil.rmtree(home, ignore_errors=True)  # the demo's scratch (a whole fixture repository, for some demos)
     gif = make_gif(out, demo.viewport)
     summary = {"title": scenario["title"], "steps": steps, "passed": all(item["ok"] for item in steps),
                "gif": gif.name if gif else None, "seconds": round(time.time() - started, 1),
-               "isolation": {"backend": backend.name, "loopback": True, "browser": "inside the sandbox" if linux
-                             else "on the host, locked to the demo's address"}}
+               "isolation": {"backend": backend.name, "loopback": True,
+                             "browser": "on the host, locked to the demo's address"}}
     (out / "recording.json").write_text(json.dumps(summary, indent=2) + "\n")
     return summary
-
-
-def inner_main(out: Path, demo: Demo, scenario: dict[str, Any]) -> int:
-    """Inside the sandbox (Linux): start the demo and Chrome here, where loopback is private."""
-    port = free_port()
-    process, url = start_demo(demo, port, Path.cwd(), lambda argv: argv, dict(os.environ), out / "demo.log")
-    profile = Path(tempfile.mkdtemp(prefix="chrome-", dir=os.environ.get("TMPDIR")))
-    chrome = Chrome(find_chrome(), profile, demo.viewport, None, sandboxed=True)
-    try:
-        steps = drive(chrome, url, scenario, out, demo.viewport)
-    finally:
-        chrome.close(); stop(process)
-    (out / "steps.json").write_text(json.dumps(steps))
-    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -424,7 +397,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scenario", required=True, help="the scenario as JSON, or a path to it")
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
-    parser.add_argument("--inner", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     load = lambda text: json.loads(text) if text.lstrip().startswith("{") else json.loads(Path(text).read_text())
     demo = Demo.from_config(load(args.demo))
@@ -434,8 +406,6 @@ def main(argv: list[str] | None = None) -> int:
         print("recorder: " + "; ".join(problems), file=sys.stderr)
         return 2
     try:
-        if args.inner:
-            return inner_main(args.out, demo, scenario)
         scratch = Path(tempfile.mkdtemp(prefix="buildctl-record-"))
         control, repo = scratch / "control", scratch / "repo"
         control.mkdir(mode=0o700); repo.mkdir()
