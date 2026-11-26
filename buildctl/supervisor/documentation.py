@@ -375,8 +375,18 @@ This delta includes the documentation step. Besides the code, judge the document
 2. Nothing this phase made stale is left stale: a command, flag, version, path or behavior the code changed is not still described the old way.
 3. No persuasion has crept in. Docs describe what exists; marketing language is a defect.
 `DOC_RESULT` is the documenter's own account of what it changed and why. Treat it like implementer claims: supplementary, never proof. A `no_change` result is valid only if its reason holds for this delta.
+`documentation_rules` in the trusted binding are the operator's rules for the docs: the paths the documenter may change, the changelog and the forbidden phrases. They are trusted. A documenter that leaves something out because a rule forbids it is following the rule, not skipping the work. When a rule makes accurate documentation impossible (for example a forbidden phrase the feature's own name contains), file one finding with `kind` set to `documentation` and `treatment` set to `human`, naming the rule and the conflict in `rationale` and the operator's choice in `required_change` (change the rule, or accept the docs as they are). Do not ask the documenter to break the rule.
 Every finding must cite a path in this delta's coverage. A documentation defect in a file this delta changed is filed against that file. A stale statement in a documentation file this delta did not change is filed against the changed code path that made it stale, with `kind` set to `documentation` and the documentation file named in `required_change`. Documentation findings go back to the documenter, not the implementer; when the code itself is wrong, file an ordinary finding on the code.
 """
+
+def review_rules(config: dict[str, Any]) -> dict[str, Any]:
+    """The documentation rules the reviewer may rely on: the operator's, from the trusted configuration."""
+    settings = section(config)
+    return {"paths": list(patterns(config)), "changelog": settings.get("changelog"),
+            "unreleased_heading": settings.get("unreleased_heading", "Unreleased"),
+            "forbidden_phrases": [item for item in settings.get("forbidden_phrases", []) if str(item).strip()],
+            "mode": mode(config)}
+
 
 SKIPPED_NOTE = ("DOCUMENTATION NOTE (kernel-owned)\nThe documentation step was switched off for this phase by "
                 "configuration (`documentation: false`). Do not raise findings for documentation this phase "
