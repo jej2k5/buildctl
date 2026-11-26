@@ -85,6 +85,8 @@ def handler_for(build: Build, token: str, port_ref: list[int]) -> type[BaseHTTPR
                     return self._send(HTTPStatus.OK, dumps(build.record(int(query.get("phase", [""])[0]),
                                                                         query.get("record", [""])[0],
                                                                         int(query.get("seq", [""])[0]))))
+                if url.path == "/api/drafts":
+                    return self._send(HTTPStatus.OK, dumps(build.drafts()))
                 if url.path == "/api/trust-diff":
                     return self._send(HTTPStatus.OK, dumps(build.trust_diff()))
             except Refused as exc:
@@ -103,14 +105,19 @@ def handler_for(build: Build, token: str, port_ref: list[int]) -> type[BaseHTTPR
                 return self._error(HTTPStatus.UNAUTHORIZED, "missing or wrong console token")
             if not self.headers.get("Content-Type", "").startswith("application/json"):
                 return self._error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "send JSON")
-            if urlparse(self.path).path != "/api/pull":
+            path = urlparse(self.path).path
+            if path not in {"/api/pull", "/api/drafts"}:
                 return self._error(HTTPStatus.NOT_FOUND, "not found")
             try:
                 length = min(int(self.headers.get("Content-Length", "0")), 10_000)
                 body = json.loads(self.rfile.read(length) or b"{}")
-                job = build.pull(str(body["action"]), generation=int(body["generation"]),
-                                 confirm=str(body.get("confirm", "")), operation=body.get("operation"),
-                                 answer=body.get("answer"), text=str(body.get("text", "")))
+                if path == "/api/drafts":
+                    job = build.draft_pull(str(body["action"]), draft=str(body.get("draft", "")),
+                                           confirm=str(body.get("confirm", "")), digest=str(body.get("digest", "")))
+                else:
+                    job = build.pull(str(body["action"]), generation=int(body["generation"]),
+                                     confirm=str(body.get("confirm", "")), operation=body.get("operation"),
+                                     answer=body.get("answer"), text=str(body.get("text", "")))
             except Refused as exc:
                 return self._error(exc.status, str(exc))
             except (KeyError, ValueError, TypeError) as exc:

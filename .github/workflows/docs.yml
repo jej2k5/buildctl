@@ -36,8 +36,13 @@ jobs:
       - run: python3 docs/build.py --check
       # A committed page cannot name its own commit, so the published copy is stamped here.
       - run: sed -i "s|<span data-commit></span>|<span data-commit> at ${GITHUB_SHA::7}</span>|" ui/buildctl_ui/web/docs/index.html
+      # One artifact name per attempt: a re-run would otherwise find the earlier attempts' uploads too,
+      # and deploy-pages refuses when more than one artifact has its name.
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ui/buildctl_ui/web/docs
+          name: github-pages-${{ github.run_attempt }}
       - id: deploy
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}

@@ -18,11 +18,19 @@ buildctl-ui tui      # the same in the terminal
 | Ledger | The audit chain, newest first, filterable by phase and event. |
 | Setup | Readiness in the order buildctl checks it, and the trust levers. |
 
-Keys `1` to `6` switch views in both surfaces, in rail order. Both open on the Plan.
+Keys `1` to `6` switch views in both surfaces, in rail order; `7` opens Release drafts, which is in the web console only. Both open on the Plan.
 
 The current call, the Stop view and each phase's detail show the phase's steps: Implement, Gates, Docs when [documentation](#documentation) is on, Review and Commit, each with its signal shape and what it took. The step where the build stopped is marked, and a documenter sent back is counted there ("pass 2 of 4 · 1 send-back"). A phase with `documentation: false` shows its Docs step as off. When documentation is on, a Docs tab shows the documenter's account, each documentation file's change as a diff, and the documentation gates; on [DOC_SCOPE_VIOLATION](#DOC_SCOPE_VIOLATION) it opens first, leading with the files that were outside the documentation paths. Setup lists the documentation settings, and the Phases table counts documenter passes. The terminal UI shows the steps; the Docs tab is web only for now.
 
 The Plan view reads `docs/ROADMAP.md`, `docs/DISCOVERY_DECISIONS.md` and `docs/DISCOVERY_RISKS.md` at the commit `trust init` pinned, so an agent cannot rewrite your summary of its own phase. The plain lines are optional: a phase's outcome is the indented line under it in `docs/ROADMAP.md`, and a checkpoint's instruction is a line such as `Before phase 6, the operator: Send a real webhook.` buildctl-discover writes both when the interview gives a phase an outcome and a checkpoint a note.
+
+### Drafts in the console {#console-drafts}
+
+Release drafts (key 7) shows what [buildctl-drafts](#drafts) wrote, one run at a time. Each draft is a tab, marked by its state: a caution diamond while it waits for you, a danger square if it failed a check, a clear circle once approved. A draft you discard leaves the tabs and is listed under them. The claims ledger sits at the left, with any unbacked claim first and why it failed; open a claim to see the text it quotes. The draft reads at the right, and your decision comes after its last line.
+
+Approving is signed: the checks prove each claim cites a source that exists, not that the source supports it, and that read is yours. **Review and sign** shows what you are signing, lists any check the draft failed, and asks for the first 7 characters of the draft's digest. If the draft changed since the page showed it, the console refuses. Discard records without a signature. Neither one posts anything.
+
+**Write drafts** starts a paid run. Its conditions are the ones `buildctl-drafts make` checks: the package is installed in the console's Python, the build is trusted, the sandbox was checked in the last 24 hours, a milestone is complete, and the run fits today's cap counting both the build's spend and earlier drafts. It names the ceiling (about $2 per draft, each may be rewritten once), asks you to type the milestone's name, and runs detached.
 
 ## Watching a discovery draft
 

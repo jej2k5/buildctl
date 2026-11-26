@@ -9,6 +9,7 @@ const S = {
   cells: {}, trustDiff: null, trustDiffKey: "", artifact: null, error: null,
   activity: null, activityKey: "", recordRow: null, decision: { answer: "" },
   docs: null, docsKey: "", docOpen: {},
+  drafts: null, draftsKey: "", draftRun: "", draftMilestone: "",
 };
 const PRIMARY = ["start", "recover", "pause", "resume", "approve", "decide", "grant", "retry", "reconcile-accept", "reconcile-retry"];
 const STOP_LEVERS = ["approve", "decide", "grant", "retry", "reconcile-accept", "reconcile-retry", "recover"];
@@ -123,6 +124,9 @@ function renderBar(m) {
   const waiting = m.escalation?.aspect === "caution";
   flag.className = `rail-flag ${waiting ? "caution" : ""}`;
   flag.setAttribute("aria-label", m.escalation ? `${waiting ? "waiting for you" : "stopped"}: ${m.escalation.code}` : "");
+  const drafts = $("#drafts-flag");
+  drafts.hidden = !m.drafts_waiting;
+  drafts.setAttribute("aria-label", m.drafts_waiting ? `${m.drafts_waiting} drafts waiting for you` : "");
   const root = m.control_root.split("/").filter(Boolean);
   $("#rail-foot").innerHTML = `<span title="${esc(m.control_root)}">State in <code>…/${esc(root.slice(-2).join("/"))}</code></span><br>Generation ${m.state.generation}`;
   for (const link of document.querySelectorAll(".rail a")) {
@@ -306,8 +310,8 @@ function debatePanel(d) {
     <p class="muted">Agent text, shown as written. Each turn is also in What agents did.</p></div>`;
 }
 
-function renderResult(key) {
-  const stamp = S.stamps[key];
+function renderResult(key, { stamp: withStamp = true } = {}) {
+  const stamp = withStamp && S.stamps[key];
   const r = S.results[key];
   let html = "";
   if (stamp) html += `<div class="stamp fresh" role="img" aria-label="Signed by you">SIGNED <span>${esc(stamp)}</span></div>`;
@@ -739,6 +743,9 @@ function planNeeds(m) {
   }
   if (m.bootstrapped && m.trust && m.trust.ok === false)
     items.push({ aspect: "caution", text: `Trust needs renewing: ${m.trust.error || "the trust anchor no longer matches"}`, link: "#/setup", linkText: "Open setup" });
+  // Drafts never hold up the build, so they come last; the rail flag can scroll out of view on a narrow screen.
+  if (m.drafts_waiting)
+    items.push({ aspect: "caution", text: `${m.drafts_waiting === 1 ? "1 release draft waits" : `${m.drafts_waiting} release drafts wait`} for your signature or discard. The build does not wait on them.`, link: "#/drafts", linkText: "Open drafts" });
   return items;
 }
 
@@ -909,6 +916,197 @@ function viewDraft(m) {
     </div>`;
 }
 
+// ---------- release drafts ----------
+// buildctl-drafts' runs, read from its files. Approving is the operator's read, so it is signed with the
+// draft's digest; discarding records only. Nothing here publishes.
+const DRAFT_SIGN = 7;
+function releaseAspect(d) {
+  if (d.state === "approved") return ["clear", "approved"];
+  if (d.verdict !== "sourced") return ["danger", "failed a check"];
+  return ["caution", "waiting for you"];
+}
+function draftCount(d) { return d.claims.length ? `${d.backed}/${d.claims.length}` : "no claims"; }
+
+function markdown(text) {
+  // A small, escaped renderer for draft bodies: headings, paragraphs, lists, fenced code, inline code, bold.
+  const span = (value) => esc(value).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  const out = []; let list = null, para = [], code = null;
+  const flush = () => { if (para.length) { out.push(`<p>${span(para.join(" "))}</p>`); para = []; } if (list) { out.push(`</${list}>`); list = null; } };
+  for (const line of String(text || "").split("\n")) {
+    if (code !== null) { if (/^```/.test(line)) { out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`); code = null; } else code.push(line); continue; }
+    if (/^```/.test(line)) { flush(); code = []; continue; }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { flush(); const level = Math.min(4, h[1].length + 1); out.push(`<h${level}>${span(h[2])}</h${level}>`); continue; }
+    const item = line.match(/^\s*(?:([-*])|(\d+)\.)\s+(.*)$/);
+    if (item) { if (para.length) { out.push(`<p>${span(para.join(" "))}</p>`); para = []; } const kind = item[1] ? "ul" : "ol";
+      if (list !== kind) { if (list) out.push(`</${list}>`); out.push(`<${kind}>`); list = kind; } out.push(`<li>${span(item[3])}</li>`); continue; }
+    if (!line.trim()) { flush(); continue; }
+    if (list) { out.push(`</${list}>`); list = null; }
+    para.push(line.trim());
+  }
+  if (code !== null) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+  flush();
+  return out.join("");
+}
+
+function claimRow(c, open) {
+  const where = [c.ref, c.line ? `:${c.line}` : ""].join("");
+  const kind = { file: "file", commit: "commit", changelog: "changelog", finding: "open finding" }[c.kind] || c.kind || "source";
+  const quote = c.quote ? `<div class="quote"><span class="muted">Quoted from ${esc(c.ref || "")}</span>${esc(c.quote)}</div>` : "";
+  const why = c.why ? `<span class="why">${esc(c.why)}</span>` : "";
+  return `<li class="${c.why ? "unbacked" : ""}"><details ${open ? "open" : ""}><summary>${sig(c.why ? "danger" : "clear", c.why ? "unbacked" : "backed")}<span class="n">${c.n}</span>
+    <span>${inline(c.text)}</span><span class="src">${esc(kind)} · ${esc(kind === "commit" ? short(where, 7) : where)}</span>${why}</summary>${quote}</details></li>`;
+}
+
+function draftChecks(d) {
+  const rows = [];
+  rows.push(`<li>${sig(d.voice && !/plain/.test(d.voice) ? "clear" : "pending", "voice file")}<span>Voice</span><span class="detail">${esc(d.voice || "none, written plain")}</span></li>`);
+  for (const item of d.contract) rows.push(`<li class="blocked">${sig("danger", "failed")}<span>Shape of the draft</span><span class="detail">${esc(item)}</span></li>`);
+  if (d.lint.length) for (const item of d.lint) rows.push(`<li class="blocked">${sig("danger", "failed")}<span>Voice rules</span><span class="detail">${esc(item)}</span></li>`);
+  else rows.push(`<li>${sig("clear", "held")}<span>Voice rules</span><span class="detail">no banned phrases, within the word limit</span></li>`);
+  return `<ul class="conds draft-checks">${rows.join("")}</ul>`;
+}
+
+function draftSign(d) {
+  const key = `draft:${d.id}`;
+  if (d.state === "approved") {
+    return `<div class="draft-decision"><div class="stamp${S.stamps[key] ? " fresh" : ""}" role="img" aria-label="Signed by you">SIGNED <span>approved${d.decided_at ? ` · ${esc(day(d.decided_at))} ${esc(clock(d.decided_at))}` : ""}</span></div>
+      <p class="muted">Recorded in the drafts log. Nothing was posted.</p>${renderResult(key, { stamp: false })}</div>`;
+  }
+  const busy = S.busy[key];
+  if (!S.open[key]) {
+    return `<div class="draft-decision"><button class="btn quiet" data-draft-open="${esc(d.id)}" aria-expanded="false">Review and sign…</button>
+      <button class="btn quiet" data-draft-discard="${esc(d.id)}" ${busy ? "disabled" : ""}>Discard</button>
+      <p class="muted">Either one only records your decision in the drafts log. Nothing is posted.</p>${renderResult(key)}</div>`;
+  }
+  const typed = S.typed[key] || "";
+  const want = d.digest.slice(0, DRAFT_SIGN);
+  const match = typed.trim().toLowerCase() === want;
+  const unbacked = d.claims.filter((c) => c.why);
+  const failing = unbacked.length || d.lint.length || d.contract.length
+    ? `<p class="ceremony-warn">${sig("danger", "failed a check")} You are signing a draft that failed ${unbacked.length + d.lint.length + d.contract.length === 1 ? "a check" : "checks"}:</p>
+       <ul class="ceremony-list">${unbacked.map((c) => `<li>Claim ${c.n}: ${inline(c.text)} <span class="muted">${esc(c.why)}</span></li>`).join("")}${[...d.lint, ...d.contract].map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : "";
+  return `<div class="ceremony" role="group" aria-label="Sign ${esc(d.title)}">
+    <p class="ceremony-caption"><b>What you are signing.</b> The checks proved each claim cites a source that exists. They did not prove the source supports the claim, or that every sentence is in the ledger. That read is yours.</p>
+    ${failing}
+    <div><div class="muted">Digest of this draft</div><div class="evidence"><mark>${esc(want)}</mark>${esc(d.digest.slice(DRAFT_SIGN))}</div></div>
+    <div class="ceremony-row">
+      <div class="field"><label for="typed-${esc(key)}">Type the first ${DRAFT_SIGN} characters of the digest</label>
+        <input id="typed-${esc(key)}" data-typed="${esc(key)}" data-want="${esc(want)}" value="${esc(typed)}" autocomplete="off" spellcheck="false"
+          aria-invalid="${typed && !match ? "true" : "false"}" aria-describedby="hint-${esc(key)}">
+        <span class="hint" id="hint-${esc(key)}">${typed && !match ? "Does not match the digest yet." : "If the draft changes before you sign, the console refuses."}</span></div>
+      <button class="btn sign" data-draft-sign="${esc(d.id)}" ${match && !busy ? "" : "disabled"}>${busy ? "Signing…" : "Sign and approve"}</button>
+      <button class="btn quiet" data-draft-cancel="${esc(d.id)}">Cancel</button>
+    </div>${renderResult(key)}</div>`;
+}
+
+function draftPanel(d, run) {
+  const unbacked = d.claims.filter((c) => c.why);
+  const [aspect, word] = releaseAspect(d);
+  const head = `<div class="ledger-head">${sig(d.verdict === "sourced" ? "clear" : "danger", d.verdict)}
+      <h3>${d.backed} of ${d.claims.length} claims cite a source that exists</h3><small>checked by code, not a model</small></div>
+    ${unbacked.length ? `<ol class="claims urgent">${unbacked.map((c) => claimRow(c, true)).join("")}</ol>` : ""}`;
+  const backed = d.claims.filter((c) => !c.why);
+  const fields = d.kind === "positioning" && (d.fields.description || (d.fields.topics || []).length)
+    ? `<h4 class="ledger-sub">Repository</h4><dl class="ledger-fields"><dt>Description</dt><dd>${esc(d.fields.description || "")}</dd>
+       <dt>Topics</dt><dd>${(d.fields.topics || []).map((t) => `<code>${esc(t)}</code>`).join(" ")}</dd></dl>` : "";
+  const limits = d.known_limits.length ? `<h4 class="ledger-sub">Known limits <small>the writer's list, printed after the body</small></h4>
+    <ul class="ledger-list">${d.known_limits.map((t) => `<li>${inline(t)}</li>`).join("")}</ul>` : "";
+  const ledger = `<h4 class="ledger-sub">Claims</h4><ol class="claims">${backed.map((c) => claimRow(c, false)).join("")}</ol>
+    ${fields}${limits}<h4 class="ledger-sub">Checks</h4>${draftChecks(d)}`;
+  const words = (d.body.match(/[\w'-]+/g) || []).length;
+  return `<div class="draft-grid">
+    <div class="draft-head">${head}</div>
+    <aside class="draft-ledger" aria-label="Claims ledger">${ledger}</aside>
+    <article class="draft-page" aria-label="${esc(d.title)}">
+      <p class="draft-meta">${sig(aspect, word)} ${esc(word)} · ${esc(d.kind)} · ${d.attempts || 1} ${d.attempts > 1 ? "attempts" : "attempt"} · ${words} words · ${money(d.cost)}</p>
+      <div class="prose"><h3 class="prose-title">${esc(d.heading || d.title)}</h3>${markdown(d.body.replace(/^#\s[^\n]*\n/, ""))}</div>
+      ${draftSign(d)}
+    </article></div>`;
+}
+
+function draftLever(lever) {
+  const key = "drafts-make";
+  const locked = !lever.enabled;
+  const blocked = lever.conditions.filter((c) => !c.held);
+  const conds = `<ul class="conds">${lever.conditions.map((c) => `<li class="${c.held ? "" : "blocked"}">${sig(c.held ? "clear" : "danger", c.held ? "held" : "blocked")}<span>${esc(c.label)}</span><span class="detail">${esc(c.detail || "")}</span></li>`).join("")}</ul>`;
+  const note = locked ? `<p class="lock-note" id="lock-${key}">${ico("lock")}Locked by ${blocked.length === 1 ? "one condition" : `${blocked.length} conditions`}: ${esc(blocked.map((c) => c.label.toLowerCase()).join("; "))}.</p>` : "";
+  const kinds = lever.kinds.map((k) => ({ "release-notes": "release notes", positioning: "positioning", "launch-post": "launch post", "demo-script": "demo script", social: "social post" }[k]));
+  const milestone = S.draftMilestone && lever.milestones.includes(S.draftMilestone) ? S.draftMilestone : lever.milestones[lever.milestones.length - 1];
+  let ceremony = "";
+  if (S.open[key] && !locked) {
+    const typed = S.typed[key] || "";
+    const match = typed.trim().toLowerCase() === (milestone || "").toLowerCase();
+    const pick = lever.milestones.length > 1 ? `<div class="field"><label for="draft-milestone">Milestone</label><select id="draft-milestone" data-draft-milestone>
+      ${lever.milestones.map((name) => `<option ${name === milestone ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></div>` : "";
+    ceremony = `<div class="ceremony" role="group" aria-label="Authorize a paid drafts run">
+      <p class="ceremony-caption"><b>What you are authorizing.</b> ${kinds.length} writer calls at about ${money(lever.estimate / kinds.length / 2)} each, booked against today's cap. Each draft may be rewritten once, so the run books at most ${money(lever.estimate)}.</p>
+      ${pick}<div><div class="muted">Milestone</div><div class="evidence"><mark>${esc(milestone)}</mark></div></div>
+      <div class="ceremony-row"><div class="field"><label for="typed-${key}">Type the milestone's name</label>
+        <input id="typed-${key}" data-typed="${key}" data-want="${esc(milestone)}" value="${esc(typed)}" autocomplete="off" spellcheck="false" aria-invalid="${typed && !match ? "true" : "false"}" aria-describedby="hint-${key}">
+        <span class="hint" id="hint-${key}">The run starts detached and keeps going if you close the console.</span></div>
+      <button class="btn sign" data-draft-make ${match && !S.busy[key] ? "" : "disabled"}>${S.busy[key] ? "Starting…" : "Sign and write"}</button>
+      <button class="btn quiet" data-draft-cancel="make">Cancel</button></div></div>`;
+  }
+  return `<div class="interlock"><article class="lever ${locked ? "locked" : ""}" id="lever-${key}">
+    <div class="lever-plate">${locked ? ico("lock") : ""}</div>
+    <div class="lever-body"><div class="lever-head"><div><h3>Write drafts <span class="tag">paid</span> <span class="tag">runs detached</span></h3>
+      <p>${esc(kinds.join(", "))}, from one completed milestone. Up to ${money(lever.estimate)}: ${kinds.length} drafts at ${money(lever.estimate / kinds.length / 2)}, each may be rewritten once.</p></div>
+      <button class="btn quiet" data-draft-open="make" ${locked ? `disabled aria-describedby="lock-${key}"` : ""} aria-expanded="${S.open[key] ? "true" : "false"}">Write drafts…</button></div>
+      ${conds}${note}${ceremony}${renderResult(key)}</div></article></div>`;
+}
+
+function viewDrafts(m) {
+  const v = S.drafts;
+  if (!v) return `<div class="view-head"><h1>Release drafts</h1></div><p class="loading">Reading the drafts…</p>`;
+  const lever = `<section class="section"><h2 class="h2">Write new drafts <small>A fresh run from a milestone. Earlier drafts stay.</small></h2>${draftLever(v.lever)}</section>`;
+  if (!v.runs.length) {
+    return `<div class="view-head"><h1>Release drafts</h1><p>Nothing here is published</p></div>
+      <div class="panel"><div class="empty"><p>No drafts yet.</p><p class="muted">buildctl-drafts writes release notes, positioning, a launch post and a demo script from a finished milestone, and checks that every claim cites a source that exists.</p></div></div>${lever}`;
+  }
+  const run = v.runs.find((r) => r.id === S.draftRun) || v.runs[0];
+  const shown = run.drafts.filter((d) => d.state !== "discarded");
+  const discarded = run.drafts.filter((d) => d.state === "discarded");
+  const selected = run.drafts.find((d) => d.id === S.tab.drafts) || shown[0] || run.drafts[0];
+  const social = !run.drafts.some((d) => d.kind === "social");
+  const tab = (d) => { const [aspect, word] = releaseAspect(d); const on = d.id === selected.id;
+    return `<button role="tab" id="tab-drafts-${esc(d.id)}" aria-selected="${on}" tabindex="${on ? 0 : -1}" aria-controls="panel-drafts" data-tab="drafts" data-tab-id="${esc(d.id)}">${sig(aspect, word)}${esc(d.title)}<span class="count">${esc(draftCount(d))}</span></button>`; };
+  const skipped = social ? `<span class="tab-skipped" title="${v.operator_voice ? "Not part of this run." : "Write ~/.config/buildctl/voice.md to get a social post."}">${sig("pending", "skipped")}Social post<span class="count">${v.operator_voice ? "not in this run" : "no voice file"}</span></span>` : "";
+  const runs = v.runs.length > 1 ? `<label class="drafts-run">Run <select data-draft-run>${v.runs.map((r) => `<option value="${esc(r.id)}" ${r.id === run.id ? "selected" : ""}>${esc(day(r.at))} ${esc(clock(r.at))} · ${esc(r.label)} · ${r.drafts.length} drafts · ${money(r.cost)}</option>`).join("")}</select></label>`
+    : `<p class="drafts-run mono">${esc(day(run.at))} ${esc(clock(run.at))} · ${run.drafts.length} drafts · ${money(run.cost)}</p>`;
+  const gone = discarded.length ? `<p class="drafts-discarded">${discarded.length} discarded: ${discarded.map((d) => `<button class="linkish" data-tab="drafts" data-tab-id="${esc(d.id)}">${esc(d.title)}</button>`).join(", ")}</p>` : "";
+  const banner = selected.state === "discarded" ? `<p class="draft-gone">You discarded this draft${selected.decided_at ? ` ${esc(ago(selected.decided_at))}` : ""}. It stays in the run; approving it would still need your signature.</p>` : "";
+  return `<div class="view-head"><h1>Release drafts</h1><p>Milestone ${esc(run.label)} · written from <span class="mono">${esc(short(run.until, 7))}</span> · nothing here is published</p>${runs}</div>
+    <div class="tabs drafts-tabs" role="tablist" aria-label="Drafts in this run">${shown.map(tab).join("")}${skipped}</div>${gone}
+    <div class="tab-panel" role="tabpanel" id="panel-drafts">${banner}${draftPanel(selected, run)}</div>${lever}`;
+}
+
+async function loadDrafts() {
+  if (S.route.view !== "drafts") { const had = S.drafts != null; S.drafts = null; S.draftsKey = ""; return had; }
+  try {
+    const { body } = await api("/api/drafts");
+    const key = JSON.stringify(body);
+    if (key === S.draftsKey) return false;
+    S.drafts = body; S.draftsKey = key;
+    return true;
+  } catch (error) { S.drafts = { runs: [], lever: { enabled: false, conditions: [{ label: "Drafts readable", held: false, detail: error.message }], kinds: [], milestones: [], estimate: 0 }, operator_voice: false }; return true; }
+}
+
+async function draftPull(key, payload, { stampOnOk = false } = {}) {
+  S.busy[key] = true; delete S.results[key]; render();
+  try {
+    const { status, body } = await api("/api/drafts", { method: "POST", body: JSON.stringify(payload) });
+    const ok = status < 300;
+    const text = body.detached ? `Started ${body.command} as pid ${body.pid}. It keeps running if you close the console; new drafts appear here when it finishes.`
+      : ok ? `${body.command} finished.` : `${body.command} exited ${body.returncode}.`;
+    S.results[key] = { ok, text, output: body.detached ? "" : body.output };
+    if (ok) { S.open[key] = false; S.typed[key] = ""; if (stampOnOk) S.stamps[key] = "approved"; }
+    announce(text);
+  } catch (error) {
+    S.results[key] = { ok: false, text: error.message }; announce(error.message);
+  } finally { S.busy[key] = false; S.draftsKey = ""; await refresh(true); }
+}
+
 const DAY_FMT = (iso) => iso.slice(0, 10);
 function viewLedger(m) {
   const events = S.audit;
@@ -994,7 +1192,7 @@ function render() {
   const focused = document.activeElement;
   const focusKey = focused?.dataset?.typed || focused?.dataset?.lever || focused?.dataset?.tabId || focused?.id;
   const caret = focused?.selectionStart;
-  const view = m.draft ? viewDraft : { line: viewLine, stop: viewStop, phases: viewPhases, ledger: viewLedger, setup: viewSetup, plan: viewPlan }[S.route.view] || viewPlan;
+  const view = m.draft ? viewDraft : { line: viewLine, stop: viewStop, phases: viewPhases, ledger: viewLedger, setup: viewSetup, plan: viewPlan, drafts: viewDrafts }[S.route.view] || viewPlan;
   const main = $("#main");
   main.innerHTML = view(m);
   for (const el of main.querySelectorAll("[data-w]")) el.style.width = `${Math.max(0.02, Number(el.dataset.w)) * 100}%`;
@@ -1030,7 +1228,8 @@ async function refresh(force = false) {
     if (S.route.view === "setup") await loadTrustDiff(body);
     const activityChanged = await loadActivity(body);
     const docsChanged = await loadDocs(body);
-    if (changed || activityChanged || docsChanged) render();
+    const draftsChanged = await loadDrafts();
+    if (changed || activityChanged || docsChanged || draftsChanged) render();
   } catch (error) {
     if (error.status === 401) {
       $("#main").innerHTML = `<div class="panel"><div class="empty"><p>${sig("danger", "refused")} This tab has no console token.</p><p>Open the link <code>buildctl-ui</code> printed in your terminal. The token in it is what lets this page read the build.</p></div></div>`;
@@ -1104,6 +1303,17 @@ document.addEventListener("toggle", (event) => {
 }, true);
 document.addEventListener("click", async (event) => {
   if (event.target.closest("[data-dismiss-receipt]")) { S.signed = null; render(); return; }
+  const draft = event.target.closest("[data-draft-open],[data-draft-cancel],[data-draft-sign],[data-draft-discard],[data-draft-make]");
+  if (draft) {
+    const ds = draft.dataset;
+    if (ds.draftOpen) { const key = ds.draftOpen === "make" ? "drafts-make" : `draft:${ds.draftOpen}`; S.open[key] = true; delete S.results[key]; render(); $(`[data-typed="${CSS.escape(key)}"]`)?.focus(); }
+    else if (ds.draftCancel) { const key = ds.draftCancel === "make" ? "drafts-make" : `draft:${ds.draftCancel}`; S.open[key] = false; S.typed[key] = ""; render(); }
+    else if (ds.draftSign) { const d = S.drafts.runs.flatMap((r) => r.drafts).find((x) => x.id === ds.draftSign); const key = `draft:${ds.draftSign}`;
+      if (d) draftPull(key, { action: "approve", draft: d.id, digest: d.digest, confirm: S.typed[key] || "" }, { stampOnOk: true }); }
+    else if (ds.draftDiscard) draftPull(`draft:${ds.draftDiscard}`, { action: "discard", draft: ds.draftDiscard });
+    else if (draft.hasAttribute("data-draft-make")) draftPull("drafts-make", { action: "make", confirm: S.typed["drafts-make"] || "" });
+    return;
+  }
   if (event.target.closest("[data-fold]")) { S.planOpen = !S.planOpen; render(); $("[data-fold]")?.focus(); return; }
   const t = event.target.closest("[data-lever],[data-sign],[data-cancel],[data-tab],[data-goto],[data-phase],[data-artifact],[data-record]");
   if (!t) return;
@@ -1151,6 +1361,13 @@ document.addEventListener("input", (event) => {
     if (button) button.disabled = !decisionReady();
     return;
   }
+  if (event.target.dataset.want !== undefined) {
+    const match = event.target.value.trim().toLowerCase() === event.target.dataset.want.toLowerCase();
+    const button = key === "drafts-make" ? $("[data-draft-make]") : $(`[data-draft-sign="${CSS.escape(key.slice(6))}"]`);
+    if (button) button.disabled = !match;
+    event.target.setAttribute("aria-invalid", event.target.value && !match ? "true" : "false");
+    return;
+  }
   const lever = S.model.levers.find((l) => leverKey(l) === key);
   const c = lever?.confirm;
   if (!c) return;
@@ -1164,6 +1381,8 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.dataset?.draftRun !== undefined) { S.draftRun = event.target.value; S.tab.drafts = ""; render(); return; }
+  if (event.target.dataset?.draftMilestone !== undefined) { S.draftMilestone = event.target.value; S.typed["drafts-make"] = ""; render(); return; }
   if (event.target.dataset?.answer) { S.decision.answer = event.target.dataset.answer; render(); $(`[data-answer="${event.target.dataset.answer}"]`)?.focus(); return; }
   const f = event.target.dataset?.filter;
   if (f) { S.ledger[f] = event.target.value; render(); }
@@ -1172,7 +1391,12 @@ document.addEventListener("change", (event) => {
 document.addEventListener("keydown", (event) => {
   const t = event.target;
   if ((event.key === "Enter" || event.key === " ") && (t.dataset?.goto || t.dataset?.phase || t.dataset?.artifact || t.dataset?.record)) { event.preventDefault(); t.click(); return; }
-  if (event.key === "Enter" && t.dataset?.typed) { const b = $(`[data-sign="${CSS.escape(t.dataset.typed)}"]`); if (b && !b.disabled) b.click(); return; }
+  if (event.key === "Enter" && t.dataset?.typed) {
+    const k = t.dataset.typed;
+    const b = k === "drafts-make" ? $("[data-draft-make]") : k.startsWith("draft:") ? $(`[data-draft-sign="${CSS.escape(k.slice(6))}"]`) : $(`[data-sign="${CSS.escape(k)}"]`);
+    if (b && !b.disabled) b.click(); return; }
+  if (event.key === "Escape" && t.dataset?.typed && (t.dataset.typed === "drafts-make" || t.dataset.typed.startsWith("draft:"))) {
+    $(`[data-draft-cancel="${t.dataset.typed === "drafts-make" ? "make" : CSS.escape(t.dataset.typed.slice(6))}"]`)?.click(); return; }
   if (event.key === "Escape" && t.dataset?.typed) { $(`[data-cancel="${CSS.escape(t.dataset.typed)}"]`)?.click(); return; }
   if (t.getAttribute?.("role") === "tab" && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
     const all = [...t.parentElement.querySelectorAll("[role=tab]")];
@@ -1180,7 +1404,7 @@ document.addEventListener("keydown", (event) => {
     S.tab[next.dataset.tab] = next.dataset.tabId; render(); $(`[data-tab-id="${next.dataset.tabId}"]`)?.focus(); return;
   }
   if (["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName) || event.metaKey || event.ctrlKey || event.altKey) return;
-  const routes = { 1: "plan", 2: "line", 3: "stop", 4: "phases", 5: "ledger", 6: "setup" };
+  const routes = { 1: "plan", 2: "line", 3: "stop", 4: "phases", 5: "ledger", 6: "setup", 7: "drafts" };
   if (routes[event.key]) location.hash = `#/${routes[event.key]}`;
 });
 

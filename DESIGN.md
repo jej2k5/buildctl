@@ -273,7 +273,7 @@ Signal-plan paper and ink, four signal aspects, and two reserved single-meaning 
 
 **The One Stamp Rule.** Stamp violet appears only where a human signs or has signed. No other control, link, chart or highlight uses it.
 
-**The Waiting For You Rule.** Amber means the build is waiting on the operator. It is not a generic warning tint.
+**The Waiting For You Rule.** Amber means something is waiting on the operator: the build at a stop or checkpoint, or a release draft awaiting signature. It is not a generic warning tint.
 
 ## Typography
 
@@ -368,7 +368,7 @@ Standard controls, ink on paper.
 
 ### Navigation
 - **Top bar:** `bar` mass carrying, left to right, the lowercase mono wordmark `buildctl`, repository and branch@commit, the build aspect between two `bar-rule` hairlines (large glyph, word, code in mono), then facts: spend versus cap meter (4px bar, `bar-ink` fill, danger above 95% of cap), sandbox age, trust digest, lock holder.
-- **Rail:** `paper-2` column with 18px stroked line icons, labels at 500 weight in `ink-2`, and kbd hints 1–6, Plan first, which is also the view the console opens on. Hover fills `rule`; the current page sits on `surface` with an inset hairline and a 3px ink bar on its left edge. The Stop item carries a small danger square, or caution diamond, when there is a stop.
+- **Rail:** `paper-2` column with 18px stroked line icons, labels at 500 weight in `ink-2`, and kbd hints 1–7, Plan first, which is also the view the console opens on. Two hairlines split it: the kernel's views (Plan to Setup, keys 1–6, shared with the terminal UI), then Drafts (key 7, the companion buildctl-drafts package, outside the trust digest), then Manual, which leaves the console for a new tab. Below 820px, where the rail runs as a strip, the hairlines turn vertical. Hover fills `rule`; the current page sits on `surface` with an inset hairline and a 3px ink bar on its left edge. The Stop item carries a small danger square, or caution diamond, when there is a stop. The Drafts item carries a caution diamond while any draft is undecided, and the Plan's status panel repeats it as its last row, since a draft never holds up the build.
 - **Tabs:** sans 500 0.8125rem, `ink-2`, 2px ink underline and 600 weight when selected, counts in mono `ink-3`. The tab panel continues the tab bar's rule with no top border.
 
 ### The Interlocking Table (signature)
@@ -406,6 +406,9 @@ One phase attempt, drawn with the Phase Line's parts: Implement, Gates, Docs (on
 
 ### The Docs Evidence (Operate)
 The Docs tab, first on a documentation stop. A facts strip (mode, the documenter's and the reviewer's model families, passes and send-backs, user-visible). Then, on a scope stop, the out-of-scope files lead with danger squares. Then the documenter's summary, labelled as its own claim; each changed file as a disclosure row (clear circle, mono path, kind, what it reflects, `+N −M`) that opens to its diff; and the documentation gates as rows, a clear circle or a danger square each, with "recorded, did not stop" in optional mode. Diffs carry no hue: removed lines are `ink-3` on `paper-2` behind a `−` gutter mark, added lines ink at 600 behind `+`, hunk rows name their line range under a dotted rule.
+
+### Release Drafts (Operate)
+The Release drafts view (rail item 7, labelled "Drafts" for the rail's width and named "Release drafts" for assistive technology, with the release icon). Tabs per draft carry state by shape: caution diamond waiting for the operator, danger square failed a check (unbacked claim, voice rule or contract), clear circle approved, the pending line for a draft not written (social without a voice file, with the reason as the count). A discarded draft leaves the tabs for a line beneath them. The panel is two columns: the claims ledger at left (head with the backed count and "checked by code, not a model", unbacked claims first in `danger-ink` with why, then backed claims as disclosure rows whose quote opens in a 1px `rule` frame, the positioning fields, the writer's known limits, and checks as condition rows) and the draft at right on the Operate ramp (title at 1rem, sub-headings 0.875rem 600, 68ch). The decision follows the draft's last line. Approving is a signature: a quiet "Review and sign…" opens the Evidence Ceremony, captioned with what the checks do not prove, listing any failed check, with the draft's digest as evidence and its first 7 characters typed; the approved draft carries the stamp. Discard records without ceremony. Below 1100px the ledger head and unbacked claims stay above the draft and the rest of the ledger follows it. The paid "Write drafts" lever is not a kernel lever, so its plate holds no number; its ceremony names the ceiling and asks for the milestone name.
 
 ### Data Tables
 Dense, sticky headers on `paper-2` (600, 0.75rem, `ink-2`, `rule-strong` underline), 7px by 10px cells, 1px `rule` row lines, right-aligned numeric columns, mono for IDs and times. Clickable rows hover to `paper-2`; the selected row adds a 2px inset ink edge. A cell whose value changed flips from `select` to transparent over 0.9s instead of the table re-rendering.
@@ -460,7 +463,7 @@ Under the title, mono 0.8125rem `ink-3`: "For buildctl 0.1.0", read from `buildc
 - **Don't** convey state by colour alone, or reuse a filled signal shape for another meaning (hollow station squares on the line are the one native exception).
 - **Don't** use occupancy blue for links, focus, selection, charts or completed work.
 - **Don't** use stamp violet anywhere a human is not signing.
-- **Don't** use amber as a general warning tint; amber means the build is waiting for the operator.
+- **Don't** use amber as a general warning tint; amber means something is waiting for the operator.
 - **Don't** load web fonts or introduce a display face.
 - **Don't** add rounded corners, drop shadows or gradients.
 - **Don't** add decorative icons; icons are stroked line drawings for navigation and the lock, and status is drawn only with the signal shapes.
