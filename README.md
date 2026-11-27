@@ -9,6 +9,10 @@ buildctl owns the state, the git history and the budget. Agents never touch any 
 
 **[Read the manual](https://jej2k5.github.io/buildctl/)**: getting started, how it works, every escalation code and how to clear it, the full command and configuration reference, and what buildctl does and does not guarantee. The same manual is in `docs/` and inside the console at `/docs/`.
 
+**[Watch a real build, end to end](https://jej2k5.github.io/buildctl/#end-to-end)**: one small project from a written brief through discovery, trust, an unattended run with review and docs, a recorded demo and release drafts, with every finding, minute and dollar it took ($16 and 8 minutes for the run).
+
+![The product a real build made: splitbill's page, built and documented by buildctl in two phases, splitting $84.50 three ways at 18%.](ui/buildctl_ui/web/docs/media/e2e-product.gif)
+
 ## Requirements
 
 - macOS (`sandbox-exec`) or Linux (bubblewrap 0.8.0 or newer; see [Running on Linux](https://jej2k5.github.io/buildctl/#linux)).
