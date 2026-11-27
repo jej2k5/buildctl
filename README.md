@@ -9,6 +9,23 @@ buildctl owns the state, the git history and the budget. Agents never touch any 
 
 **[Read the manual](https://jej2k5.github.io/buildctl/)**: getting started, how it works, every escalation code and how to clear it, the full command and configuration reference, and what buildctl does and does not guarantee. The same manual is in `docs/` and inside the console at `/docs/`.
 
+## Why
+
+AI agents write decent code now. The hard part is leaving one alone: an agent says it's done, and the only proof is tests it wrote itself. It edits files nobody asked about, doesn't stop when it should, and nobody counts what it spends.
+
+buildctl sits between you and the agents. It:
+
+- locks a written plan, including what "done" means, before any code;
+- checks the work with tests the builder didn't write;
+- has a second AI review the work with read-only tools;
+- runs the agents in a sandbox;
+- stops at a daily spending limit;
+- waits for your signature where the plan says to, and logs everything.
+
+**[One real build, start to finish](https://jej2k5.github.io/buildctl/#end-to-end)**: a one-page request became a checked, reviewed and documented app in 8 minutes for $16. The walkthrough covers everything that happened, including what went wrong.
+
+![The app a real build produced: splitbill's page splitting $84.50 three ways at 18%, $33.24, $33.24 and $33.23.](ui/buildctl_ui/web/docs/media/e2e-product.gif)
+
 ## Requirements
 
 - macOS (`sandbox-exec`) or Linux (bubblewrap 0.8.0 or newer; see [Running on Linux](https://jej2k5.github.io/buildctl/#linux)).

@@ -42,7 +42,7 @@ Approving is signed: the checks prove each claim cites a source that exists, not
 
 **Write drafts** starts a paid run. Its conditions are the ones `buildctl-drafts make` checks: the package is installed in the console's Python, the build is trusted, the sandbox was checked in the last 24 hours, a milestone is complete, and the run fits today's cap counting both the build's spend and earlier drafts. It names the ceiling (about $2 per draft, each may be rewritten once), asks you to type the milestone's name, and runs detached.
 
-## Watching a discovery draft
+### Watching a discovery draft {#console-discovery}
 
 `buildctl-ui --session NAME` opens a buildctl-discover session before it is finalized, read-only, in the web console. The rail shows only the Plan, and the bar says DRAFT. The page shows what the gate (`buildctl-discover check`) still counts against the draft: your open calls, open review findings and other failures. It also shows the proposed phases with their outcome lines, the checkpoint notes, the decisions so far, and a feed of what the interviewer records, newest first, refreshing every two seconds. It ends on the next command to run, `buildctl-discover --session NAME check` while the gate fails and `buildctl-discover --session NAME finalize --confirm <digest>` once it passes. The console never finalizes, accepts a risk or answers a call: those stay terminal acts. Nothing in a draft is governed until it is finalized and trusted.
 
