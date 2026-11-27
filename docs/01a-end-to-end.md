@@ -1,18 +1,19 @@
 ## A real build, end to end {#end-to-end}
 
-This chapter follows one real build from a written brief to the checkpoint where it waits for a signature: discovery, trust, an unattended run with review and documentation, a recorded demo and release drafts. Nothing in it is staged. The project is a toy, so the whole run fits on a page, but every agent call, gate, finding and dollar below happened, on 27 November 2026, on a Mac.
+I gave buildctl a one-page request for a small app and left it alone. Eight minutes and $16 later, the code was written, checked, reviewed and documented, and the build was waiting for my signature. This chapter is everything that happened on that run, on 27 November 2026, including what went wrong, with the commands so you can repeat it. The times and costs come from buildctl's own logs.
 
-| Stage | What ran | Cost | Time |
-|---|---|---|---|
-| Discovery | Claude Code as the interviewer, 12 roadmap reviews | about $8.50 for the interviewer, plus 12 review calls, all on the Claude login and outside buildctl's budget | 43 minutes over three sittings |
-| Trust | `trust init`, `isolation verify`, `auth check` | $0 | seconds |
-| The run | 2 phases: build, gates, docs, review, merge | $16.00 of the $25.00 daily cap | 8 minutes 19 seconds |
-| Recorded demo | the product, driven in a browser | $0 | 10 seconds |
-| Release drafts | release notes and a demo script | $4.00 | 79 seconds |
+AI agents write decent code now. What I couldn't do was leave one alone. An agent says it's done, and the proof is tests it wrote itself. It edits files nobody asked about. It doesn't stop when it should, and nobody counts what it spends. Afterwards, all I had was its word. buildctl sits between me and the agents. It locks a written plan, including what "done" means, before any code. It checks the work with tests the builder didn't write. A second AI reviews the work with read-only tools. The agents run in a sandbox. It stops at a daily spending limit, waits for my signature where the plan says to, and logs everything.
 
-### The project {#e2e-project}
+| Step | Time | Cost |
+|---|---|---|
+| The plan (my Claude subscription, outside buildctl's budget; the interviewer's reported usage, without the 12 review calls) | 43 min | $8.50 |
+| The run, both pieces | 8 min 19 s | $16.00 |
+| Recorded demo | 10 s | $0 |
+| Release notes and demo script | 79 s | $4.00 |
 
-splitbill splits a restaurant bill between friends, tip included, down to the cent: a core, a command line, and a small local web page. The repository started with a package skeleton, a base `build.yaml` holding the roles, limits, documentation rules and a [`demo` section](#demos), and one file the operator wrote by hand, the demo scenario:
+### The plan {#e2e-discovery}
+
+The test project was a bill splitter: bill, people and tip in, exact shares out. The shares add up to the total, and no one pays more than a cent extra. It needed a command line and a small local web page. I wrote that on one page, and wrote one more file by hand: the steps for the demo recording at the end.
 
 ```json
 {"title": "Split a dinner bill three ways", "steps": [
@@ -23,11 +24,7 @@ splitbill splits a restaurant bill between friends, tip included, down to the ce
   {"name": "Split it", "click": "Split", "expect": "Each person pays", "hold": 3}]}
 ```
 
-The requirements came from Sam, the requirements owner, as a one-page written brief: who it is for, the money rules (whole cents, tip rounded half up, leftover cents to the first people), the two pieces in order, what is out of scope, and where to stop. Sam could not join live, so the interviewing agent recorded the brief's answers instead of asking them one at a time. That is the only departure from a normal discovery session. Sam is a stand-in: the operator wrote the brief, and the two amended answers below, in Sam's name.
-
-### Discovery {#e2e-discovery}
-
-The operator opened a session, and an agent ran the interview through `buildctl-discover`'s MCP tools:
+An AI interviewer turned my page into a plan through `buildctl-discover`:
 
 ```sh
 buildctl-discover start
@@ -35,30 +32,23 @@ claude -p "Run discovery for the splitbill repository…" \
   --mcp-config mcp.json --allowedTools mcp__discover
 ```
 
-The agent recorded a thesis, 18 decisions in Sam's words (16 standing, after two were superseded), 4 principles, one open question (uneven splits, "not now"), two phases with acceptance contracts, and the MVP stop. It never wrote a proposal file; the files were rendered from that record. Each time `check` passed its own rules, the agent asked for a roadmap review, which buildctl-discover runs as a separate, read-only Claude session under its own protocol, and worked the findings. There were 12 reviews in all. Three of the things they caught would have cost a paid attempt each:
+It recorded every decision (18, of which 16 still stand after two were replaced), two pieces of work, and the checks each piece has to pass. It can't write the plan files; buildctl renders them from what it recorded. A separate, read-only Claude session reviewed the plan and sent it back with problems, twelve times over.
 
-- **Sockets.** Sam asked for a test that the server answers on its port. On macOS the acceptance sandbox cannot bind or connect even on 127.0.0.1, so that test could never pass. Sam's amended answer moved the page into plain functions the gate calls directly, and left the real port to the recorded demo, which runs with loopback allowed.
-- **The amount box.** A plain `<input type="number">` refuses `84.50` in a browser. The contract now requires `step="0.01"` on the total, or the scripted demo would have stalled on submit.
-- **A silent ban.** One gate rejected every `urllib` import, including `urllib.parse`, the standard way to read a query string, while the prompt never said so. The operator found it by writing a throwaway implementation that follows both prompts and running all 13 gate commands against it, outside the sandbox. Twelve passed; the thirteenth was the ban. A third discovery sitting allowed `urllib.parse` and changed nothing else.
+**A check that fails correct code costs money on every attempt. I found one before spending anything.** Before paying for a run, I wrote a quick throwaway version of the app and ran all 13 checks against it. Twelve passed. One banned `urllib.parse`, the standard module for reading the web form, and the instructions never mentioned the ban. A short third round of discovery fixed only that.
 
-The phase contracts that came out are specific. Phase 0's prompt pins the exact command line output, the integer arithmetic, and which inputs must be refused; its gate parses the source to prove there is no `float(`, `round(` or `/` in the money code, patches the core to prove the command line goes through it, and sweeps totals to prove the shares always add up. `buildctl-ui --session default` [shows the draft](#console-discovery) while it is open; this is the finished one, gate passing, with what the interviewer recorded, newest first:
+The reviewer caught a second one. I'd asked for a test that the web server answers on its port, but on macOS buildctl runs checks with the network off completely, so that test could never pass. I changed the plan: test the page's logic directly, and prove the live port with the recorded demo, which is allowed to serve locally. I caught a third problem myself. A browser's number box rejects `84.50` unless it's told to allow cents (`step="0.01"`), so the demo would have stalled on the first field.
 
-![The discovery draft in the console: the gate passes, the two phases and the checkpoint in plain words, no open findings, and the interviewer's record ending in the accepted risk and the finalize.](media/e2e-discovery.gif)
+`buildctl-ui --session default` [shows the plan](#console-discovery) while it is still a draft:
 
-After trust, the console's Plan view shows the same phases, one plain line each:
+![The finished plan in the console: ready to finalize, two pieces of work and the stop after them, no open problems, and the interviewer's log ending with the open question parked and the plan finalized.](media/e2e-discovery.gif)
 
-![The plan discovery wrote, before the run: two phases in plain words, the checkpoint after the web page with what to check there, nothing spent, sandbox and trust green.](media/e2e-plan.gif)
-
-### Trust {#e2e-trust}
-
-The open question was accepted as a risk by the operator (only the operator can), and the proposal was finalized into the working tree, committed and trusted. `finalize` refused at first: `build.yaml` was not yet committed, and it will not overwrite a file Git cannot restore. Committing the starting files first fixed that.
+My one open question, whether to support uneven splits, I parked as an accepted risk; only the operator can do that. Then I locked the plan:
 
 ```sh
 $ buildctl-discover finalize --confirm 16f65177
 Wrote 8 files from proposal 16f6517796c8.
 $ git commit -q -m "Roadmap from discovery"
 $ buildctl trust init --to f343765e8db7… --confirm f343765e8db7…
-{ "governance_sha": "f343765e8db744c8390e53895fea0ed3a84a44fc", …  (manifest, executables, kernel)
 $ buildctl isolation verify
 { "backend": "macos-sandbox-exec-v2-deny-default", … "status": "PASS", … }
 $ buildctl auth check
@@ -66,7 +56,9 @@ $ buildctl auth check
   "reviewer": { "auth_method": "claude.ai", "authenticated": true, … }, "status": "PASS" }
 ```
 
-Trust pinned the roadmap commit, the governed files, both agent executables and the kernel. From here, editing any of them stops the build until it is trusted again.
+`trust init` records a fingerprint of the plan, the instructions, the exact agent programs and buildctl itself. If any of those change, work stops until someone looks. `isolation verify` checks that the sandbox actually holds on this machine. The first `finalize` refused because `build.yaml` wasn't committed yet; it won't overwrite a file Git can't restore.
+
+![The console before the run: two pieces of work in plain words, a stop after the web page, nothing spent.](media/e2e-plan.gif)
 
 ### The run {#e2e-run}
 
@@ -74,11 +66,24 @@ Trust pinned the roadmap commit, the governed files, both agent executables and 
 buildctl start
 ```
 
-Codex implemented each phase; the gates ran in the sandbox with no network; a documenter updated the README and changelog and passed the documentation gates; Claude reviewed the combined change read-only; and buildctl merged it. The documenter's work is in the same commits as the code; after both phases the changelog read:
+I did something else. For each piece, Codex wrote the code and the checks ran in the sandbox. A documentation pass updated the README and changelog, then Claude reviewed the code and docs together, read-only. Only then did buildctl commit.
+
+![Mid-run: the first piece being written, $2 spent, Start locked while work is running.](media/e2e-running.gif)
+
+Both pieces were done in 8 minutes 19 seconds, for $16.
+
+| Piece | What it took | Cost | Time |
+|---|---|---|---|
+| Core and command line | build, 2 fix-up rounds, docs, review | $10.00 | 4 min 49 s |
+| Web page | build, docs, review | $6.00 | 3 min 28 s |
+
+The first piece failed its check twice, and that was my fault. My starter files included an empty `tests/__init__.py`, and buildctl won't accept an empty required file. It sent the work back until the file had content, which cost $4. My throwaway run hadn't checked file sizes, so it missed this.
+
+The reviewer also flagged a real risk. The number parser accepts numbers of any length, and the web page passes it whatever anyone types, so a huge number could tie up the server. It was logged as an open issue rather than a blocker, and it shows at sign-off. The web page passed on the first attempt, with one small note: its error message doesn't say which field was wrong.
+
+The documentation pass left this in the changelog:
 
 ```markdown
-## Unreleased
-
 ### Added
 
 - Added `python -m splitbill` to print individual shares and the total with tip.
@@ -88,29 +93,7 @@ Codex implemented each phase; the gates ran in the sandbox with no network; a do
   form on `127.0.0.1` that displays each person's share and the total with tip.
 ```
 
-![Phase 0 in flight: the step track at Implement, $2 spent, and the Start lever locked because a run already holds the state lock.](media/e2e-running.gif)
-
-- **Phase 0, core and command line.** The first gate failed: `tests/__init__.py` was empty, and a required file must have content. The operator's skeleton had committed it empty, and the dry run had not modelled that rule. Codex needed two remediations to notice, at $2 each. The third gate passed, the docs passed, and the review passed with one medium finding: the parsers convert numbers of any length, which steps around Python's 4,300-digit conversion limit. On the command line the operator types the input, but the reviewer pointed out that the next phase reuses these parsers on form input anyone can send, which makes huge inputs a way to burn CPU. It was filed as debt, not a blocker, and it is still open at the checkpoint: one of the things to weigh before signing.
-- **Phase 1, the web page.** Clean on the first attempt: implement, gates, docs, review, merge. One low finding: an error page does not say which field was wrong.
-
-| Phase | Calls | Cost | Time |
-|---|---|---|---|
-| 0 · Core split and command line | implement, 2 remediations, document, review | $10.00 | 4 min 49 s |
-| 1 · Local web page | implement, document, review | $6.00 | 3 min 28 s |
-
-The build then stopped on its own, at the checkpoint discovery placed after the web page.
-
-### The checkpoint {#e2e-checkpoint}
-
-![Stopped at the checkpoint: the plan shows what waits on you, the Stop view gives the code and what to do, the phases and ledger hold the evidence, and the Drafts view holds the recording.](media/e2e-checkpoint.gif)
-
-[CHECKPOINT_REQUIRED](#CHECKPOINT_REQUIRED) means the MVP is complete and needs a signature before anything else happens. The Stop view shows exactly what an approval binds to (checkpoint, phase attempt, tree hash, governance commit, state generation), the findings, and only the levers the kernel will accept. Approving means typing the first seven characters of the tree hash you reviewed:
-
-![The signature: phase 1's open finding filed as debt, and the approval that binds to the reviewed tree hash.](media/e2e-sign.gif)
-
-### The recorded demo {#e2e-demo}
-
-The checkpoint's instruction was to watch the product work, so the next step cost nothing:
+### Seeing it work {#e2e-demo}
 
 ```sh
 $ buildctl-drafts record --milestone mvp
@@ -122,13 +105,26 @@ $ buildctl-drafts record --milestone mvp
 Recording in …/drafts/20261127-193122/demo. Nothing was committed or published.
 ```
 
-The app ran from a throwaway copy of the milestone's commit, sandboxed with loopback only, and a headless Chrome locked to its address drove the operator's scenario:
+buildctl started the finished app from a clean copy of the code awaiting sign-off, in a sandbox where it can serve a local page and reach nothing else, and a browser locked to that address followed my steps. Ten seconds, no cost.
 
-![The product the build made: splitbill's page splitting $84.50 three ways at 18%, $33.24, $33.24 and $33.23, total $99.71.](media/e2e-product.gif)
+![The app the build produced: $84.50 for three at 18% comes to $33.24, $33.24 and $33.23, total $99.71.](media/e2e-product.gif)
 
-### Drafts from the milestone {#e2e-drafts}
+### Signing off {#e2e-checkpoint}
 
-The console's Write drafts lever stayed locked, for two reasons it named: `buildctl-drafts` was not installed in the console's Python, and four drafts at up to $4 each (one rewrite allowed) would have needed $16 with only $9 of the day's $25 left. From the terminal, two fit:
+The plan said to stop after the web page, so it stopped ([CHECKPOINT_REQUIRED](#CHECKPOINT_REQUIRED)). The sign-off screen lists exactly what I'm approving, down to a fingerprint of the code ("tree hash"). To sign, I type its first seven characters. That doesn't prove I read the code. It proves I'm approving this exact version, and if the code changes afterwards, the signature no longer counts.
+
+![Waiting for sign-off: what is waiting, the evidence, and only the buttons that will work.](media/e2e-checkpoint.gif)
+
+![The signature: the reviewer's open note, and the field for the first seven characters of the tree hash.](media/e2e-sign.gif)
+
+### Release notes {#e2e-drafts}
+
+Last, buildctl drafted release notes and a demo script. Each factual sentence has to cite the line it came from, and buildctl checks that the line exists. All 27 claims in the release notes checked out. The first:
+
+> splitbill splits a restaurant bill between friends, tip included, down to the cent.
+> (README.md, line 3)
+
+Then my own tool told me no. I asked for four drafts. Four could cost up to $16, and only $9 of the day's $25 limit was left, so the console refused, and it also noted that `buildctl-drafts` wasn't installed in its Python. From the terminal, two drafts fit, for $4:
 
 ```sh
 $ buildctl-drafts make --milestone mvp --only release-notes,demo-script
@@ -136,14 +132,12 @@ $ buildctl-drafts make --milestone mvp --only release-notes,demo-script
   demo-script    sourced    31 of 31 claims backed
 ```
 
-Every factual sentence cites a line in the README or changelog at the milestone's commit, and buildctl checked that each quoted line is really there. Whether the source supports the sentence is the operator's read, with the ledger beside the draft:
+![The release notes with each claim's source beside it, and the button for more drafts locked, with its reasons.](media/e2e-drafts.gif)
 
-![The real release notes: 27 of 27 claims cite a source, each with its file and line, what signing a draft means, and the paid lever locked by its conditions.](media/e2e-drafts.gif)
+### What I took from it {#e2e-lessons}
 
-### What this run shows {#e2e-lessons}
+Run the plan's checks against a throwaway version before you pay; it found a check that would have failed correct code. It missed the empty-file rule, which cost $4, so model the file checks too. On macOS, write tests that don't need a network, and let the recorded demo prove the live parts. The spending limit applies to you too.
 
-- **Discovery's value is in the acceptance contracts.** The prompts are short; the gates are what made "it works" checkable, and the reviews that hardened them were worth more than the code they guarded.
-- **Run the gates before you pay.** A throwaway implementation and one loop over `build.yaml`'s commands found a gate that would have failed correct code. It missed the empty-file rule, which cost $4. Model the gate's file checks too.
-- **The sandbox shapes the tests.** No sockets in the gate on macOS means testable plain functions and a recorded demo for the real port. That split held up.
-- **Caps are real.** The run stopped on its own at the checkpoint with $9 left, and the drafts lever refused a run that could have passed the cap.
-- **What it did not exercise:** a debate, a blocked review, an exhausted attempt budget, a documenter out of scope. The [demo builds](#demo) show those.
+This run didn't hit the harder cases: two agents disagreeing about a design, a reviewer refusing to pass the work, a docs pass editing files it shouldn't. The [built-in demos](#demo) show each one for free: `buildctl-ui --demo debate`, `--demo blocked` and `--demo docs`.
+
+The real question isn't whether AI can build it. It's whether you can walk away while it does.
