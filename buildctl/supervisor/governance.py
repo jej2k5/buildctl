@@ -10,7 +10,9 @@ GOVERNANCE_PATHS = ("build.yaml", "AGENTS.md", "CLAUDE.md", "prompts/", "templat
 
 
 def governance_documents(config: dict[str, Any]) -> tuple[str, ...]:
-    return tuple(config.get("governance_documents", ()))
+    """The repository's own governed documents, plus each declared skill folder as a prefix."""
+    from .skills import governed_prefixes
+    return (*tuple(config.get("governance_documents", ())), *governed_prefixes(config))
 
 
 def is_governance_path(path: str, documents: tuple[str, ...] | list[str] = ()) -> bool:

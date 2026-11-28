@@ -225,6 +225,15 @@ class PromptTests(Repo):
         self.assertEqual(configured["_trusted_executables"]["reviewer"]["path"], "/x")
         self.assertIn("stream-json", config["roles"]["reviewer"]["command"], "the build's own config is untouched")
 
+    def test_the_writer_gets_none_of_the_reviewer_s_skills(self):
+        config = json.loads((FIXTURE / "build.yaml").read_text())
+        config["roles"]["reviewer"]["skills"] = ["critique"]
+        config["phases"][0]["skills"] = {"reviewer": ["critique"], "implementer": ["impeccable"]}
+        configured = writer_config(config, {"executables": {}})
+        self.assertNotIn("skills", configured["roles"]["reviewer"])
+        self.assertEqual(configured["phases"][0]["skills"], {"implementer": ["impeccable"]})
+        self.assertEqual(config["roles"]["reviewer"]["skills"], ["critique"], "the build's own config is untouched")
+
 
 class ApprovalTests(MakeTests):
     def test_approve_and_discard_record_an_event_and_nothing_else(self):

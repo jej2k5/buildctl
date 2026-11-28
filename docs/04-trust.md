@@ -6,7 +6,7 @@ buildctl refuses to run under rules or code you have not explicitly accepted.
 
 `buildctl trust init --to <sha> --confirm <sha>` takes a full 40-character commit SHA, typed twice. It pins three things:
 
-- **The governed files at that commit:** `build.yaml`, `AGENTS.md`, `CLAUDE.md`, everything under `prompts/` and `templates/`, and every file in `governance_documents`. buildctl reads them from its own read-only snapshot, never from your working tree, and fails the phase if an agent changes any of them.
+- **The governed files at that commit:** `build.yaml`, `AGENTS.md`, `CLAUDE.md`, everything under `prompts/` and `templates/`, every file in `governance_documents`, and every declared [skill](#skills) folder, byte for byte with its executable bits. buildctl reads them from its own read-only snapshot, never from your working tree, and fails the phase if an agent changes any of them.
 - **The installed buildctl itself:** its version and a digest of every file in the package.
 - **Each role's executable,** by path and hash: the implementer and the reviewer, the documenter when documentation is on, and the arbiter when it runs its own command. An `interactive` or `debate` arbiter has no executable of its own.
 

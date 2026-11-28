@@ -10,7 +10,9 @@ const S = {
   activity: null, activityKey: "", recordRow: null, decision: { answer: "" },
   docs: null, docsKey: "", docOpen: {},
   drafts: null, draftsKey: "", draftRun: "", draftMilestone: "",
+  skills: null, skillsKey: "", skillAdd: {}, skillBusy: "", skillMsg: null, skillFilter: "",
 };
+const SKILL_ROLES = [["implementer", "Implementer"], ["reviewer", "Reviewer"], ["documenter", "Documenter"]];
 const PRIMARY = ["start", "recover", "pause", "resume", "approve", "decide", "grant", "retry", "reconcile-accept", "reconcile-retry"];
 const STOP_LEVERS = ["approve", "decide", "grant", "retry", "reconcile-accept", "reconcile-retry", "recover"];
 // The decide lever carries the operator's ruling: one of these answers, and text for "own".
@@ -1155,6 +1157,80 @@ function docSettings(m) {
     ${d.warnings.map((w) => `<p class="note panel">Warning: ${esc(w)}. Set <code>roles.documenter</code> to another model family and re-trust.</p>`).join("")}`;
 }
 
+// A long nested path keeps its root and its last folder: ~/.claude/skills/…/aristotle-first-principles.
+const shortPath = (p) => { const parts = p.split("/"); return parts.length > 5 ? [...parts.slice(0, 3), "…", parts[parts.length - 1]].join("/") : p; };
+const kib = (n) => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+function skillRoleBoxes(roles, opts) {
+  // opts: { data, disabled, shell, documenter }. A derived documenter takes the implementer's list.
+  return SKILL_ROLES.filter(([role]) => role !== "documenter" || opts.documenter === "explicit").map(([role, label]) => {
+    const blocked = role === "reviewer" && opts.shell;
+    return `<label class="skill-role${blocked ? " is-blocked" : ""}"${blocked ? ` title="Runs shell commands when it loads; the reviewer is read-only"` : ""}>
+      <input type="checkbox" ${opts.data}="${esc(role)}" ${roles[role] ? "checked" : ""} ${opts.disabled || blocked ? "disabled" : ""}>${esc(label)}</label>`;
+  }).join("");
+}
+
+function skillsSection(m) {
+  const k = S.skills;
+  if (!k) return `<section class="section"><h2 class="h2">Skills</h2><div class="panel"><p class="empty">Reading installed skills…</p></div></section>`;
+  if (!k.supported) return `<section class="section"><h2 class="h2">Skills</h2><p class="note panel">${esc(k.reason)}</p></section>`;
+  const msg = S.skillMsg ? `<p class="skill-msg panel${S.skillMsg.ok ? "" : " is-error"}" role="status">${sig(S.skillMsg.ok ? "clear" : "danger")}<span>${esc(S.skillMsg.text)}</span></p>` : "";
+  const changes = k.changes?.length ? `<p class="skill-pending panel">${sig("caution", "waiting for you")}<span><b>Not in the build yet.</b> Changed in your working tree: ${k.changes.map((c) => `<code>${esc(c)}</code>`).join(" ")}. Commit them, then pin the commit with <b>Trust this commit</b>. A run uses only what is trusted.</span></p>` : "";
+  const problems = (k.problems || []).map((p) => `<p class="note panel">${sig("danger")} ${esc(p)}</p>`).join("");
+  const stateAspect = { "in sync": "clear", "source changed": "caution", "edited in repository": "caution", "source missing": "danger", "repository only": "pending" };
+  const declared = k.declared.length ? `<div class="table-wrap"><table class="skills"><caption class="announce">Skills in this build</caption>
+    <thead><tr><th>Skill</th><th>Who gets it</th><th>Installed copy</th><th>Trust</th><th><span class="announce">Actions</span></th></tr></thead><tbody>
+    ${k.declared.map((d) => {
+      const busy = S.skillBusy === d.name;
+      const phases = d.phases.length ? `<span class="skill-meta">plus phase ${d.phases.map((p) => `${p.number} (${p.roles.join(", ")})`).join(", ")}</span>` : "";
+      return `<tr><td><b class="mono">${esc(d.name)}</b><span class="skill-desc">${esc(d.description || (d.present ? "" : "SKILL.md missing"))}</span><span class="skill-meta mono">${esc(d.path)}/</span></td>
+        <td><div class="skill-roles">${skillRoleBoxes(d.roles, { data: `data-skill-role="${esc(d.name)}" data-role`, disabled: busy, shell: d.shell_on_load, documenter: k.documenter })}</div>
+          ${k.documenter === "derived" ? `<span class="skill-meta">The documenter takes the implementer's skills.</span>` : ""}${phases}</td>
+        <td>${sig(stateAspect[d.state] || "pending")} <span class="skill-state">${esc(d.state)}</span>${d.source ? `<span class="skill-meta mono">${esc(d.source)}</span>` : ""}
+          ${d.state === "source changed" ? `<button class="btn quiet sm" data-skill-act="sync" data-name="${esc(d.name)}" ${busy ? "disabled" : ""}>Copy in again</button>` : ""}</td>
+        <td>${d.trusted ? `${sig("clear")} <span class="skill-state">trusted</span>` : `${sig("caution", "waiting for you")} <span class="skill-state">not trusted yet</span>`}</td>
+        <td class="num"><button class="btn quiet sm" data-skill-act="remove" data-name="${esc(d.name)}" ${busy ? "disabled" : ""}>Remove</button></td></tr>`;
+    }).join("")}</tbody></table></div>` : `<div class="panel"><p class="empty">No skills in this build yet. Add one from the installed list below.</p></div>`;
+  const filter = S.skillFilter.trim().toLowerCase();
+  const installed = k.installed.filter((i) => !filter || i.name.toLowerCase().includes(filter) || i.description.toLowerCase().includes(filter));
+  const rows = installed.map((i) => {
+    const open = S.skillAdd[i.source];
+    const where = [i.where, ...i.also].join(" · ");
+    const notes = [i.large.length ? `${i.large.length} large file${i.large.length > 1 ? "s" : ""}, left out by default` : "", i.shell_on_load ? "runs shell commands when it loads: not for the reviewer" : ""].filter(Boolean);
+    const head = `<li class="skill-item${open ? " is-open" : ""}"><div class="skill-head">
+        <div class="skill-name"><b class="mono">${esc(i.name)}</b><span class="skill-desc">${esc(i.description)}</span>
+          <span class="skill-meta"><span class="mono" title="${esc(i.source)}">${esc(shortPath(i.source))}</span> · ${esc(where)} · ${esc(kib(i.bytes))}${notes.length ? ` · ${esc(notes.join(" · "))}` : ""}</span></div>
+        ${i.in_build ? `<span class="skill-in">${sig("clear")} in this build</span>` : open ? "" : `<button class="btn quiet sm" data-skill-act="open" data-source="${esc(i.source)}">Add…</button>`}</div>`;
+    if (!open) return head + "</li>";
+    const busy = S.skillBusy === i.source;
+    const ready = Object.values(open.roles).some(Boolean);
+    return head + `<div class="skill-add"><fieldset><legend>Who gets it</legend><div class="skill-roles">
+        ${skillRoleBoxes(open.roles, { data: `data-add-role="${esc(i.source)}" data-role`, disabled: busy, shell: i.shell_on_load, documenter: k.documenter })}</div>
+        <p class="hint">The reviewer gets only skills named for it.</p></fieldset>
+      <div class="field"><label for="ex-${esc(i.name)}">Leave out</label><input id="ex-${esc(i.name)}" class="mono" data-add-exclude="${esc(i.source)}" value="${esc(open.exclude)}" placeholder="Nothing left out" spellcheck="false">
+        <p class="hint">Globs inside the skill, comma separated.${i.large.length ? ` Large: ${esc(i.large.join(", "))}.` : ""}</p></div>
+      <div class="skill-actions"><button class="btn" data-skill-act="add" data-source="${esc(i.source)}" ${busy || !ready ? "disabled" : ""}>Copy into repository</button>
+        <button class="btn quiet" data-skill-act="cancel" data-source="${esc(i.source)}">Cancel</button>
+        <span class="hint">Copies into <code>skills/${esc(i.name)}/</code> and updates <code>build.yaml</code>. Nothing is committed.</span></div></div></li>`;
+  }).join("");
+  return `<section class="section skills-section"><h2 class="h2">Skills <small>from build.yaml in your working tree</small></h2>
+    ${msg}${changes}${problems}${declared}
+    <div class="skills-installed"><div class="skills-installed-head"><h3 class="h3">Installed on this Mac <small>${k.installed.length} found</small></h3>
+      <div class="field skills-filter"><label for="skill-filter" class="announce">Filter installed skills</label><input id="skill-filter" data-skill-filter value="${esc(S.skillFilter)}" placeholder="Filter by name or description" spellcheck="false"></div></div>
+      ${rows ? `<ul class="skill-list panel">${rows}</ul>` : `<div class="panel"><p class="empty">${k.installed.length ? "No installed skill matches the filter." : "No skills found in ~/.claude/skills, ~/.codex/skills or ~/.agents/skills."}</p></div>`}</div>
+  </section>`;
+}
+
+async function skillAct(key, body) {
+  S.skillBusy = key; render();
+  try {
+    const { body: result } = await api("/api/skills", { method: "POST", body: JSON.stringify(body) });
+    S.skillMsg = { ok: true, text: result.text + (result.reformatted ? " build.yaml was rewritten as two-space JSON; check the diff." : "") };
+    if (body.action === "add") delete S.skillAdd[body.source];
+    announce(result.text);
+  } catch (error) { S.skillMsg = { ok: false, text: error.message }; announce(error.message); }
+  finally { S.skillBusy = ""; S.skillsKey = ""; await loadSkills(S.model, true); render(); }
+}
+
 function viewSetup(m) {
   const t = m.trust, iso = m.isolation;
   const kernelMatch = t.kernel && t.running_kernel && t.kernel.digest === t.running_kernel.digest;
@@ -1181,7 +1257,8 @@ function viewSetup(m) {
         ${docSettings(m)}
         ${t.ok ? `<h2 class="h2 gap">Pinned executables</h2><dl class="kv panel panel-pad">${Object.entries(t.executables || {}).map(([role, e]) => `<dt>${esc(role)}</dt><dd>${esc(e.path)}<br>${esc(short(e.sha256, 24))}</dd>`).join("")}
           <dt>kernel</dt><dd>${kernelMatch ? "matches the running buildctl" : "differs from the running buildctl"}</dd></dl>` : ""}</aside>
-    </div>`;
+    </div>
+    ${skillsSection(m)}`;
 }
 
 // ---------- render loop ----------
@@ -1225,7 +1302,7 @@ async function refresh(force = false) {
     const changed = force || fp !== S.fingerprint;
     S.model = body; S.fingerprint = fp; S.error = null;
     if (S.route.view === "ledger" || S.audit.length === 0 || body.audit.sequence > S.auditSeq) await loadAudit(body.audit.sequence);
-    if (S.route.view === "setup") await loadTrustDiff(body);
+    if (S.route.view === "setup") { await loadTrustDiff(body); if (await loadSkills(body)) render(); }
     const activityChanged = await loadActivity(body);
     const docsChanged = await loadDocs(body);
     const draftsChanged = await loadDrafts();
@@ -1283,6 +1360,15 @@ async function loadAudit(head) {
   if (S.audit.length > 6000) S.audit = S.audit.slice(-6000);
 }
 
+async function loadSkills(m, force = false) {
+  // Read when Setup is open: it walks the installed skill folders and runs git status.
+  const key = `${m.repo.head_sha}`;
+  if (!force && key === S.skillsKey) return false;
+  S.skillsKey = key;
+  try { S.skills = (await api("/api/skills")).body; } catch (error) { S.skills = { supported: true, error: error.message, declared: [], installed: [] }; }
+  return true;
+}
+
 async function loadTrustDiff(m) {
   const key = `${m.trust.governance_sha}:${m.repo.head_sha}`;
   if (key === S.trustDiffKey) return;
@@ -1312,6 +1398,18 @@ document.addEventListener("click", async (event) => {
       if (d) draftPull(key, { action: "approve", draft: d.id, digest: d.digest, confirm: S.typed[key] || "" }, { stampOnOk: true }); }
     else if (ds.draftDiscard) draftPull(`draft:${ds.draftDiscard}`, { action: "discard", draft: ds.draftDiscard });
     else if (draft.hasAttribute("data-draft-make")) draftPull("drafts-make", { action: "make", confirm: S.typed["drafts-make"] || "" });
+    return;
+  }
+  const sk = event.target.closest("[data-skill-act]");
+  if (sk) {
+    const { skillAct: act, source, name } = sk.dataset;
+    const item = S.skills?.installed.find((i) => i.source === source);
+    if (act === "open" && item) { S.skillAdd[source] = { roles: { implementer: true, reviewer: false, documenter: false }, exclude: item.suggested_exclude.join(", ") }; S.skillMsg = null; render(); }
+    else if (act === "cancel") { delete S.skillAdd[source]; render(); }
+    else if (act === "add" && item) { const o = S.skillAdd[source];
+      skillAct(source, { action: "add", source, roles: o.roles, exclude: o.exclude.split(",").map((x) => x.trim()).filter(Boolean) }); }
+    else if (act === "remove") skillAct(name, { action: "remove", name });
+    else if (act === "sync") skillAct(name, { action: "sync", name });
     return;
   }
   if (event.target.closest("[data-fold]")) { S.planOpen = !S.planOpen; render(); $("[data-fold]")?.focus(); return; }
@@ -1353,6 +1451,8 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.dataset?.addExclude !== undefined) { const o = S.skillAdd[event.target.dataset.addExclude]; if (o) o.exclude = event.target.value; return; }
+  if (event.target.dataset?.skillFilter !== undefined) { S.skillFilter = event.target.value; render(); $("#skill-filter")?.focus(); return; }
   const key = event.target.dataset?.typed;
   if (!key) return;
   S.typed[key] = event.target.value;
@@ -1381,6 +1481,13 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  const ds = event.target.dataset || {};
+  if (ds.skillRole !== undefined) {
+    const d = S.skills?.declared.find((x) => x.name === ds.skillRole);
+    if (d) skillAct(d.name, { action: "roles", name: d.name, roles: { ...d.roles, [ds.role]: event.target.checked } });
+    return;
+  }
+  if (ds.addRole !== undefined) { const o = S.skillAdd[ds.addRole]; if (o) { o.roles[ds.role] = event.target.checked; render(); } return; }
   if (event.target.dataset?.draftRun !== undefined) { S.draftRun = event.target.value; S.tab.drafts = ""; render(); return; }
   if (event.target.dataset?.draftMilestone !== undefined) { S.draftMilestone = event.target.value; S.typed["drafts-make"] = ""; render(); return; }
   if (event.target.dataset?.answer) { S.decision.answer = event.target.dataset.answer; render(); $(`[data-answer="${event.target.dataset.answer}"]`)?.focus(); return; }

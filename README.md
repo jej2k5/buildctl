@@ -71,6 +71,8 @@ When the reviewer raises a design dispute, `"arbiter": {"mode": "debate"}` has C
 
 With `"documentation": {"mode": "required", ...}` in `build.yaml`, a documenter updates the README, the docs and the changelog after each phase's gates pass, inside the paths you list. Its own gates check links, the changelog entry and forbidden phrases, and send it back with what failed; the reviewer then reviews the code and the docs together. Editing outside the documentation paths stops the phase at `DOC_SCOPE_VIOLATION`. `optional` mode records documentation failures without stopping. See [Documentation](https://jej2k5.github.io/buildctl/#documentation).
 
+Agents can use skills, the `SKILL.md` folders Claude Code and Codex share. `buildctl skills add ~/.claude/skills/impeccable` copies one into the repository, where `trust init` pins it like the rest of the plan. Each role, or each phase, lists the skills its agent gets, and the reviewer gets only the skills named for it, beside the CLI's own built-in ones. Your personal Claude Code settings, skills and `CLAUDE.md` never reach a build. See [Skills](https://jej2k5.github.io/buildctl/#skills).
+
 Writing `build.yaml` and phase prompts is covered in the manual's [Writing a roadmap](https://jej2k5.github.io/buildctl/#roadmap). When a build stops, `buildctl status` names the code; the manual's [When it stops](https://jej2k5.github.io/buildctl/#stops) says what clears it.
 
 ## The console

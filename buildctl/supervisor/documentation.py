@@ -363,7 +363,8 @@ class DocumenterAdapter:
 
     def document(self, phase: Any, context: dict[str, Any], output: Path, timeout: float,
                  feedback: str | None = None) -> dict[str, Any]:
-        value = self.role_runner.run("documenter", self.prompt(phase, context, feedback), output, timeout)
+        value = self.role_runner.run("documenter", self.prompt(phase, context, feedback), output, timeout,
+                                     phase=phase.number)
         return validate_result(value)
 
 

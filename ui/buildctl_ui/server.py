@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from . import skills_view
 from .actions import Build, Refused, dumps
 
 WEB = Path(__file__).resolve().parent / "web"
@@ -90,6 +91,8 @@ def handler_for(build: Build, token: str, port_ref: list[int]) -> type[BaseHTTPR
                     return self._send(HTTPStatus.OK, dumps(build.drafts()))
                 if url.path == "/api/trust-diff":
                     return self._send(HTTPStatus.OK, dumps(build.trust_diff()))
+                if url.path == "/api/skills":
+                    return self._send(HTTPStatus.OK, dumps(skills_view.view(build.repo, build.control_root)))
             except Refused as exc:
                 return self._error(exc.status, str(exc))
             except (OSError, ValueError) as exc:
@@ -107,11 +110,17 @@ def handler_for(build: Build, token: str, port_ref: list[int]) -> type[BaseHTTPR
             if not self.headers.get("Content-Type", "").startswith("application/json"):
                 return self._error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "send JSON")
             path = urlparse(self.path).path
-            if path not in {"/api/pull", "/api/drafts"}:
+            if path not in {"/api/pull", "/api/drafts", "/api/skills"}:
                 return self._error(HTTPStatus.NOT_FOUND, "not found")
             try:
                 length = min(int(self.headers.get("Content-Length", "0")), 10_000)
                 body = json.loads(self.rfile.read(length) or b"{}")
+                if path == "/api/skills":
+                    # Working-tree edits only: the operator commits and pins, as for any build.yaml change.
+                    try:
+                        return self._send(HTTPStatus.OK, dumps(skills_view.act(build.repo, body)))
+                    except skills_view.SkillsRefused as exc:
+                        return self._error(HTTPStatus.CONFLICT, str(exc))
                 if path == "/api/drafts":
                     job = build.draft_pull(str(body["action"]), draft=str(body.get("draft", "")),
                                            confirm=str(body.get("confirm", "")), digest=str(body.get("digest", "")))

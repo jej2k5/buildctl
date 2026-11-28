@@ -80,7 +80,7 @@ class GitManager:
 
     def prepare_agent_workspace(self, workspace: Path) -> None:
         """Remove ambient project instruction sources before the agent process starts."""
-        for relative in ("AGENTS.md", "CLAUDE.md", ".claude", ".codex"):
+        for relative in ("AGENTS.md", "CLAUDE.md", ".claude", ".codex", ".agents"):
             target = workspace.resolve() / relative
             if target.is_dir() and not target.is_symlink():
                 shutil.rmtree(target)

@@ -35,7 +35,7 @@ from .supervisor.review import (NON_BLOCKING_FINDING_STATUSES, OPERATOR_ACCEPTED
                                 ReviewValidationError, accumulate_findings,
                                 open_finding_obligations, operator_rulings, realign_findings_to_delta,
                                 reduce_review, strategic_findings, validate_review)
-from .supervisor import documentation, levers, requests
+from .supervisor import documentation, levers, requests, skills
 from .supervisor.documentation import DocumenterAdapter
 from .supervisor.operations import PaidOperation
 from .supervisor.safety import digest_file, purge_ephemeral_artifacts, redact
@@ -100,6 +100,9 @@ class Supervisor:
             if isinstance(self.backend, FakeIsolationBackend):
                 raise IsolationError("test-only isolation backend is forbidden for autonomous execution")
         self.phases = phases_from(self.config, self.snapshot)
+        # Skills are copied into each agent call from here: the trusted snapshot, never the worktree.
+        self.config["_skills_root"] = str(self.snapshot)
+        self.config["_skill_modes"] = self.anchor.get("skill_modes", {})
         self.git = GitManager(self.root, self.config, runner)
         self.budget = BudgetLedger(self.control_root, self.config["limits"]["max_daily_cost_usd"])
         self.runner = runner
@@ -1343,6 +1346,16 @@ def parser() -> argparse.ArgumentParser:
     evidence_verify.add_argument("--records", help="directory of full records (default: this machine's, if any)")
     evidence_prune = evidence_sub.add_parser("prune"); evidence_prune.add_argument("--phase", type=int, required=True)
     evidence_prune.add_argument("--confirm", type=int, required=True, help="type the phase number again")
+    skill = commands.add_parser("skills", help="copy installed agent skills into the repository and keep them in step")
+    skill_sub = skill.add_subparsers(dest="skills_command", required=True)
+    skill_add = skill_sub.add_parser("add", help="copy an installed skill folder into skills/<name>/")
+    skill_add.add_argument("source", help="the installed skill folder, e.g. ~/.claude/skills/impeccable")
+    skill_add.add_argument("--name", help="the skill's name in this repository (default: its SKILL.md name)")
+    skill_add.add_argument("--exclude", action="append", default=[],
+                           help="a glob inside the skill to leave out, e.g. 'scripts/bin/*' (repeatable)")
+    skill_sub.add_parser("status", help="each declared skill, and whether its installed source has moved on")
+    skill_sync = skill_sub.add_parser("sync", help="re-copy a skill from the source it was added from")
+    skill_sync.add_argument("name")
     return result
 
 
@@ -1449,6 +1462,34 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
 
+def skills_command(args: argparse.Namespace, root: Path) -> int:
+    """Skills enter a build as committed, governed files. These commands only touch the worktree:
+    committing and trusting again stay the operator's acts."""
+    try:
+        declared_config = json.loads((root / "build.yaml").read_text())
+    except (OSError, ValueError):
+        declared_config = {}
+    if args.skills_command == "add":
+        result = skills.add(root, Path(args.source), args.name, args.exclude)
+        print(f"Copied {result['source']} to {result['path']}/ ({result['digest'][:12]}).")
+        if result["renamed"]:
+            print(f"warning: SKILL.md says another name; set its front matter to name: {result['name']}")
+        print("next: declare it in build.yaml under \"skills\", list it in a role's or a phase's skills,\n"
+              "      then commit and run buildctl trust init on that commit.")
+        return 0
+    if args.skills_command == "status":
+        rows = skills.status(root, declared_config)
+        if not rows:
+            print("build.yaml declares no skills.")
+        for row in rows:
+            print(f"{row['name']:<24} {row['state']:<22} {row['path']}" + (f"  from {row['source']}" if row["source"] else ""))
+        return 0
+    result = skills.sync(root, declared_config, args.name)
+    print(f"Re-copied {result['name']} from {result['source']} ({result['digest'][:12]}). "
+          "Review the change, commit it and run buildctl trust init.")
+    return 0
+
+
 def dispatch(args: argparse.Namespace, root: Path, control_root: Path) -> int:
     if args.command == "trust":
         trust = TrustStore(root, control_root)
@@ -1483,6 +1524,8 @@ def dispatch(args: argparse.Namespace, root: Path, control_root: Path) -> int:
         return request_command(args, control_root)
     if args.command == "evidence":
         return evidence_command(args, root, control_root)
+    if args.command == "skills":
+        return skills_command(args, root)
     if args.command == "auth":
         if args.auth_command != "check":
             raise ValueError("unknown auth command")

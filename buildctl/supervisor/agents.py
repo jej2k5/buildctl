@@ -11,6 +11,7 @@ from typing import Any, Callable
 from .isolation import IsolationBackend, IsolationContext, sanitized_environment
 from .safety import contains_secret, matches_secret_pattern, redact, suppress_ephemeral_artifacts
 from .auth import cleanup_staged_auth, stage_codex_auth
+from . import skills as skill_set
 from .evidence import (EvidenceStore, RecordIncomplete, adapter_for, digest_path, known_secret, read_record,
                        stream_process)
 
@@ -162,7 +163,8 @@ class RoleRunner:
         self.evidence = evidence
 
     def run(self, role: str, prompt: str, output: Path, timeout: float,
-            credentials: dict[str, str] | None = None, debate: bool = False) -> dict[str, Any]:
+            credentials: dict[str, str] | None = None, debate: bool = False,
+            phase: int | None = None) -> dict[str, Any]:
         """Launch one agent call. A debate turn runs either role against a read-only workspace."""
         role_config = self.config["roles"][role]
         if credentials is None:
@@ -197,6 +199,25 @@ class RoleRunner:
             raise AgentError(f"{role.upper()}_AUTH_MODE_INVALID")
         argv = [executable, *configured[1:]]
         argv = [part.format(prompt=prompt, output=str(agent_output)) for part in argv]
+        # Pinned skills, copied from the trusted snapshot into this call's own scratch space. A
+        # debate turn gets none: it argues from the record, not from instructions.
+        names = [] if debate else skill_set.for_call(self.config, role, phase)
+        kind = skill_set.harness(configured)
+        offered: list[dict[str, Any]] = []
+        launched = list(configured)  # what the record shows: the command as actually launched
+        try:
+            if kind == "claude":
+                plugin = runtime_root / "skills-plugin" if names else None
+                if plugin is not None:
+                    offered = skill_set.claude_plugin(self.config, names, plugin)
+                argv = skill_set.adapt_claude_argv(argv, plugin, names)
+                launched = skill_set.adapt_claude_argv(launched, plugin, names)
+            elif kind == "codex" and names:
+                offered = skill_set.materialize(self.config, names, isolated_home / ".codex" / "skills")
+            elif names:
+                raise AgentError(f"{role.upper()}_SKILLS_UNSUPPORTED:{Path(configured[0]).name}")
+        except skill_set.SkillError as exc:
+            raise AgentError(f"{role.upper()}_SKILL_UNAVAILABLE:{exc}") from exc
         context = IsolationContext(role, self.context.workspace, self.context.control_root,
                                    self.context.authoritative_repo,
                                    read_only_workspace=role == "reviewer" or debate,
@@ -229,10 +250,11 @@ class RoleRunner:
                 if auth_mode == "host_cli":
                     env["CODEX_HOME"] = str(isolated_home.resolve() / ".codex")
             if self.evidence is not None:
-                return self._run_recorded(role, configured, executable, prompt, command, env, timeout,
-                                          agent_output, labelled, secrets, before_digest)
+                return self._run_recorded(role, launched, executable, prompt, command, env, timeout,
+                                          agent_output, labelled, secrets, before_digest, offered)
+            # stdin closed: `codex exec` reads a non-terminal stdin to its end before starting.
             completed = self.runner(command, cwd=self.context.workspace, text=True, capture_output=True,
-                                    timeout=max(0.01, timeout), env=env)
+                                    timeout=max(0.01, timeout), env=env, stdin=subprocess.DEVNULL)
             combined = completed.stdout + completed.stderr
             exposed = classify_secret_exposure(combined, labelled)
             if exposed:
@@ -258,19 +280,30 @@ class RoleRunner:
 
     def _run_recorded(self, role: str, configured: list[str], executable: str, prompt: str, command: list[str],
                       env: dict[str, str], timeout: float, agent_output: Path, labelled: dict[str, str],
-                      secrets: list[str], before_digest: str | None) -> dict[str, Any]:
+                      secrets: list[str], before_digest: str | None,
+                      offered: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """The same contract as the blocking launch, with every line recorded as it arrives."""
         adapter = adapter_for(configured)
-        record = self.evidence.open(role, configured, executable, prompt, self.context.workspace)
+        record = self.evidence.open(role, configured, executable, prompt, self.context.workspace, offered)
         result = stream_process(command, cwd=self.context.workspace, env=env, timeout=max(0.01, timeout),
                                 record=record, adapter=adapter, labelled=labelled)
-        self.evidence.closed.append({"file": record.path.name, "sha256": digest_path(record.path),
-                                     "lines": record.sequence + 1, "operation": self.evidence.operation[0]})
+        closed = {"file": record.path.name, "sha256": digest_path(record.path),
+                  "lines": record.sequence + 1, "operation": self.evidence.operation[0]}
+        if offered:
+            names = [item["name"] for item in offered]
+            rows = [row["text"] for row in read_record(record.path)["rows"] if row["stream"] == "stdout"]
+            closed["skills_offered"] = names
+            closed["skills_invoked"] = skill_set.invoked(role, rows, names)
+        self.evidence.closed.append(closed)
         if result.timed_out:
             raise subprocess.TimeoutExpired(command, timeout)
         # The last look: a multi-line secret passes every line's check and lands whole only here.
-        exposed = result.exposed or known_secret("\n".join(row["text"] for row in read_record(record.path)["rows"]
-                                                           if row["stream"] in {"stdout", "stderr"}), labelled)
+        # Each stream on its own: lines of stdout and stderr interleave by arrival, and a secret
+        # split across two stderr lines must not hide behind a stdout line between them.
+        rows = read_record(record.path)["rows"]
+        exposed = result.exposed or next(filter(None, (
+            known_secret("\n".join(row["text"] for row in rows if row["stream"] == stream), labelled)
+            for stream in ("stdout", "stderr"))), None)
         if exposed:
             raise AgentError(f"{role.upper()}_SECRET_OUTPUT:source=stdout_stderr credential_kind={exposed}")
         if result.returncode or adapter.failed:

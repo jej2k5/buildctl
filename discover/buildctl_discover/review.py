@@ -12,6 +12,7 @@ from importlib import resources
 from typing import Any, Callable
 
 from buildctl.supervisor.safety import redact
+from buildctl.supervisor.skills import adapt_claude_argv, harness
 
 from .record import SEVERITIES, Identity, RecordError, Session
 from .render import RISKS, render, review_digest
@@ -115,6 +116,10 @@ def request_review(session: Session, by: Identity, *, runner: Callable[..., Any]
         raise RecordError("the base reviewer command must be an argv list containing {prompt}")
     prompt = build_prompt(state, files, expected)
     argv = [prompt if arg == "{prompt}" else arg for arg in command]
+    if harness(command) == "claude":
+        # The same rule as a build: the reviewer never sees the operator's own Claude settings,
+        # skills, plugins or CLAUDE.md.
+        argv = adapt_claude_argv(argv, None)
     with tempfile.TemporaryDirectory(prefix="buildctl-discover-review-") as empty:
         try:
             completed = runner(argv, cwd=empty, capture_output=True, text=True, timeout=timeout)

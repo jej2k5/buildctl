@@ -25,6 +25,9 @@ Global flags: `--repo <path>` (must be the repository toplevel), `--dry-run`, an
 | `trust show` | Show what is pinned. |
 | `isolation verify` | Probe the sandbox and record that it passed. The record is bound to the trusted snapshot, this host and the sandbox policy. Runs, `bootstrap` and `buildctl-drafts` refuse to start once it is over 24 hours old or its binding no longer holds. |
 | `auth check` | Confirm both agent CLIs are logged in. |
+| `skills add <folder>` | Copy an installed skill folder, such as `~/.claude/skills/impeccable`, into `skills/<name>/` and record where it came from. `--exclude <glob>` leaves out files too large or machine-specific to commit (repeatable); `--name` renames it. Touches only the working tree. See [Skills](#skills). |
+| `skills status` | Each declared skill, and whether its recorded source has changed since it was copied in. |
+| `skills sync <name>` | Copy a skill in again from its recorded source. Commit and `trust init` to use it. |
 | `bootstrap` | Create the build state. Requires fresh isolation conformance. |
 | `validate` | Check `build.yaml`. |
 | `inspect` | The full read model as one JSON document: state, phases, trust, isolation, budget, the stop and its meaning, and every action with the conditions that allow or lock it. Read-only. |
@@ -79,13 +82,16 @@ Accepted with no terminal record means the command is still running, or was inte
 | `demo.scenario` | The committed scenario to record. Default `docs/demo/scenario.json`. |
 | `demo.timeout_seconds` | How long the demo may take to start serving, 10 to 900. Default 120. |
 | `demo.viewport` | `[width, height]` of the recording, 320 to 3840. Default `[1280, 800]`. |
+| `skills.<name>.path` | A skill folder in the repository, holding a `SKILL.md` whose front matter has `name: <name>` and a description. Default `skills/<name>`. Declared folders are governed: `trust init` pins their exact bytes and agents cannot change them. See [Skills](#skills). |
+| `roles.*.skills` | Skills that role's agent gets on every call, for the implementer, reviewer or documenter. The reviewer gets only skills listed for it. A documenter left out of `roles` takes the implementer's list. Supported for `claude` and `codex` commands. |
+| `phases[].skills` | Extra skills for one phase, by role: `{"implementer": [...], "reviewer": [...], "documenter": [...]}`. |
 | `governance_documents` | Files beyond the fixed governed set that `trust init` pins and agents may not modify. Required; may be `[]`. |
 | `git.remote` | The remote phase branches are pushed to when `push` is on. |
 | `git.push` | Push the phase branch instead of fast-forwarding the integration branch locally. `push`, `create_pr` and `merge` are required, and each must be `true` or `false`. |
 | `git.create_pr` | Open a pull request for the pushed phase branch, with the `gh` CLI. |
 | `git.merge` | Request a squash auto-merge of that pull request, for phases whose `merge_policy` is `auto`. |
 | `git.integration_branch` | The branch fast-forwarded after each phase. Default `main`. Fast-forward only: if it has commits the phase lacks, buildctl stops instead of merging. |
-| `roles.*.command` | The argv for each agent. `{prompt}` and `{output}` are substituted. With `auth_mode: host_cli`, the implementer's and documenter's commands need `--ignore-user-config`, and the reviewer's needs `--no-session-persistence` and `--tools`, with no mutation tool such as `Bash`, `Edit` or `Write`. While recording is on, `codex` needs `--json` and `claude` needs `--output-format stream-json --verbose`; see [Setting it up](#evidence). |
+| `roles.*.command` | The argv for each agent. `{prompt}` and `{output}` are substituted. With `auth_mode: host_cli`, the implementer's and documenter's commands need `--ignore-user-config`, and the reviewer's needs `--no-session-persistence` and `--tools`, with no mutation tool such as `Bash`, `Edit` or `Write`. While recording is on, `codex` needs `--json` and `claude` needs `--output-format stream-json --verbose`; see [Setting it up](#evidence). Every `claude` command also runs with `--setting-sources project,local` unless it sets its own, so your personal Claude Code settings, skills, plugins and `CLAUDE.md` never reach a role. |
 | `roles.*.network` | Whether the agent has network access in the sandbox. Must be `true` with `auth_mode: host_cli`, because the CLI calls its provider's API. |
 | `roles.*.auth_mode` | How the agent authenticates: `host_cli` (your CLI login; macOS only), `environment` (the named variables) or `none`. |
 | `roles.*.credential_env` | The `*_API_KEY` or `*_TOKEN` variables an `environment` agent receives. Must be empty otherwise. |

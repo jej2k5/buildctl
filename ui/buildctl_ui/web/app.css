@@ -611,3 +611,53 @@ pre.draft-cmd { margin-top: var(--s3); border: 1px solid var(--rule); max-height
   .draft-ledger { border-top: 1px solid var(--rule); }
   .draft-page { padding: var(--s4); }
 }
+
+/* ---------- skills (Setup) ---------- */
+.skills-section .h3 { font-size: var(--t-md); font-weight: 600; display: flex; align-items: baseline; gap: var(--s2); }
+.skills-section .h3 small { font-weight: 400; color: var(--ink-3); font-size: var(--t-sm); }
+.skill-msg, .skill-pending { display: flex; gap: var(--s3); align-items: baseline; padding: var(--s3) var(--s4); margin-bottom: var(--s3); font-size: var(--t-sm); }
+.skill-msg.is-error { border-color: var(--danger); color: var(--danger-ink); }
+.skill-pending { border-color: var(--caution); background: var(--caution-wash); color: var(--ink); }
+.skill-pending code, .skill-msg code { font-family: var(--mono); font-size: .92em; }
+table.skills td:first-child { width: 34%; }
+.skill-desc { display: block; color: var(--ink-2); margin-top: 2px; max-width: 60ch; }
+.skill-meta { display: block; color: var(--ink-3); font-size: var(--t-xs); margin-top: 3px; overflow-wrap: anywhere; }
+.skill-meta.mono, .skill-meta .mono { font-family: var(--mono); }
+.skill-state { color: var(--ink-2); }
+.skill-roles { display: flex; flex-wrap: wrap; gap: 4px var(--s4); }
+.skill-role { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); cursor: pointer; white-space: nowrap; }
+.skill-role input { width: 15px; height: 15px; margin: 0; accent-color: var(--ink); border-radius: 0; cursor: pointer; }
+.skill-role.is-blocked { color: var(--ink-3); cursor: not-allowed; }
+.skill-role input:disabled { cursor: not-allowed; }
+.skill-role input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.btn.sm { min-height: 28px; padding: 4px 10px; font-size: var(--t-xs); }
+td .btn.sm { margin-top: 6px; }
+.skills-installed { margin-top: var(--s5); }
+.skills-installed-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: var(--s3); margin-bottom: var(--s3); }
+.skills-filter { min-width: min(320px, 100%); }
+.skill-list { list-style: none; margin: 0; padding: 0; max-height: 560px; overflow-y: auto; }
+.skill-item { border-bottom: 1px solid var(--rule); }
+.skill-item:last-child { border-bottom: 0; }
+.skill-item.is-open { background: var(--paper-2); }
+.skill-head { display: flex; justify-content: space-between; align-items: start; gap: var(--s4); padding: var(--s3) var(--s4); }
+.skill-name { min-width: 0; }
+.skill-in { display: inline-flex; gap: 6px; align-items: baseline; color: var(--ink-2); font-size: var(--t-sm); white-space: nowrap; }
+.skill-add { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s3) var(--s5); padding: 0 var(--s4) var(--s4); align-items: start; }
+.skill-add fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.skill-add legend { font-size: var(--t-sm); font-weight: 600; padding: 0; margin-bottom: 6px; }
+.skill-add .hint { font-size: var(--t-xs); color: var(--ink-3); }
+.skill-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; }
+.skill-actions code { font-family: var(--mono); font-size: .92em; }
+@media (max-width: 820px) {
+  .skill-add { grid-template-columns: minmax(0, 1fr); }
+  table.skills td:first-child { width: auto; }
+}
+.skill-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+@media (max-width: 820px) {
+  table.skills thead { display: none; }
+  table.skills, table.skills tbody, table.skills tr, table.skills td { display: block; width: auto; }
+  table.skills tr { padding: var(--s3) 0; border-bottom: 1px solid var(--rule); }
+  table.skills tr:last-child { border-bottom: 0; }
+  table.skills td { border: 0; padding: 4px var(--s4); }
+  table.skills td.num { text-align: left; }
+}

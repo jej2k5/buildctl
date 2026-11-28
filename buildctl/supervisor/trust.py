@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .governance import GOVERNANCE_PATHS, is_governance_path
+from .skills import governed_prefixes
 from .kernel import kernel_identity
 from .phases import load_config_text
 
@@ -38,6 +39,13 @@ class TrustStore:
             raise TrustError(result.stderr.strip() or f"git {' '.join(args)} failed")
         return result
 
+    def _blob(self, sha: str, path: str) -> bytes:
+        result = self.runner(["git", "cat-file", "blob", f"{sha}:{path}"], cwd=self.repo, capture_output=True)
+        if result.returncode:
+            raise TrustError(f"cannot read {path} at {sha}")
+        data = result.stdout
+        return data if isinstance(data, bytes) else data.encode()
+
     def initialize(self, sha: str, confirmation: str) -> dict[str, Any]:
         if not re.fullmatch(r"[0-9a-f]{40}", sha) or confirmation != sha:
             raise TrustError("trust initialization requires typed confirmation of a full 40-character SHA")
@@ -60,8 +68,15 @@ class TrustStore:
         raw = declared.get("governance_documents", []) if isinstance(declared, dict) else []
         if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
             raise TrustError("governance_documents must be a list of paths")
-        documents = tuple(raw)
+        documents = (*tuple(raw), *governed_prefixes(declared if isinstance(declared, dict) else {}))
         governed = [path for path in files if is_governance_path(path, documents)]
+        skill_prefixes = governed_prefixes(declared if isinstance(declared, dict) else {})
+        modes = {}
+        if skill_prefixes:
+            for line in self._git("ls-tree", "-r", sha).stdout.splitlines():
+                meta, _, path = line.partition("\t")
+                if path.startswith(skill_prefixes) and meta.split()[0] == "100755":
+                    modes[path] = "100755"
 
         staging = self.root / f".snapshot-staging-{sha}"
         if staging.exists():
@@ -72,7 +87,11 @@ class TrustStore:
             manifest: dict[str, str] = {}
 
             for governed_path in governed:
-                content = self._git("show", f"{sha}:{governed_path}").stdout.encode()
+                if governed_path.startswith(skill_prefixes):
+                    # Skill folders may hold scripts and binaries: read the exact bytes.
+                    content = self._blob(sha, governed_path)
+                else:
+                    content = self._git("show", f"{sha}:{governed_path}").stdout.encode()
                 destination = staging / governed_path
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(content)
@@ -106,6 +125,7 @@ class TrustStore:
             anchor = {
                 "governance_sha": sha,
                 "snapshot_digest": digest,
+                **({"skill_modes": modes} if modes else {}),
                 "manifest": manifest,
                 "executables": executables,
                 "kernel": kernel_identity(),
