@@ -67,6 +67,12 @@ class ValidationTests(unittest.TestCase):
             config["roles"]["reviewer"]["skills"] = ["impeccable"]
             self.assertEqual(skills.validate(config, root), [])
 
+    def test_front_matter_reads_block_scalar_descriptions(self):
+        self.assertEqual(skills.frontmatter("---\nname: x\ndescription: >\n  Long text\n  over lines.\nother: 1\n---\nbody"),
+                         {"name": "x", "description": "Long text over lines."})
+        self.assertEqual(skills.frontmatter('---\nname: "y"\ndescription: |\n  a\n  b\n---\n'),
+                         {"name": "y", "description": "a\nb"})
+
     def test_bad_names_missing_files_and_mismatched_front_matter_are_refused(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

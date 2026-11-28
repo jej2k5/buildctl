@@ -18,7 +18,7 @@ Flags: `--port <n>` picks the web console's port on 127.0.0.1 (default any free 
 | Stop | Why the build stopped, the evidence (what agents did, findings, agent calls, gates, artifacts, and a [debate](#debates) turn by turn), and only the levers the kernel will accept. At [DEBATE_AWAITING_DECISION](#DEBATE_AWAITING_DECISION), the Decide lever takes your ruling. |
 | Phases | Every phase with its attempts, reviews, fixes, debates and cost, and its feed of [what agents did](#evidence). Selecting a row opens that part of the full record. |
 | Ledger | The audit chain, newest first, filterable by phase and event. |
-| Setup | Readiness in the order buildctl checks it, and the trust levers. |
+| Setup | Readiness in the order buildctl checks it, the trust levers, and the build's [skills](#skills). |
 
 Keys `1` to `6` switch views in both surfaces, in rail order; `7` opens Release drafts, which is in the web console only. Both open on the Plan. The web console opens on Setup instead while the build has no state. The rail's Manual link opens this manual, and each stop code in the Stop view links to its entry here.
 
@@ -27,6 +27,8 @@ The recordings in this chapter were made with buildctl-drafts' [recorder](#demos
 ![A stop: the plan names what waits on you, the Stop view gives the code and the remedy, the findings, and only the levers the kernel accepts.](media/stop.gif)
 
 The current call, the Stop view and each phase's detail show the phase's steps: Implement, Gates, Docs when [documentation](#documentation) is on, Review and Commit, each with its signal shape and what it took. The step where the build stopped is marked, and a documenter sent back is counted there ("pass 2 of 4 · 1 send-back"). A phase with `documentation: false` shows its Docs step as off. When documentation is on, a Docs tab shows the documenter's account, each documentation file's change as a diff, and the documentation gates; on [DOC_SCOPE_VIOLATION](#DOC_SCOPE_VIOLATION) it opens first, leading with the files that were outside the documentation paths. Setup lists the documentation settings, and the Phases table counts documenter passes. The terminal UI shows the steps; the Docs tab is web only for now.
+
+Setup's Skills section picks the build's [skills](#skills) from the ones installed on this machine (`~/.claude/skills`, `~/.codex/skills` and `~/.agents/skills`; each CLI's bundled skills are left out, since they ship inside the pinned executable). Add copies a skill into `skills/<name>/` and declares it in `build.yaml`, with a checkbox per role and its large files left out by default. A skill already in the build shows who gets it, whether its installed copy has moved on (with a button to copy it in again), and whether it is trusted yet. The reviewer box is disabled for a skill that runs shell commands as it loads. The console edits only your working tree: it never commits or trusts, and a caution line lists what changed until you commit and pin the commit. The Skills section is web only.
 
 ![A documenter out of scope: the step track stops at Docs, the Docs tab leads with the file outside the documentation paths, and each documentation change opens to its diff.](media/docs.gif)
 

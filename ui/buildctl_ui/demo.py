@@ -465,6 +465,9 @@ DEMO_DRAFTS = {
 def _drafts(control: Path, head: str, now: datetime) -> None:
     """One buildctl-drafts run for the MVP milestone: drafts in every state the console shows."""
     stamp = now - timedelta(minutes=42)
+    if stamp.astimezone(timezone.utc).date() != now.astimezone(timezone.utc).date():
+        # Just after midnight UTC, keep the drafts' spend on today's ledger: the cap counts UTC days.
+        stamp = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     run = stamp.strftime("%Y%m%d-%H%M%S")
     directory = control / "drafts" / run
     directory.mkdir(parents=True, mode=0o700)

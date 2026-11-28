@@ -74,17 +74,33 @@ def harness(command: list[str]) -> str | None:
 
 
 def frontmatter(text: str) -> dict[str, str]:
-    """The `name:` and `description:` lines of a SKILL.md front matter block, flat values only."""
+    """The `name:` and `description:` of a SKILL.md front matter block.
+
+    Values may be inline, quoted, or YAML block scalars (`>` or `|`, with indented lines after),
+    which installed skills often use for long descriptions."""
     if not text.startswith("---"):
         return {}
     end = text.find("\n---", 3)
     if end < 0:
         return {}
-    result = {}
-    for line in text[3:end].splitlines():
+    lines = text[3:end].splitlines()
+    result: dict[str, str] = {}
+    index = 0
+    while index < len(lines):
+        line = lines[index]
         key, sep, value = line.partition(":")
-        if sep and key.strip() in {"name", "description"} and not line.startswith((" ", "\t")):
-            result[key.strip()] = value.strip().strip("'\"")
+        index += 1
+        if not sep or line.startswith((" ", "\t")) or key.strip() not in {"name", "description"}:
+            continue
+        value = value.strip()
+        if value[:1] in {">", "|"}:
+            block = []
+            while index < len(lines) and (lines[index].startswith((" ", "\t")) or not lines[index].strip()):
+                block.append(lines[index].strip())
+                index += 1
+            joiner = " " if value.startswith(">") else "\n"
+            value = joiner.join(part for part in block if part).strip()
+        result[key.strip()] = value.strip("'\"")
     return result
 
 
