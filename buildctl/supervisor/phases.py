@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import documentation
+from . import documentation, skills
 from .evidence import validate_evidence_config
 from .gates import ALLOWED_DIRECT_REFERENCE, ProvisioningError, constraint_bounds
 from .governance import is_governance_path
@@ -172,6 +172,9 @@ def validate_config(config: dict[str, Any], root: Path) -> None:
     if evidence_problems:
         raise ConfigurationError("; ".join(evidence_problems))
     validate_governed_inputs(config, root)
+    problems = skills.validate(config, root)
+    if problems:
+        raise ConfigurationError("; ".join(problems))
     validate_python(config, root)
     validate_demo(config, root)
     costs = config.get("operation_cost_usd")

@@ -80,6 +80,33 @@ Prompts are governed files: an agent cannot change them, and a change you make t
 - **Allowed paths** are the only paths the phase may change. Anything else, and any change to a governed file, fails the phase.
 - **Invariants** are named rules the reviewer checks the change against.
 
+### Skills {#skills}
+
+A skill is a folder with a `SKILL.md` and any files it needs, the format Claude Code and Codex both read. A build can hand skills to its agents, but never from your installed folders at run time: a skill enters the build as committed files, so `trust init` pins it, and the version an agent used is the version you trusted.
+
+```sh
+buildctl skills add ~/.claude/skills/impeccable --exclude 'scripts/bin/*'
+```
+
+That copies the skill into `skills/impeccable/`. Declare it and say who gets it:
+
+```json
+"skills": {"impeccable": {}},
+"roles": {
+  "implementer": {"...": "...", "skills": ["impeccable"]},
+  "reviewer":    {"...": "...", "skills": []}
+},
+"phases": [{"number": 3, "...": "...", "skills": {"reviewer": ["impeccable"]}}]
+```
+
+Then commit and `trust init`. A phase can add skills per role. The reviewer gets only skills named for it, never the implementer's, so its second opinion is shaped only by what you chose to show it. Each CLI also keeps its own built-in skills (Claude Code's `code-review` or `security-review`, Codex's `skill-creator` and the like); those ship inside the executable `trust init` pins, so they cannot change under a build either.
+
+At each agent call, buildctl copies that call's skills from its trusted snapshot into the agent's own scratch space: Codex reads them from its isolated `$CODEX_HOME/skills`, and Claude Code from a throwaway plugin passed with `--plugin-dir`, with `Skill` added to the role's `--tools` and exactly those skills pre-approved. A skill that runs shell commands as it loads (a `` !`command` `` line) cannot work for the read-only reviewer, so `validate` refuses one listed for it. A skill's scripts run only where the role can already run commands, inside the sandbox; the reviewer stays read-only. Debate turns get no skills.
+
+Every call's record lists the skills it was offered, each with a digest of its files, and the audit log notes which ones the agent's own events show it loading. `buildctl skills status` shows when an installed copy has moved on; `buildctl skills sync <name>` copies it in again for you to commit and trust.
+
+Independent of skills, every Claude role runs with `--setting-sources project,local`, so your personal Claude Code settings, skills, plugins and `CLAUDE.md` stay out of the build. The agent's copy of the repository also has `.claude`, `.codex`, `.agents`, `AGENTS.md` and `CLAUDE.md` removed before it starts.
+
 ### Prompts buildctl provides {#protocol}
 
 buildctl ships the output formats agents must return (`PHASE_RESULT`, `REVIEW_RESULT`, `DEBATE_RESULT`, `DEBATE_TURN`, `DOC_RESULT`) and the default review, remediation and documentation prompts. They live in the package and are pinned with it. The formats cannot be overridden, because the code that validates them lives in buildctl too.

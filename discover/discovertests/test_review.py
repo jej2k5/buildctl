@@ -27,6 +27,8 @@ class Review(GateCase):
         self.assertTrue(self.passes())
         self.assertEqual(runner.calls[0][0], "claude")
         self.assertIn("--no-session-persistence", runner.calls[0])
+        # The operator's personal Claude settings, skills and CLAUDE.md stay out of the review.
+        self.assertEqual(runner.calls[0][runner.calls[0].index("--setting-sources") + 1], "project,local")
 
     def test_findings_are_numbered_and_block_at_high(self):
         result = request_review(self.session, self.session_identity(), runner=reviewer(

@@ -71,4 +71,5 @@ class ClaudeAdapter:
 
     def review(self, phase: Any, evidence: dict[str, Any], phase_result: dict[str, Any],
                output: Path, timeout: float) -> dict[str, Any]:
-        return self.role_runner.run("reviewer", self.build_prompt(phase, evidence, phase_result), output, timeout)
+        return self.role_runner.run("reviewer", self.build_prompt(phase, evidence, phase_result), output, timeout,
+                                     phase=phase.number)

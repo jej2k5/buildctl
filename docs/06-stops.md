@@ -107,6 +107,8 @@ An agent call failed. The status detail starts with a detail code, then a redact
 |---|---|---|
 | `<ROLE>_EXECUTABLE_UNAVAILABLE` | The agent CLI is not where trust pinned it, or not on `PATH`. | Reinstall it, run `trust init` again, then retry. |
 | `<ROLE>_EXECUTABLE_INTEGRITY_FAILURE` | The agent CLI changed since `trust init`, usually an upgrade. | Run `trust init` again to pin the new binary, then retry. |
+| `<ROLE>_SKILL_UNAVAILABLE` | A skill the role or phase names is not in the trusted snapshot: it was declared after the commit you trusted, or its folder was renamed. | Commit the skill folder, run `trust init` on that commit, then retry. See [Skills](#skills). |
+| `<ROLE>_SKILLS_UNSUPPORTED` | The role names skills but its command is neither `claude` nor `codex`, so buildctl does not know where that CLI reads skills. | Remove the role's skills, or run it with a supported CLI, then trust again. |
 | `<ROLE>_AUTH_MODE_INVALID` | `roles.<role>.auth_mode` is not `environment`, `host_cli` or `none`. | Fix `build.yaml`, commit, trust the commit, then retry. |
 | `<ROLE>_PROCESS_FAILED` | The agent CLI exited with an error. Its own message follows the colon. | Read that message: a rate limit, an expired login or a model error. Fix it, then retry. |
 | `<ROLE>_SECRET_OUTPUT` | A credential appeared in the agent's output or result file, so nothing was stored. The detail names the source and the credential kind, never the value. | Rotate that credential. Find why the agent printed it, then retry. |

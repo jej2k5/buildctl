@@ -92,6 +92,11 @@ def writer_config(config: dict[str, Any], anchor: dict[str, Any]) -> dict[str, A
             continue
         plain.append(part)
     result["roles"]["reviewer"]["command"] = plain
+    # The reviewer's skills are for reviewing code; a draft writer gets none.
+    result["roles"]["reviewer"].pop("skills", None)
+    for item in result.get("phases", []):
+        if isinstance(item.get("skills"), dict):
+            item["skills"].pop("reviewer", None)
     result["_trusted_executables"] = anchor.get("executables", {})
     return result
 

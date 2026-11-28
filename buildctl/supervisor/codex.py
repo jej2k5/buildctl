@@ -33,7 +33,8 @@ class CodexAdapter:
 
     def implement(self, phase: Any, output: Path, timeout: float, review: str | None = None,
                   adr: str | None = None, prior_failure: str | None = None) -> dict[str, Any]:
-        value = self.role_runner.run("implementer", self.prompt(phase, review, adr, prior_failure), output, timeout)
+        value = self.role_runner.run("implementer", self.prompt(phase, review, adr, prior_failure), output, timeout,
+                                     phase=phase.number)
         required = {"status", "summary", "tests", "files_changed", "risks", "architecture_questions"}
         if set(value) != required or value["status"] not in {"complete", "blocked", "failed"} or any(
                 not isinstance(value[key], list) for key in required - {"status", "summary"}):

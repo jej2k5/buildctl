@@ -353,7 +353,8 @@ class EvidenceStore:
             run += 1
         return directory / f"{safe}.{run}.jsonl"
 
-    def open(self, role: str, command: list[str], binary: str, prompt: str, workspace: Path) -> AgentRecord:
+    def open(self, role: str, command: list[str], binary: str, prompt: str, workspace: Path,
+             skills: list[dict[str, Any]] | None = None) -> AgentRecord:
         if self.operation is None:
             raise RecordIncomplete("recording is on but no operation was named")
         operation, phase, attempt = self.operation
@@ -363,7 +364,9 @@ class EvidenceStore:
                 "operation": operation, "phase": phase, "attempt": attempt, "role": role,
                 "cli": adapter_for(command).name, "binary_sha256": binary_sha,
                 "prompt_sha256": digest(prompt.encode()), "command": command,
-                "workspace": str(workspace.resolve()), "started_at": now()})
+                "workspace": str(workspace.resolve()), "started_at": now(),
+                # The pinned skills this call was offered, each with a digest of its files.
+                **({"skills": skills} if skills else {})})
             cleaned = redact(prompt, limit=len(prompt))
             record.append("prompt", cleaned, cleaned != prompt)
             return record
@@ -673,7 +676,8 @@ def build_manifest(control_root: Path, config: dict[str, Any], *, phase: int, co
             "record_state": "closed" if footer else "incomplete",
             "record_file": record["path"].name, "record_sha256": digest(record["path"].read_bytes()),
             "record_lines": len(record["rows"]), "unparsed_events": (footer or {}).get("unparsed_events", 0),
-            "ledger_usd": charged.get(header.get("operation")), "actions": actions})
+            "ledger_usd": charged.get(header.get("operation")), "actions": actions,
+            **({"skills": header["skills"]} if header.get("skills") else {})})
     interactive = config.get("roles", {}).get("arbiter", {}).get("mode") == "interactive"
     return {"schema_version": MANIFEST_SCHEMA, "phase": phase, "code_commit": code_commit, "tree_hash": tree_hash,
             "base_sha": base_sha, "governance_sha": governance_sha, "previous_manifest_sha256": previous,
