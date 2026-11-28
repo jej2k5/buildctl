@@ -298,8 +298,12 @@ class RoleRunner:
         if result.timed_out:
             raise subprocess.TimeoutExpired(command, timeout)
         # The last look: a multi-line secret passes every line's check and lands whole only here.
-        exposed = result.exposed or known_secret("\n".join(row["text"] for row in read_record(record.path)["rows"]
-                                                           if row["stream"] in {"stdout", "stderr"}), labelled)
+        # Each stream on its own: lines of stdout and stderr interleave by arrival, and a secret
+        # split across two stderr lines must not hide behind a stdout line between them.
+        rows = read_record(record.path)["rows"]
+        exposed = result.exposed or next(filter(None, (
+            known_secret("\n".join(row["text"] for row in rows if row["stream"] == stream), labelled)
+            for stream in ("stdout", "stderr"))), None)
         if exposed:
             raise AgentError(f"{role.upper()}_SECRET_OUTPUT:source=stdout_stderr credential_kind={exposed}")
         if result.returncode or adapter.failed:

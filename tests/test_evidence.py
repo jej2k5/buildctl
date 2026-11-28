@@ -178,6 +178,16 @@ open(output, 'w').write('{"status": "complete"}')"""))
             self.run_role("implementer", fake, credentials={"X_TOKEN": secret})
         self.assertIn("IMPLEMENTER_SECRET_OUTPUT", str(caught.exception))
 
+    def test_a_split_secret_is_caught_even_with_stdout_between_its_lines(self):
+        secret = "first-line-abc\nsecond-line-def"
+        fake = script(self.bin, "tool", "import sys, time\n"
+                      "print('first-line-abc', file=sys.stderr, flush=True); time.sleep(0.2)\n"
+                      "print('{}', flush=True); time.sleep(0.2)\n"
+                      "print('second-line-def', file=sys.stderr, flush=True)")
+        with self.assertRaises(AgentError) as caught:
+            self.run_role("implementer", fake, credentials={"X_TOKEN": secret})
+        self.assertIn("IMPLEMENTER_SECRET_OUTPUT", str(caught.exception))
+
     def test_a_secret_shape_in_a_file_the_agent_read_redacts_without_stopping(self):
         token = "ghp_" + "a" * 30
         events = [{"type": "item.completed", "item": {"id": "1", "type": "command_execution", "command": "cat c.py",
